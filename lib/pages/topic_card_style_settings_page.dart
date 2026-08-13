@@ -43,6 +43,7 @@ class _TopicCardStyleSettingsPageState
       views: 2048,
       likeCount: 128,
       excerpt: l10n.topicCardStyle_previewExcerpt,
+      createdAt: DateTime.now().subtract(const Duration(minutes: 5)),
       lastPostedAt: DateTime.now().subtract(const Duration(minutes: 5)),
       categoryId: '1',
       tags: [Tag(name: l10n.topicCardStyle_previewTag)],

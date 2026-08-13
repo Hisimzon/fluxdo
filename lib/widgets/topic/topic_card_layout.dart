@@ -11,6 +11,7 @@ import '../../utils/color_utils.dart';
 import '../../utils/number_utils.dart';
 import '../../utils/relative_time_clock.dart';
 import '../../utils/time_utils.dart';
+import '../../utils/topic_created_at_formatter.dart';
 
 /// 话题自绘卡的排版产物:一张卡全部文本的 [ui.Paragraph] 成品 + 几何。
 ///
@@ -245,7 +246,7 @@ class TopicCardLayout {
       unseen: topic.unseen,
       authorName: authorName,
       authorBold: !isFullyRead,
-      timeStr: TimeUtils.formatRelativeTime(topic.lastPostedAt),
+      timeStr: formatTopicCreatedAt(topic.createdAt),
       timeHighlight: isUnread,
       excerptText: excerptText,
       category: category,
