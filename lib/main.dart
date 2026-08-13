@@ -87,7 +87,8 @@ import 'utils/hashtag_handlers.dart';
 import 'utils/image_decode_gate.dart';
 import 'widgets/post/post_item/render_parse_cache.dart';
 import 'utils/scroll_busy_signal.dart';
-import 'utils/seed_color_scheme.dart';
+import 'theme/theme_resolver.dart';
+import 'widgets/common/app_background_layer.dart';
 import 'utils/time_utils.dart';
 
 import 'package:shared_preferences/shared_preferences.dart';
@@ -676,6 +677,7 @@ ThemeData _buildAppTheme(
   ColorScheme scheme,
   ThemeState themeState, {
   required bool fullscreenSwipeBack,
+  required bool transparent,
 }) {
   final m3e = themeState.m3eEnabled;
   final buttonStyle = m3e ? _m3ePressedShapeStyle() : null;
@@ -683,6 +685,8 @@ ThemeData _buildAppTheme(
     colorScheme: scheme,
     useMaterial3: true,
     fontFamily: themeState.fontFamilyName,
+    // 透明模式：脚手架让出背景，由根背景层的用户图片透出
+    scaffoldBackgroundColor: transparent ? Colors.transparent : null,
     pageTransitionsTheme: fullscreenSwipeBack
         ? _fullscreenSwipePageTransitionsTheme
         : _pageTransitionsTheme,
@@ -740,33 +744,28 @@ class MainApp extends ConsumerWidget {
 
     return DynamicColorBuilder(
       builder: (lightDynamic, darkDynamic) {
-        // 把系统动态色原始 primary 存到 ThemeState 中
-        final rawDynamicPrimary = lightDynamic?.primary;
+        // 把系统动态色原始 primary 存到 ThemeState 中；
+        // 明暗两套齐全才采用，缺一侧回退种子色（沿用原逻辑）
+        final rawDynamicPrimary = lightDynamic != null && darkDynamic != null
+            ? lightDynamic.primary
+            : null;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           ref.read(themeProvider.notifier).setDynamicPrimary(rawDynamicPrimary);
         });
 
-        ColorScheme lightScheme;
-        ColorScheme darkScheme;
-
-        // 动态色路径只取系统动态色 primary 当种子,不用 OEM 原始 scheme。
-        ColorScheme buildScheme(Color seed, Brightness brightness) {
-          return SeedColorScheme.from(
-            seedColor: seed,
-            brightness: brightness,
-            variant: themeState.schemeVariant,
-          );
-        }
-
-        if (themeState.useDynamicColor &&
-            lightDynamic != null &&
-            darkDynamic != null) {
-          lightScheme = buildScheme(lightDynamic.primary, Brightness.light);
-          darkScheme = buildScheme(darkDynamic.primary, Brightness.dark);
-        } else {
-          lightScheme = buildScheme(themeState.seedColor, Brightness.light);
-          darkScheme = buildScheme(themeState.seedColor, Brightness.dark);
-        }
+        // 默认走完整 fromSeed 方案（表面带种子色相）；中性/纯黑/透明
+        // 开关由 ThemeResolver 切换到"强调色 × 中性层"的合成路径。
+        // 动态色路径只取系统动态色 primary 当种子，不用 OEM 原始 scheme。
+        final resolvedTheme = ThemeResolver.resolve(
+          mode: themeState.mode,
+          neutral: themeState.neutralEnabled,
+          black: themeState.blackEnabled,
+          transparent: themeState.isTransparentActive,
+          seed: themeState.effectiveSeedColor,
+          variant: themeState.schemeVariant,
+        );
+        final lightScheme = resolvedTheme.light;
+        final darkScheme = resolvedTheme.dark;
 
         return TranslationProvider(
           child: Builder(
@@ -795,7 +794,7 @@ class MainApp extends ConsumerWidget {
               // 当「关 Activity」接管出黑边预览。见 BackDispatchHold。
               onNavigationNotification:
                   backDispatchHold.onNavigationNotification,
-              themeMode: themeState.mode,
+              themeMode: resolvedTheme.mode,
               // 仅注入 fontFamilyFallback，不替换 textTheme，避免覆盖 Android OEM
               // 系统字体（chinese_font_library 自带的 ThemeData.useSystemChineseFont
               // 会强制改为 Roboto，导致字体显得比之前粗）。
@@ -804,6 +803,7 @@ class MainApp extends ConsumerWidget {
                   lightScheme,
                   themeState,
                   fullscreenSwipeBack: fullscreenSwipeBack,
+                  transparent: resolvedTheme.transparent,
                 ),
               ),
               darkTheme: _withChineseFallback(
@@ -811,6 +811,7 @@ class MainApp extends ConsumerWidget {
                   darkScheme,
                   themeState,
                   fullscreenSwipeBack: fullscreenSwipeBack,
+                  transparent: resolvedTheme.transparent,
                 ),
               ),
               builder: (context, child) {
@@ -824,7 +825,11 @@ class MainApp extends ConsumerWidget {
                     Platform.isLinux) {
                   final isDark = brightness == Brightness.dark;
                   acrylic.Window.setEffect(
-                    effect: Platform.isMacOS
+                    // 透明模式下禁用系统窗口效果，避免桌面壁纸
+                    // 与用户背景图双重透出造成视觉混乱
+                    effect: resolvedTheme.transparent
+                        ? acrylic.WindowEffect.disabled
+                        : Platform.isMacOS
                         ? acrylic.WindowEffect.sidebar
                         : Platform.isWindows
                         ? acrylic.WindowEffect.mica
@@ -850,6 +855,13 @@ class MainApp extends ConsumerWidget {
                   child: Stack(
                     fit: StackFit.passthrough,
                     children: [
+                      // 透明模式的用户背景层，垫在 Navigator 之下
+                      if (resolvedTheme.transparent)
+                        Positioned.fill(
+                          child: AppBackgroundLayer(
+                            background: themeState.background,
+                          ),
+                        ),
                       child!,
                       const ReadLaterBubble(),
                       // 渲染帧标识印记:置于最顶层保证捕获帧必含点阵
