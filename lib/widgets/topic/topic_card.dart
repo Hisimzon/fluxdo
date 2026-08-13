@@ -10,6 +10,7 @@ import '../../providers/preferences_provider.dart';
 import '../../utils/font_awesome_helper.dart';
 import '../../utils/frame_jank_monitor.dart';
 import '../../utils/platform_utils.dart';
+import '../../utils/topic_created_at_formatter.dart';
 import '../../utils/url_helper.dart';
 import '../common/smart_avatar.dart';
 import '../common/animated_avatar_overlay.dart';
@@ -17,7 +18,6 @@ import '../common/perf_span_box.dart';
 import '../../services/discourse_cache_manager.dart';
 import '../common/category_tags_line.dart';
 import '../common/icon_glyph_span.dart';
-import '../common/relative_time_text.dart';
 import '../../utils/number_utils.dart';
 import '../common/emoji_text.dart';
 
@@ -453,9 +453,9 @@ class TopicCard extends ConsumerWidget {
       showTags: style.showTags,
       dim: isFullyRead,
     );
-    // 时间是骨架字段,恒定显示
-    final timeText = RelativeTimeText(
-      dateTime: topic.lastPostedAt,
+    // 发帖时间是骨架字段,恒定显示
+    final timeText = Text(
+      formatTopicCreatedAt(topic.createdAt),
       style: theme.textTheme.labelSmall?.copyWith(
         color: isUnread ? theme.colorScheme.primary : metaColor,
       ),
@@ -692,8 +692,8 @@ class TopicCard extends ConsumerWidget {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  RelativeTimeText(
-                    dateTime: topic.lastPostedAt,
+                  Text(
+                    formatTopicCreatedAt(topic.createdAt),
                     style: theme.textTheme.labelSmall?.copyWith(
                       color: isUnread ? theme.colorScheme.primary : metaColor,
                     ),
