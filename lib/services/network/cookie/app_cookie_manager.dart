@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../auth_session.dart';
 import '../../log/log_writer.dart';
+import '../flux_request_spec.dart';
 import 'cookie_jar_service.dart';
 import 'raw_cookie_writer.dart';
 import 'session_cookie_sentinel.dart';
@@ -518,7 +519,7 @@ class AppCookieManager extends Interceptor {
         '[CookieManager] auth.session-token Set-Cookie from '
         '${response.requestOptions.method} ${requestUri.toString()} '
         '(status=${response.statusCode}, location=$locationHeader, '
-        'allowRedirectSetCookie=${response.requestOptions.extra['allowRedirectSetCookie'] == true})',
+        'allowRedirectSetCookie=${response.requestOptions.spec.allowRedirectSetCookie})',
       );
       for (final header in flattenedSetCookies.where(
         (item) => item.toLowerCase().startsWith('auth.session-token='),
@@ -725,7 +726,7 @@ class AppCookieManager extends Interceptor {
 
     // Optionally save cookies for redirected locations.
     final allowRedirectSave =
-        response.requestOptions.extra['allowRedirectSetCookie'] == true;
+        response.requestOptions.spec.allowRedirectSetCookie;
     if (!(saveRedirectedCookies || allowRedirectSave)) {
       return;
     }

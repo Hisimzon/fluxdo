@@ -4,6 +4,7 @@ import '../../../constants.dart';
 import '../../log/log_writer.dart';
 import '../../user_presence_service.dart';
 import '../cookie/csrf_token_service.dart';
+import '../flux_request_spec.dart';
 
 /// 请求头拦截器
 /// 负责设置 User-Agent 和 CSRF Token
@@ -28,7 +29,7 @@ class RequestHeaderInterceptor extends Interceptor {
     }
 
     // 3. 设置 CSRF Token（未登录时无法获取，跳过）
-    final skipCsrf = options.extra['skipCsrf'] == true;
+    final skipCsrf = options.spec.skipCsrf;
     if (!skipCsrf) {
       // 非 GET 请求且 token 为空时，先从 /session/csrf 获取
       // 对齐 Discourse 前端: if (type !== "GET" && !csrfToken) { updateCsrfToken() }
@@ -49,7 +50,7 @@ class RequestHeaderInterceptor extends Interceptor {
           'message': 'POST 前无法取得 CSRF token，已取消请求以避免 BAD CSRF',
           'method': options.method,
           'url': options.uri.toString(),
-          'isSilent': options.extra['isSilent'] == true,
+          'isSilent': options.spec.isSilent,
         });
         handler.reject(
           DioException(

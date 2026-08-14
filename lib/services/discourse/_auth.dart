@@ -990,7 +990,7 @@ mixin _AuthMixin on _DiscourseServiceBase {
         },
         onResponse: (response, handler) async {
           final skipAuthCheck =
-              response.requestOptions.extra['skipAuthCheck'] == true;
+              response.requestOptions.spec.skipAuthCheck;
 
           final loggedOut = response.headers.value('discourse-logged-out');
           if (!skipAuthCheck &&
@@ -1012,7 +1012,7 @@ mixin _AuthMixin on _DiscourseServiceBase {
           }
 
           final skipSessionStateSync =
-              response.requestOptions.extra['skipSessionStateSync'] == true;
+              response.requestOptions.spec.skipSessionStateSync;
           if (!skipSessionStateSync) {
             final sessionState = await _syncSessionStateFromResponse(
               response.requestOptions,
@@ -1041,7 +1041,7 @@ mixin _AuthMixin on _DiscourseServiceBase {
         },
         onError: (error, handler) async {
           final skipAuthCheck =
-              error.requestOptions.extra['skipAuthCheck'] == true;
+              error.requestOptions.spec.skipAuthCheck;
           final data = error.response?.data;
           debugPrint('[DIO] Error: ${error.response?.statusCode}');
 
@@ -1086,7 +1086,7 @@ mixin _AuthMixin on _DiscourseServiceBase {
           }
 
           final skipSessionStateSync =
-              error.requestOptions.extra['skipSessionStateSync'] == true;
+              error.requestOptions.spec.skipSessionStateSync;
           final sessionState = skipSessionStateSync
               ? await _readSessionCookieState()
               : await _syncSessionStateFromResponse(

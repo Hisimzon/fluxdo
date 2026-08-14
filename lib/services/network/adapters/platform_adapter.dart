@@ -9,6 +9,7 @@ import '../doh/network_settings_service.dart';
 import '../proxy/proxy_settings_service.dart';
 import '../rhttp/rhttp_settings_service.dart';
 import '../system_proxy_service.dart';
+import '../flux_request_spec.dart';
 import '../webview/webview_adapter_settings_service.dart';
 import 'adapter_log_metadata.dart';
 import 'cronet_fallback_service.dart';
@@ -233,7 +234,7 @@ EffectiveAdapter _resolveEffective(
 
 @visibleForTesting
 bool requestAllowsRhttpAdapter(RequestOptions options) {
-  return options.extra['skipRhttpAdapter'] != true;
+  return !options.spec.skipRhttpAdapter;
 }
 
 /// 创建当前平台对应的 NativeAdapter
@@ -421,7 +422,7 @@ class _GatewayAdapterWrapper implements HttpClientAdapter {
 /// 用于 CF 恢复在弹出兼容提示前确认该请求确实可以被浏览器网络栈接管。
 bool requestCanUseWebViewAdapter(RequestOptions options) {
   final uri = options.uri;
-  if (options.extra['skipWebViewAdapter'] == true) {
+  if (options.spec.skipWebViewAdapter) {
     return false;
   }
   // CF 的 /cdn-cgi/ 端点(challenge-platform 等)必须走原生栈,

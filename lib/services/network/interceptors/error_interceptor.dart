@@ -6,11 +6,12 @@ import '../../../l10n/s.dart';
 import '../../cf_challenge_service.dart';
 import '../../toast_service.dart';
 import '../exceptions/api_exception.dart';
+import '../flux_request_spec.dart';
 
 /// 错误拦截器
 /// 处理 429/502/503/504 错误，转换为自定义异常
 /// 操作性请求（POST/PUT/DELETE/PATCH）默认显示错误提示
-/// 可通过 extra['showErrorToast'] 或 extra['isSilent'] 手动控制
+/// 可通过 FluxRequestKeys.showErrorToast 或 isSilent 手动控制
 class ErrorInterceptor extends Interceptor {
   /// 操作性请求方法，默认显示错误提示
   static const _mutationMethods = {'POST', 'PUT', 'DELETE', 'PATCH'};
@@ -19,7 +20,7 @@ class ErrorInterceptor extends Interceptor {
   void onError(DioException err, ErrorInterceptorHandler handler) {
     final statusCode = err.response?.statusCode;
     final method = err.requestOptions.method.toUpperCase();
-    final extra = err.requestOptions.extra;
+    final spec = err.requestOptions.spec;
 
     // CF 盾 403/429 由 CfChallengeInterceptor 统一决定展示形态:
     // 页面数据走错误态按钮,操作请求走明确提示,静默请求不打扰。
@@ -38,7 +39,7 @@ class ErrorInterceptor extends Interceptor {
     }
 
     // 静默模式：不显示任何错误提示
-    if (extra['isSilent'] == true) {
+    if (spec.isSilent) {
       handler.next(err);
       return;
     }
@@ -46,8 +47,8 @@ class ErrorInterceptor extends Interceptor {
     // 判断是否显示错误提示：
     // 1. 如果 extra 中明确指定了 showErrorToast，使用指定的值
     // 2. 否则，操作性请求默认显示
-    final showErrorToast = extra.containsKey('showErrorToast')
-        ? extra['showErrorToast'] == true
+    final showErrorToast = spec.hasExplicitErrorToast
+        ? spec.showErrorToast
         : _mutationMethods.contains(method);
 
     // 提取错误信息

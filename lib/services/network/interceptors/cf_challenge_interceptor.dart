@@ -13,6 +13,7 @@ import '../system_proxy_service.dart';
 import '../webview/webview_adapter_settings_service.dart';
 import '../../../l10n/s.dart';
 import '../exceptions/api_exception.dart';
+import '../flux_request_spec.dart';
 
 /// Cloudflare 验证拦截器
 /// 处理 CF Turnstile 验证
@@ -79,15 +80,16 @@ class CfChallengeInterceptor extends Interceptor {
   }
 
   bool _shouldShowActionPrompt(RequestOptions options) {
-    if (options.extra['isSilent'] == true) return false;
-    if (options.extra.containsKey('showErrorToast')) {
-      return options.extra['showErrorToast'] == true;
+    final spec = options.spec;
+    if (spec.isSilent) return false;
+    if (spec.hasExplicitErrorToast) {
+      return spec.showErrorToast;
     }
     return _mutationMethods.contains(options.method.toUpperCase());
   }
 
   String _requestMode(RequestOptions options) {
-    if (options.extra['isSilent'] == true) return 'silent';
+    if (options.spec.isSilent) return 'silent';
     return _shouldShowActionPrompt(options) ? 'action' : 'data';
   }
 
@@ -111,7 +113,7 @@ class CfChallengeInterceptor extends Interceptor {
     final statusCode = err.response?.statusCode;
 
     // 检查是否标记跳过 CF 验证（防止重试后再次触发）
-    final skipCfChallenge = err.requestOptions.extra['skipCfChallenge'] == true;
+    final skipCfChallenge = err.requestOptions.spec.skipCfChallenge;
 
     // CF 速率限制规则的 action 配为 managed_challenge / js_challenge / challenge 时,
     // 触发后返回 429 + cf-mitigated: challenge + 挑战页,而不是 403。
@@ -130,11 +132,11 @@ class CfChallengeInterceptor extends Interceptor {
 
       final requestUrl = err.requestOptions.uri.toString();
       final requestMethod = err.requestOptions.method.toUpperCase();
-      final requestTag = err.requestOptions.extra['requestTag']?.toString();
+      final requestTag = err.requestOptions.spec.requestTag;
       final logMessage =
           'CF Challenge detected: $requestMethod $requestUrl '
-          '(status=$statusCode, silent=${err.requestOptions.extra['isSilent'] == true}, '
-          'tag=${requestTag ?? '-'}, skipCsrf=${err.requestOptions.extra['skipCsrf'] == true})';
+          '(status=$statusCode, silent=${err.requestOptions.spec.isSilent}, '
+          'tag=${requestTag ?? '-'}, skipCsrf=${err.requestOptions.spec.skipCsrf})';
       debugPrint('[Dio] $logMessage');
       AppLogger.warning(logMessage, tag: 'CfChallengeInterceptor');
       // 命中 CF 盾时立即重读系统代理状态:若用户刚开/关了系统代理,
@@ -145,7 +147,7 @@ class CfChallengeInterceptor extends Interceptor {
         statusCode: statusCode!,
       );
       final cfService = CfChallengeService();
-      final isSilent = err.requestOptions.extra['isSilent'] == true;
+      final isSilent = err.requestOptions.spec.isSilent;
       final shouldShowActionPrompt = _shouldShowActionPrompt(
         err.requestOptions,
       );
@@ -212,10 +214,10 @@ class CfChallengeInterceptor extends Interceptor {
         // 各自重试自己的原始请求（每个请求 URL/参数不同，无法共享）
         final retryOptions = err.requestOptions;
         try {
-          retryOptions.extra['skipCfChallenge'] = true;
+          retryOptions.extra[FluxRequestKeys.skipCfChallenge] = true;
           // 绕过 RequestScheduler 的 CF 冻结判定。retry 时序上 isVerifying 已经
           // 复位为 false，但加这个标记是双保险，防止未来逻辑变更引入 race。
-          retryOptions.extra['skipCfBlock'] = true;
+          retryOptions.extra[FluxRequestKeys.skipCfBlock] = true;
           // 清除原始请求中残留的 cookie header，并补上最新 Cookie。
           // 这样即使 dio.fetch 不重新经过 CookieManager，也不会继续发送旧值。
           await _refreshCookieHeader(retryOptions);
@@ -264,7 +266,7 @@ class CfChallengeInterceptor extends Interceptor {
               webViewSettings.enableSessionFallback();
               // 撤销原请求的"禁走 WebView 适配器"标记,这一行才是让重放
               // 真正改走浏览器网络栈的开关。
-              retryOptions.extra.remove('skipWebViewAdapter');
+              retryOptions.extra.remove(FluxRequestKeys.skipWebViewAdapter);
               try {
                 final fallbackResponse = await dio.fetch(retryOptions);
                 CfChallengeService.showGlobalMessage(

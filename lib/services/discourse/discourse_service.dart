@@ -43,6 +43,7 @@ import '../network/adapters/webview_http_adapter.dart';
 import '../network/webview/webview_adapter_settings_service.dart';
 import '../login_ready_coordinator.dart';
 import '../network/discourse_dio.dart';
+import '../network/flux_request_spec.dart';
 import '../network/interceptors/self_healing_interceptor.dart';
 import '../preloaded_data_service.dart';
 import '../webview_session_cookie_refresh_service.dart';
