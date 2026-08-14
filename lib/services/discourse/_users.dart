@@ -11,7 +11,8 @@ mixin _UsersMixin on _DiscourseServiceBase {
     return Options(
       extra: const {
         'isSilent': true,
-        'requestLane': 'seeking',
+        // 通道标注只需进网络日志(_networkLogFields 是日志拦截器的读取口);
+        // 顶层同名键无人消费,不再重复写。
         '_networkLogFields': {'requestLane': 'seeking'},
       },
     );

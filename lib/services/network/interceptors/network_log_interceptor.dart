@@ -86,6 +86,12 @@ class NetworkLogInterceptor extends Interceptor {
     if (uri.path == '/topics/timings') {
       entry.addAll(_timingsDiagnostics(options));
     }
+    // 调用方标注的链路标签(csrf-refresh / otp-redeem / preload-home 等),
+    // 让日志里能按链路而非仅按 URL 归因。
+    final requestTag = options.extra['requestTag']?.toString();
+    if (requestTag != null && requestTag.isNotEmpty) {
+      entry['requestTag'] = requestTag;
+    }
     final extraFields = options.extra['_networkLogFields'];
     if (extraFields is Map) {
       entry.addAll(extraFields.cast<String, dynamic>());

@@ -322,9 +322,10 @@ class RequestSchedulerInterceptor extends Interceptor {
   }
 
   Future<void> _waitForBrowserTrustIfNeeded(RequestOptions options) async {
-    if (options.extra['skipBrowserTrustGate'] == true ||
-        options.extra['skipCfBlock'] == true ||
-        options.extra['isCfChallengePlatform'] == true) {
+    // CF 验证自身的重试请求不等信任门(避免与验证流程互锁)。
+    // challenge-platform 请求现全部在 WebView 内发起,不经过 dio,
+    // 故此处不再需要判定它。
+    if (options.extra['skipCfBlock'] == true) {
       return;
     }
 

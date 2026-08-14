@@ -424,8 +424,9 @@ bool requestCanUseWebViewAdapter(RequestOptions options) {
   if (options.extra['skipWebViewAdapter'] == true) {
     return false;
   }
-  if (options.extra['isCfChallengePlatform'] == true ||
-      uri.path.startsWith('/cdn-cgi/')) {
+  // CF 的 /cdn-cgi/ 端点(challenge-platform 等)必须走原生栈,
+  // 不能被 WebView 适配器接管。
+  if (uri.path.startsWith('/cdn-cgi/')) {
     return false;
   }
 

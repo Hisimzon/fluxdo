@@ -132,6 +132,8 @@ class CsrfTokenService {
             'skipAuthCheck': true,
             'isSilent': true,
             'skipScheduler': true, // 绕过并发调度，避免与调用方的并发槽位死锁
+            // 诊断标注:撞 CF 盾时日志里能一眼看出是 CSRF 刷新链路
+            'requestTag': 'csrf-refresh',
           },
         ),
       );

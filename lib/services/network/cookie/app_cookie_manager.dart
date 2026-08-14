@@ -241,9 +241,8 @@ class AppCookieManager extends Interceptor {
   }
 
   static bool _isCfChallengePlatformRequest(RequestOptions options) {
-    if (options.extra['isCfChallengePlatform'] == true) {
-      return true;
-    }
+    // challenge-platform 请求由 WebView 内的注入脚本发起,dio 侧只按 URL
+    // 路径识别(历史上曾有 extra 标记通道,写入方已随 CF 验证改走 WebView 移除)。
     return options.uri.path.toLowerCase().contains(
       '/cdn-cgi/challenge-platform/',
     );

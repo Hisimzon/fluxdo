@@ -262,7 +262,8 @@ class CfChallengeInterceptor extends Interceptor {
                 await cfService.confirmSessionCompatibilityMode();
             if (shouldFallback) {
               webViewSettings.enableSessionFallback();
-              retryOptions.extra['_cfSessionCompatRetry'] = true;
+              // 撤销原请求的"禁走 WebView 适配器"标记,这一行才是让重放
+              // 真正改走浏览器网络栈的开关。
               retryOptions.extra.remove('skipWebViewAdapter');
               try {
                 final fallbackResponse = await dio.fetch(retryOptions);

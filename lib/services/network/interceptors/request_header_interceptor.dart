@@ -41,7 +41,6 @@ class RequestHeaderInterceptor extends Interceptor {
       final csrf = _cookieSync.csrfToken;
       if (method != 'GET' && (csrf == null || csrf.isEmpty)) {
         options.headers.remove('X-CSRF-Token');
-        options.extra['_csrfUnavailable'] = true;
         LogWriter.instance.write({
           'timestamp': DateTime.now().toIso8601String(),
           'level': 'warning',
