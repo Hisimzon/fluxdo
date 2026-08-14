@@ -43,6 +43,12 @@
 //    BackDispatchHold 据此在手势进行中不撤 OnBackInvokedCallback
 //    注册 —— 否则第二划拖过退场窗口边界时被中途注销,系统当场接管
 //    出黑底。认领(含静默)置 true,commit/cancel/锁屏代打清 false。
+// 11. 差异点 6 的冻结分支必须带铺底(ColoredBox surface)。手势期 flag
+//    按 Navigator 存,同一 Navigator 下所有 phase==idle 的路由都进冻结
+//    分支,直接 return child 剥掉了 Cupertino 转场的背景填充 → 预测
+//    预览缩小后,框外/边缘无人铺底,露出 Navigator 底色纯黑(连划黑底
+//    实测几何:框内两页重影、框外全黑)。opaque:false 路由不垫(会挡
+//    住其下本该可见的页面)。
 //
 // Copyright 2014 The Flutter Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
@@ -113,9 +119,22 @@ class PredictiveBackCupertinoPageTransitionsBuilder
               // !route.isCurrent:commit 的 navigator.pop() 同步把被弹
               // 路由翻成非 current,而手势 flag 要等收尾动画播完才清,
               // 按 isCurrent 判定会把 commit 收尾动画整段吞成静态贴图。
+              //
+              // 差异点 12:冻结必须**带铺底**。手势期 flag 按 Navigator
+              // 存(Expando 键是 navigator),同一 Navigator 下所有
+              // phase==idle 的路由都会进本分支 —— 包括预览缩小后露出
+              // 边缘的下层/根路由。直接 return child 等于剥掉 Cupertino
+              // 转场的背景填充,预览框外与边缘无人铺底 → 露出 Navigator
+              // 底色纯黑(连划黑底实测几何:缩小框内两页重影、框外全黑)。
+              // 用 ColoredBox 垫主题 surface 后,任何露出区域都是主题色。
               if (predictiveBackInProgress &&
                   phase == _PredictiveBackPhase.idle) {
-                return child;
+                // 透明路由(opaque:false)不垫:会挡住其下方本该可见的页面
+                if (!route.opaque) return child;
+                return ColoredBox(
+                  color: Theme.of(context).colorScheme.surface,
+                  child: child,
+                );
               }
 
               // Only do a predictive back transition when the user is performing a
@@ -792,9 +811,16 @@ Widget buildPredictiveBackPageTransitions(
             // 同上方主题 builder:判定「未参与手势」用 phase == idle,
             // 不能用 !isCurrent(commit 的 pop 同步翻非 current,会把
             // 被弹路由自己的 commit 收尾动画吞掉)。
+            // 差异点 12:冻结带铺底,否则露出区域是 Navigator 底色纯黑。
+            // 本 helper 的路由多为 opaque:false(查看器等),铺底会挡住
+            // 底层页面 —— 仅在不透明路由上垫。
             if (predictiveBackInProgress &&
                 phase == _PredictiveBackPhase.idle) {
-              return child;
+              if (!route.opaque) return child;
+              return ColoredBox(
+                color: Theme.of(context).colorScheme.surface,
+                child: child,
+              );
             }
             if (useSharedElementPreview &&
                 route.popGestureInProgress &&
