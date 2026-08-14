@@ -36,6 +36,38 @@ class RecoveryCoordinator extends Interceptor {
   /// (重放走 dio.fetch 会重跑整条拦截器链)。
   static const String _managedKey = '_recoveryManaged';
 
+  /// 成功响应也可能需要恢复。
+  ///
+  /// 典型场景:服务端返回 2xx 但带 `discourse-logged-out` 头(会话已失效的
+  /// 弱信号)。这类结果不进错误链,若只挂 onError 就会漏掉。
+  @override
+  Future<void> onResponse(
+    Response<dynamic> response,
+    ResponseInterceptorHandler handler,
+  ) async {
+    if (response.requestOptions.extra[_managedKey] == true ||
+        response.requestOptions.spec.recoveryDisabled) {
+      handler.next(response);
+      return;
+    }
+
+    final outcome = AttemptOutcome.success(
+      response: response,
+      attemptIndex: 0,
+    );
+    if (_firstMatch(outcome) == null) {
+      handler.next(response);
+      return;
+    }
+
+    final result = await _runLoop(outcome);
+    if (result.isSuccess) {
+      handler.resolve(result.response!);
+    } else {
+      handler.reject(result.error!);
+    }
+  }
+
   @override
   Future<void> onError(
     DioException err,
@@ -53,54 +85,81 @@ class RecoveryCoordinator extends Interceptor {
       return;
     }
 
-    var outcome = AttemptOutcome.failure(error: err, attemptIndex: 0);
+    final result = await _runLoop(
+      AttemptOutcome.failure(error: err, attemptIndex: 0),
+    );
+    if (result.isSuccess) {
+      handler.resolve(result.response!);
+    } else {
+      handler.next(result.error!);
+    }
+  }
+
+  /// 恢复主循环:策略决策 → 记账 → 重放,直到成功或放弃。
+  ///
+  /// 全项目唯一的重放点。返回最终结果(成功响应或最后一次失败)。
+  Future<AttemptOutcome> _runLoop(AttemptOutcome initial) async {
+    var outcome = initial;
     final budget = _budgetFactory();
 
     while (true) {
       final policy = _firstMatch(outcome);
-      if (policy == null) {
-        handler.next(outcome.error!);
-        return;
-      }
+      if (policy == null) return outcome;
 
       final decision = await policy.decide(outcome);
+      final uri = _uriOf(outcome);
 
       switch (decision) {
         case RecoveryComplete():
-          handler.next(outcome.error!);
-          return;
+          return outcome;
 
         case RecoveryFail(:final error):
-          handler.next(error);
-          return;
+          return AttemptOutcome.failure(
+            error: error,
+            attemptIndex: outcome.attemptIndex,
+          );
 
-        case RecoveryRetry(:final delay):
+        case RecoveryRetry() || RecoveryRecoverThenRetry():
           if (!budget.tryConsume(policy.name)) {
             debugPrint(
               '[Recovery] 预算耗尽 policy=${policy.name} '
-              'attempts=${budget.attemptsUsed}/${budget.maxAttempts} '
-              '${outcome.error!.requestOptions.uri}',
+              'attempts=${budget.attemptsUsed}/${budget.maxAttempts} $uri',
             );
-            handler.next(outcome.error!);
-            return;
+            return outcome;
           }
+
+          if (decision is RecoveryRecoverThenRetry) {
+            final ok = await decision.action.run();
+            if (!ok) {
+              debugPrint(
+                '[Recovery] 恢复动作失败 action=${decision.action.name} '
+                'policy=${policy.name} $uri',
+              );
+              return outcome;
+            }
+          }
+
+          final delay = switch (decision) {
+            RecoveryRetry(:final delay) => delay,
+            RecoveryRecoverThenRetry(:final delay) => delay,
+            _ => Duration.zero,
+          };
           if (delay > Duration.zero) {
             await Future<void>.delayed(delay);
           }
+
           debugPrint(
             '[Recovery] 重放 policy=${policy.name} '
-            'attempt=${budget.attemptsUsed}/${budget.maxAttempts} '
-            '${outcome.error!.requestOptions.uri}',
+            'attempt=${budget.attemptsUsed}/${budget.maxAttempts} $uri',
           );
-          final next = await _replay(outcome, budget.attemptsUsed - 1);
-          if (next.isSuccess) {
-            handler.resolve(next.response!);
-            return;
-          }
-          outcome = next;
+          outcome = await _replay(outcome, budget.attemptsUsed - 1);
+          if (outcome.isSuccess) return outcome;
       }
     }
   }
+
+  static Uri _uriOf(AttemptOutcome outcome) =>
+      (outcome.error?.requestOptions ?? outcome.response!.requestOptions).uri;
 
   RecoveryPolicy? _firstMatch(AttemptOutcome outcome) {
     for (final policy in _policies) {
@@ -114,7 +173,9 @@ class RecoveryCoordinator extends Interceptor {
     AttemptOutcome previous,
     int attemptIndex,
   ) async {
-    final options = _nextAttempt(previous.error!.requestOptions);
+    final previousOptions =
+        previous.error?.requestOptions ?? previous.response!.requestOptions;
+    final options = _nextAttempt(previousOptions);
     try {
       final response = await dio.fetch<dynamic>(options);
       return AttemptOutcome.success(

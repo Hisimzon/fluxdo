@@ -9,14 +9,14 @@ import 'cookie/csrf_token_service.dart';
 import 'interceptors/cf_challenge_interceptor.dart';
 import 'interceptors/request_scheduler_interceptor.dart';
 import 'interceptors/session_guard_interceptor.dart';
-import 'interceptors/cronet_fallback_interceptor.dart';
 import 'interceptors/error_interceptor.dart';
 import 'interceptors/network_log_interceptor.dart';
 import 'interceptors/redirect_interceptor.dart';
 import 'interceptors/request_header_interceptor.dart';
+import 'recovery/engine_fallback_policy.dart';
 import 'recovery/policies.dart';
 import 'recovery/recovery_coordinator.dart';
-import 'interceptors/self_healing_interceptor.dart';
+import 'recovery/session_heal_policy.dart';
 
 /// 统一封装的 Dio 工厂
 class DiscourseDio {
@@ -71,42 +71,30 @@ class DiscourseDio {
       dio.interceptors.add(RequestSchedulerInterceptor());
     }
 
-    // 4. Cookie 管理
-    final cookieJarService = CookieJarService();
-    if (enableCookies && cookieJarService.isInitialized) {
-      // 4.1 v0.4.0: 401 / discourse-logged-out 透明自愈
-      //
-      // 注册顺序: SelfHealing 在前, AppCookieManager 在后。
-      // Dio 规则(5.11 实测): onRequest/onResponse/onError 三相**全部按注册
-      // 顺序 FIFO** 调用 → 先注册者先看到响应。
-      //
-      // 这是必要的: 服务器拒绝时常带 Set-Cookie 清 _t。如果 AppCookieManager
-      // 先看到响应, jar 中 _t 会被这条删除指令清空, SelfHealing 随后检查时
-      // 认为"真登出"跳过自愈。让 SelfHealing 先看到, 它读到的是 jar 上一个
-      // 稳定状态, 能正确判定"jar 仍有效, WV 多变体导致服务器拒绝", 触发自愈。
-      //
-      // 契约测试: test/services/network/interceptors/self_heal_cookie_order_test.dart
-      dio.interceptors.add(SelfHealingInterceptor(dio: dio));
-      dio.interceptors.add(AppCookieManager(cookieJarService.cookieJar));
-    }
-
-    // 5. Cronet 降级拦截器（在重试拦截器之前）
-    dio.interceptors.add(CronetFallbackInterceptor(dio));
-
-    // 6. 恢复协调器:限流等待与瞬态重试的唯一重放引擎
+    // 4. 恢复协调器:全项目唯一的重放引擎
     //
-    // 取代 dio_smart_retry。差异是刻意的:
-    // - 只对幂等方法(GET/HEAD/OPTIONS)重放 5xx,POST 重放会造成重复发帖;
-    // - 429 区分挑战型(交 CF 策略)与真限流,并尊重 Retry-After;
+    // 策略顺序即失败归属(首个 canHandle 者独占决策权):
+    //   会话自愈 → 引擎降级 → 限流等待 → 瞬态重试
+    //
+    // 必须注册在 AppCookieManager **之前**:dio 5.11 三相全 FIFO,先注册者
+    // 先看到响应。服务端拒绝时常带 Set-Cookie 清 _t,自愈判定要读的是那条
+    // 删除指令**落库前**的 jar 快照——顺序颠倒会让它误判"真登出"跳过自愈。
+    // 契约测试: test/services/network/recovery/session_heal_test.dart
+    //
+    // 取代 dio_smart_retry + SelfHealingInterceptor + CronetFallbackInterceptor。
+    // 与 dio_smart_retry 的行为差异是刻意的:
+    // - 5xx 只对幂等方法重放,POST 重放会造成重复发帖;
+    // - 429 区分挑战型(交 CF 盾)与真限流,并尊重 Retry-After;
     // - 尝试预算集中防环,不再靠各重放点自觉打 skip 标记。
-    //
-    // 注册在错误链靠前的位置,让它先于 ErrorInterceptor 拿到失败结果:
-    // 能自动恢复的失败不该先弹 toast。
+    final cookieJarService = CookieJarService();
+    final cookiesEnabled = enableCookies && cookieJarService.isInitialized;
     if (enableRetry) {
       dio.interceptors.add(
         RecoveryCoordinator(
           dio: dio,
           policies: [
+            if (cookiesEnabled) SessionSelfHealPolicy(),
+            const EngineFallbackPolicy(),
             RateLimitPolicy(
               isChallengeResponse: CfChallengeService.isCfChallengeResponse,
             ),
@@ -116,23 +104,28 @@ class DiscourseDio {
       );
     }
 
-    // 7. 请求头拦截器
+    // 5. Cookie 管理
+    if (cookiesEnabled) {
+      dio.interceptors.add(AppCookieManager(cookieJarService.cookieJar));
+    }
+
+    // 6. 请求头拦截器
     dio.interceptors.add(RequestHeaderInterceptor(CsrfTokenService()));
 
-    // 8. 重定向拦截器
+    // 7. 重定向拦截器
     dio.interceptors.add(RedirectInterceptor(dio));
 
-    // 9. 错误拦截器
+    // 8. 错误拦截器
     dio.interceptors.add(ErrorInterceptor());
 
-    // 10. CF 验证拦截器
+    // 9. CF 验证拦截器
     if (enableCfChallenge) {
       dio.interceptors.add(
         CfChallengeInterceptor(dio: dio, cookieJarService: cookieJarService),
       );
     }
 
-    // 11. 网络日志拦截器（最后一个，记录最终结果）
+    // 10. 网络日志拦截器（最后一个，记录最终结果）
     // 注意：Gateway URL 改写已移至 HttpClientAdapter 层（_GatewayAdapterWrapper），
     // 所有拦截器始终看到原始 URL，无需额外处理。
     if (enableNetworkLog) {

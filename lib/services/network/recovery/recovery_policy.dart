@@ -1,6 +1,8 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
+import 'recovery_action.dart';
+
 /// 一次传输尝试的结果(成功响应或失败,附本次尝试的元数据)。
 @immutable
 class AttemptOutcome {
@@ -48,6 +50,15 @@ sealed class RecoveryDecision {
   /// 延迟 [delay] 后重放。
   const factory RecoveryDecision.retry({Duration delay}) = RecoveryRetry;
 
+  /// 先执行全局恢复动作,成功后再重放;动作失败则终止。
+  ///
+  /// 用于"修复环境再重试"的场景:会话 sweep、引擎降级、CF 验证。
+  /// 动作自带单飞语义,并发失败请求共享一次执行。
+  const factory RecoveryDecision.recoverThenRetry(
+    RecoveryAction action, {
+    Duration delay,
+  }) = RecoveryRecoverThenRetry;
+
   /// 用 [error] 替换原错误后终止(如把 429 包装成类型化异常)。
   const factory RecoveryDecision.fail(DioException error) = RecoveryFail;
 }
@@ -59,6 +70,13 @@ final class RecoveryComplete extends RecoveryDecision {
 final class RecoveryRetry extends RecoveryDecision {
   const RecoveryRetry({this.delay = Duration.zero});
 
+  final Duration delay;
+}
+
+final class RecoveryRecoverThenRetry extends RecoveryDecision {
+  const RecoveryRecoverThenRetry(this.action, {this.delay = Duration.zero});
+
+  final RecoveryAction action;
   final Duration delay;
 }
 

@@ -881,7 +881,9 @@ mixin _AuthMixin on _DiscourseServiceBase {
             'skipSessionStateSync': true,
             'skipWebViewAdapter': true,
             AppCookieManager.skipCookieManagerExtraKey: true,
-            SelfHealingInterceptor.selfHealedExtraKey: true,
+            // 候选会话探测带手工 Cookie 头,绝不能被恢复层重放:
+            // 重放会清掉这个手工头,让探测失去意义。
+            FluxRequestKeys.noRecovery: true,
           },
         ),
       );
