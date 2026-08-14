@@ -17,7 +17,27 @@ import '../flux_request_spec.dart';
 import '../health/network_health_controller.dart';
 
 /// Cloudflare 验证拦截器
-/// 处理 CF Turnstile 验证
+///
+/// **为什么它不在恢复层里**(2026-08 评估结论,别再迁):
+///
+/// 恢复层的契约是"策略只产决策、Coordinator 统一执行重放",这对无状态恢复
+/// (限流等待、瞬态重放、会话自愈、引擎降级)成立,但 CF 的重试**之后**还有
+/// 三段有状态处置:
+/// 1. 重试成功 → 广播 [CfChallengeService.clearanceResolvedAt],
+///    BrowserTrustCoordinator 靠它 force 重跑被同一次 CF 挡下的 bootstrap;
+/// 2. 重试仍被拦 → 在同一上下文里判断能否切兼容、弹询问、撤 skipWebViewAdapter,
+///    **换传输方式再重放一次**;
+/// 3. 兼容重放失败 → 回滚 sessionFallback,否则后续请求全锁死在坏通道上。
+///
+/// 第 2、3 步要求"拿到重试结果后决定下一次用什么传输方式,并在失败时回滚
+/// 副作用",而策略拿不到重试结果——重放执行权在 Coordinator 手里。硬迁的
+/// 三条路都有害:为单个策略给 RecoveryDecision 加变体会污染通用抽象;策略
+/// 自己调 dio.fetch 违反"重放只有一处"这条铁律(等于把六个重放入口的病灶
+/// 重新引入);拆成多策略靠预算串联会丢掉回滚的时序保证。
+///
+/// 所以现状是**终态**:恢复层管无状态重放,本拦截器管需要 UI 交互与传输
+/// 切换的有状态恢复。分界由 RateLimitPolicy 的 isChallengeResponse 钩子
+/// 划定——挑战型 429 放行给这里,真限流归恢复层。
 class CfChallengeInterceptor extends Interceptor {
   CfChallengeInterceptor({required this.dio, required this.cookieJarService});
 
@@ -174,6 +194,12 @@ class CfChallengeInterceptor extends Interceptor {
           cfException(CfChallengeException(autoVerifyDisabled: true)),
         );
       }
+
+      // 注:这里刻意**不**用 NetworkHealthController.hasForegroundUi 提前判掉
+      // 无 UI 环境。它的判据是 navigatorKey.currentContext,而主 isolate 启动
+      // 早期那也是 null —— 提前 reject 会毁掉"启动时撞盾、等 context 就绪后
+      // 补弹验证"这条路径(启动窗口恰恰是验证最该成功的时候)。
+      // 无 UI 环境由 showManualVerify 内部的 10s context 等待上限收口。
 
       if (cfService.isInCooldown) {
         debugPrint('[Dio] CF Challenge in cooldown, rejecting request');

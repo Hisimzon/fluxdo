@@ -8,9 +8,13 @@ import 'retry_after.dart';
 
 /// 限流(429)恢复策略。
 ///
-/// 注册顺序上必须排在 CF 盾策略**之后**:CF 的速率限制规则配
-/// managed_challenge 时会返回 `429 + cf-mitigated: challenge`,那是挑战不是
-/// 限流,得由盾策略先认领。能走到这里的 429 才是真正的服务端限流。
+/// CF 的速率限制规则配 managed_challenge 时会返回
+/// `429 + cf-mitigated: challenge` —— 那是挑战不是限流。能走到本策略的 429
+/// 才是真正的服务端限流。
+///
+/// 分界靠 [isChallengeResponse] 钩子:命中即放行,交给 CfChallengeInterceptor。
+/// 那条链**刻意留在恢复层之外**(它的重试后处置要换传输方式再放、失败还要
+/// 回滚副作用,超出 [RecoveryDecision] 的表达力),详见该类的文档注释。
 ///
 /// 决策:
 /// - 服务端给出了可接受的等待时长 → 延迟后重放;

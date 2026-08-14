@@ -79,11 +79,16 @@ class NetworkHealthController {
     });
   }
 
-  /// 当前是否存在可用的前台 UI。
+  /// 当前是否存在可用的前台 UI(**仅供诊断,不要用于判定**)。
   ///
-  /// CF 验证必须能弹出 WebView,而后台 isolate(iOS 后台拉取)与启动早期
-  /// 都没有 navigator context——此时撞盾只能失败,不该去等一个永不到来的
-  /// context(历史上后台 isolate 就因此挂死到任务超时)。
+  /// 判据是 `navigatorKey.currentContext`,它在两种完全不同的情况下都为 null:
+  /// 后台 isolate(永远不会有 UI)与主 isolate 启动早期(context 马上就到)。
+  /// 二者无法区分,所以**不能**拿它去提前拒绝 CF 验证——那会毁掉"启动时撞盾、
+  /// 等 context 就绪后补弹"这条路径。无 UI 环境由
+  /// CfChallengeService.showManualVerify 内部的 context 等待上限收口。
+  ///
+  /// 它在快照里的价值是事后归因:日志显示 `ui=headless` 且验证没弹出来,
+  /// 就能确认是环境问题而非逻辑问题。
   static bool get _hasForegroundUi {
     try {
       final context = navigatorKey.currentContext;
