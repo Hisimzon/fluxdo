@@ -941,7 +941,10 @@ enum _AuthErrorDialogAction { confirm, clearData }
 
 class _MainPageState extends ConsumerState<MainPage>
     with WidgetsBindingObserver {
-  int _currentIndex = 0;
+  // 当前活跃 tab 按稳定 id 跟踪，不用 pageEntries 数字下标：登录态变化
+  // 会增删 requiresLogin 的 entry（退出登录即触发过滤、重新登录后恢复），
+  // 下标会漂移指向错误页面（曾表现为退出/重新登录后底栏跳到第二个）。
+  String _currentEntryId = NavEntryIds.home;
   ProviderSubscription<AsyncValue<String>>? _authErrorSub;
   ProviderSubscription<AsyncValue<void>>? _authStateSub;
   ProviderSubscription<AsyncValue<User?>>? _currentUserSub;
@@ -1119,7 +1122,7 @@ class _MainPageState extends ConsumerState<MainPage>
     if (index < 0 || index >= _lastResolvedEntries.length) return;
     final entry = _lastResolvedEntries[index];
 
-    // 非 page kind：直接触发对应回调，不改 _currentIndex
+    // 非 page kind：直接触发对应回调，不改 _currentEntryId
     if (entry.kind == NavEntryKind.panel) {
       _cancelPendingSingleTap();
       entry.onPanelTap?.call(context, ref);
@@ -1131,19 +1134,18 @@ class _MainPageState extends ConsumerState<MainPage>
       return;
     }
 
-    // page kind
-    final newPageIndex = _pageIndexOfBottom(index);
-    if (newPageIndex < 0) return;
+    // page kind（kind 已确认，这里仅做防御性映射校验）
+    if (_pageIndexOfBottom(index) < 0) return;
 
     final now = DateTime.now();
 
     // 切换 tab：只记录时间戳，不走手势分流
-    if (newPageIndex != _currentIndex) {
+    if (entry.id != _currentEntryId) {
       _cancelPendingSingleTap();
       _lastTappedIndex = index;
       _lastTapTime = now;
       ref.read(barVisibilityProvider.notifier).state = 1.0;
-      setState(() => _currentIndex = newPageIndex);
+      setState(() => _currentEntryId = entry.id);
       return;
     }
 
@@ -1439,7 +1441,7 @@ class _MainPageState extends ConsumerState<MainPage>
       );
     }
     if (mounted) {
-      setState(() => _currentIndex = 0);
+      setState(() => _currentEntryId = NavEntryIds.home);
       Navigator.of(context).popUntil((route) => route.isFirst);
       navigatorKey.currentState?.popUntil((route) => route.isFirst);
     }
@@ -1485,10 +1487,10 @@ class _MainPageState extends ConsumerState<MainPage>
         .where((e) => e.kind == NavEntryKind.page)
         .toList();
 
-    // _currentIndex 维度是 pageEntries；越界时 clamp
-    final safePageIndex = pageEntries.isEmpty
-        ? 0
-        : _currentIndex.clamp(0, pageEntries.length - 1);
+    // 按稳定 id 定位当前页；当前页被过滤（如退出登录后 requiresLogin
+    // entry 消失）时回退到第一个 page，下标绝不残留旧语义
+    var safePageIndex = pageEntries.indexWhere((e) => e.id == _currentEntryId);
+    if (safePageIndex < 0) safePageIndex = 0;
 
     // 底栏 selectedIndex 是当前激活 page 在 entries（含 panel/action）中的位置
     final selectedBottomIndex = pageEntries.isEmpty
@@ -1497,10 +1499,11 @@ class _MainPageState extends ConsumerState<MainPage>
 
     // 监听外部 tab 切换信号（快捷键触发），index 维度是 pageEntries
     ref.listen(switchTabProvider, (_, index) {
-      if (index >= 0 && index < pageEntries.length && index != _currentIndex) {
-        ref.read(barVisibilityProvider.notifier).state = 1.0;
-        setState(() => _currentIndex = index);
-      }
+      if (index < 0 || index >= pageEntries.length) return;
+      final id = pageEntries[index].id;
+      if (id == _currentEntryId) return;
+      ref.read(barVisibilityProvider.notifier).state = 1.0;
+      setState(() => _currentEntryId = id);
     });
 
     // 通知、深链等外部入口按稳定 id 切换工作区，避免用户重排底栏后
@@ -1510,9 +1513,9 @@ class _MainPageState extends ConsumerState<MainPage>
       final index = pageEntries.indexWhere(
         (entry) => entry.id == request.targetId,
       );
-      if (index < 0 || index == _currentIndex) return;
+      if (index < 0 || request.targetId == _currentEntryId) return;
       ref.read(barVisibilityProvider.notifier).state = 1.0;
-      setState(() => _currentIndex = index);
+      setState(() => _currentEntryId = request.targetId);
     });
 
     final destinations = [
