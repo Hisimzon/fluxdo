@@ -71,6 +71,12 @@ class FluxRequestKeys {
   /// 绕过并发/速率调度器(框架内部请求,避免与调用方争抢槽位造成死锁)。
   static const String skipScheduler = 'skipScheduler';
 
+  /// 关闭自动恢复(限流等待、瞬态重试)。
+  ///
+  /// 用于自己管调度的链路:长轮询要拿原始 429 读 Retry-After 自行退避;
+  /// 后台 isolate 没有重试窗口;页面数据有自己的降级路径。
+  static const String noRecovery = 'noRecovery';
+
   /// 3xx 响应上的 Set-Cookie 额外保存到每个 Location 目标域。
   /// OAuth 授权跳转链的会话 cookie 依赖此语义;重定向子请求会继承本键。
   static const String allowRedirectSetCookie = 'allowRedirectSetCookie';
@@ -135,6 +141,13 @@ extension type const FluxRequestSpec(Map<String, dynamic> _extra) {
       _extra[FluxRequestKeys.skipRhttpAdapter] == true;
 
   bool get skipScheduler => _extra[FluxRequestKeys.skipScheduler] == true;
+
+  /// 是否关闭自动恢复。
+  ///
+  /// 静默请求默认也关闭:长轮询/心跳这类链路自己管退避,拿到原始错误比
+  /// 被恢复层加工更有用(MessageBus 靠原始 429 的 Retry-After 计算退避)。
+  bool get recoveryDisabled =>
+      _extra[FluxRequestKeys.noRecovery] == true || isSilent;
 
   bool get allowRedirectSetCookie =>
       _extra[FluxRequestKeys.allowRedirectSetCookie] == true;

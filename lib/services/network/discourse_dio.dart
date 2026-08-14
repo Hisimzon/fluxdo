@@ -1,11 +1,10 @@
 import 'package:dio/dio.dart';
-import 'package:dio_smart_retry/dio_smart_retry.dart';
-import 'package:flutter/foundation.dart';
 
 import '../../constants.dart';
 import 'adapters/platform_adapter.dart';
 import 'cookie/app_cookie_manager.dart';
 import 'cookie/cookie_jar_service.dart';
+import '../cf_challenge_service.dart';
 import 'cookie/csrf_token_service.dart';
 import 'interceptors/cf_challenge_interceptor.dart';
 import 'interceptors/request_scheduler_interceptor.dart';
@@ -15,6 +14,8 @@ import 'interceptors/error_interceptor.dart';
 import 'interceptors/network_log_interceptor.dart';
 import 'interceptors/redirect_interceptor.dart';
 import 'interceptors/request_header_interceptor.dart';
+import 'recovery/policies.dart';
+import 'recovery/recovery_coordinator.dart';
 import 'interceptors/self_healing_interceptor.dart';
 
 /// 统一封装的 Dio 工厂
@@ -92,19 +93,25 @@ class DiscourseDio {
     // 5. Cronet 降级拦截器（在重试拦截器之前）
     dio.interceptors.add(CronetFallbackInterceptor(dio));
 
-    // 6. 重试拦截器 (dio_smart_retry)
+    // 6. 恢复协调器:限流等待与瞬态重试的唯一重放引擎
+    //
+    // 取代 dio_smart_retry。差异是刻意的:
+    // - 只对幂等方法(GET/HEAD/OPTIONS)重放 5xx,POST 重放会造成重复发帖;
+    // - 429 区分挑战型(交 CF 策略)与真限流,并尊重 Retry-After;
+    // - 尝试预算集中防环,不再靠各重放点自觉打 skip 标记。
+    //
+    // 注册在错误链靠前的位置,让它先于 ErrorInterceptor 拿到失败结果:
+    // 能自动恢复的失败不该先弹 toast。
     if (enableRetry) {
       dio.interceptors.add(
-        RetryInterceptor(
+        RecoveryCoordinator(
           dio: dio,
-          logPrint: (msg) => debugPrint('[Dio Retry] $msg'),
-          retries: 0, // TODO: 调试完成后改回 3
-          retryDelays: const [
-            Duration(seconds: 1),
-            Duration(seconds: 2),
-            Duration(seconds: 4),
+          policies: [
+            RateLimitPolicy(
+              isChallengeResponse: CfChallengeService.isCfChallengeResponse,
+            ),
+            const TransientRetryPolicy(),
           ],
-          retryableExtraStatuses: {429, 502, 503, 504},
         ),
       );
     }
