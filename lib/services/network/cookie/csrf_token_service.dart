@@ -1,13 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
-import '../../../constants.dart';
 import '../../app_logger.dart';
-import '../adapters/platform_adapter.dart';
-import '../interceptors/cf_challenge_interceptor.dart';
-import 'app_cookie_manager.dart';
-import 'cookie_jar_service.dart';
 import '../../storage/resilient_secure_storage.dart';
 
 /// Cookie 同步服务
@@ -22,7 +19,23 @@ class CsrfTokenService {
   final ResilientSecureStorage _storage = ResilientSecureStorage();
 
   String? _csrfToken;
-  Dio? _mainSiteDio;
+
+  /// 取 CSRF 用的 Dio。
+  ///
+  /// 由 DiscourseService 在构造时注入它自己的主 dio —— 那条链带完整拦截器
+  /// (CfChallengeInterceptor 能在 cf_clearance 失效时兜底弹验证、
+  /// AppCookieManager 保证 cookie 一致、恢复层处理瞬态失败)。
+  ///
+  /// 历史上这里自建了一个只装 3 个拦截器的独立 Dio,结果在后台/会话失效
+  /// 窗口撞 CF 时静默失败(UserApiKeyService 的注释记录了这次事故),
+  /// 而它的存在理由(UA 要与 WebView 一致)在主链上由
+  /// RequestHeaderInterceptor 同样满足。
+  Dio? _dio;
+
+  /// 注册取 CSRF 用的主 dio。只应由 DiscourseService 调用一次。
+  void attachDio(Dio dio) {
+    _dio ??= dio;
+  }
 
   /// 正在进行的 CSRF 刷新请求（防止并发重复请求，与 Discourse 前端的 activeCsrfRequest 对齐）
   Future<void>? _activeCsrfRequest;
@@ -56,7 +69,14 @@ class CsrfTokenService {
   void setCsrfToken(String? token) {
     if (token == null || token.isEmpty) return;
     _csrfToken = token;
-    unawaited(_storage.write(key: _csrfTokenKey, value: token));
+    // 持久化是尽力而为:内存里的 token 已经可用,落盘只为跨进程复用。
+    // keychain 不可用(权限/插件缺失/系统异常)不该让本次刷新算失败,
+    // 更不该冒泡成未处理的异步错误。
+    unawaited(
+      _storage.write(key: _csrfTokenKey, value: token).catchError((Object e) {
+        debugPrint('[CsrfTokenService] CSRF token 持久化失败(忽略): $e');
+      }),
+    );
   }
 
   /// 清空 CSRF token（BAD CSRF 时调用，下次 POST 前会自动刷新）
@@ -64,7 +84,11 @@ class CsrfTokenService {
     _csrfToken = null;
     // BAD CSRF 说明业务请求已到达服务端(非 CF 拦截),放行下一次刷新
     _lastFailureAt = null;
-    unawaited(_storage.delete(key: _csrfTokenKey));
+    unawaited(
+      _storage.delete(key: _csrfTokenKey).catchError((Object e) {
+        debugPrint('[CsrfTokenService] CSRF token 清除失败(忽略): $e');
+      }),
+    );
   }
 
   /// 从主站 /session/csrf 获取新的 CSRF token
@@ -83,56 +107,13 @@ class CsrfTokenService {
     return _activeCsrfRequest!;
   }
 
-  Future<Dio> _getMainSiteDio() async {
-    if (_mainSiteDio != null) return _mainSiteDio!;
-
-    final cookieJarService = CookieJarService();
-    if (!cookieJarService.isInitialized) {
-      await cookieJarService.initialize();
-    }
-
-    final dio = Dio(
-      BaseOptions(
-        baseUrl: AppConstants.baseUrl,
-        connectTimeout: const Duration(seconds: 30),
-        receiveTimeout: const Duration(seconds: 30),
-        followRedirects: false,
-        validateStatus: (status) =>
-            status != null && status >= 200 && status < 400,
-        // 跟 DiscourseService._dio 的 defaultHeaders 一致, 否则 CF 看 fingerprint
-        // 不一致 (缺 Accept/X-Requested-With/User-Agent) 直接当 bot 拦, GET
-        // /session/csrf 永远 403, CSRF 死循环。
-        //
-        // User-Agent 单独在下面异步补上（不能放进这个 const map）：
-        // AppConstants.getUserAgent() 读的是本机 WebView 引擎真实的
-        // navigator.userAgent——cf_clearance 正是这个 UA 拿到手的。这里
-        // 之前一直没设，所以这个 Dio 发出去的请求用的是 Dio/HTTP 客户端的
-        // 默认 UA，跟签发 cf_clearance 时的 UA 对不上，Cloudflare 直接
-        // 判定成非浏览器客户端来源——这才是"主站浏览正常，偏偏 CSRF/
-        // User API Key 这几个走独立 Dio 的请求老过不了盾"的真正根因。
-        headers: const {
-          'Accept': 'application/json, text/javascript, */*; q=0.01',
-          'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-          'X-Requested-With': 'XMLHttpRequest',
-        },
-      ),
-    );
-    dio.options.headers['User-Agent'] = await AppConstants.getUserAgent();
-
-    configurePlatformAdapter(dio);
-    dio.interceptors.add(AppCookieManager(cookieJarService.cookieJar));
-    // 必须装 CfChallengeInterceptor: jar 没 cf_clearance 时 CSRF 也会被 CF 403,
-    // 没这个 interceptor → silent fail → 整条 native 登录链路死锁。
-    dio.interceptors.add(
-      CfChallengeInterceptor(dio: dio, cookieJarService: cookieJarService),
-    );
-    _mainSiteDio = dio;
-    return dio;
-  }
-
   Future<void> _fetchCsrfToken() async {
+    final dio = _dio;
+    if (dio == null) {
+      debugPrint('[CsrfTokenService] 主 dio 未注册,跳过 CSRF 刷新');
+      return;
+    }
     try {
-      final dio = await _getMainSiteDio();
       const path = '/session/csrf';
       final response = await dio.get(
         path,
@@ -147,7 +128,7 @@ class CsrfTokenService {
           },
         ),
       );
-      final csrf = (response.data as Map<String, dynamic>?)?['csrf'] as String?;
+      final csrf = _extractCsrf(response.data);
       if (csrf != null && csrf.isNotEmpty) {
         _lastFailureAt = null;
         setCsrfToken(csrf);
@@ -211,10 +192,29 @@ class CsrfTokenService {
     }
   }
 
+  /// 从响应体提取 csrf。主链的 BackgroundTransformer 在部分 content-type
+  /// 下会交回未解码的 String,两种形态都要认(与
+  /// UserApiKeyService._fetchCsrfViaMainDio 同口径)。
+  static String? _extractCsrf(dynamic data) {
+    if (data is Map) return data['csrf'] as String?;
+    if (data is String && data.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(data);
+        if (decoded is Map) return decoded['csrf'] as String?;
+      } catch (_) {}
+    }
+    return null;
+  }
+
   /// 重置（登出时调用）
   Future<void> reset() async {
     _csrfToken = null;
     _lastFailureAt = null;
-    await _storage.delete(key: _csrfTokenKey);
+    // 内存态已清,落盘失败不影响登出正确性
+    try {
+      await _storage.delete(key: _csrfTokenKey);
+    } catch (e) {
+      debugPrint('[CsrfTokenService] CSRF token 清除失败(忽略): $e');
+    }
   }
 }

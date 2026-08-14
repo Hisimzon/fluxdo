@@ -215,6 +215,9 @@ class DiscourseService extends _DiscourseServiceBase
         },
       ),
       _storage = ResilientSecureStorage() {
+    // CSRF 刷新走这条主链(完整拦截器 + CF 兜底),不再自建独立 Dio。
+    // 独立 Dio 只装 3 个拦截器,在后台/会话失效窗口撞 CF 会静默失败。
+    _cookieSync.attachDio(_dio);
     _initInterceptors();
   }
 
