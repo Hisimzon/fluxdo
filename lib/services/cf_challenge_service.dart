@@ -136,6 +136,15 @@ class CfChallengeService {
     return true;
   }
 
+  /// 冷却截止时刻(仅供诊断快照读取,不参与判定——判定请用 [isInCooldown])。
+  DateTime? get cooldownUntil => _cooldownUntil;
+
+  /// 连续验证失败次数(诊断用)。
+  int get consecutiveFailures => _consecutiveFailures;
+
+  /// 本次会话是否已被用户拒绝过"切兼容模式"询问(诊断用)。
+  bool get sessionCompatPromptDeclined => _sessionCompatPromptDeclined;
+
   /// 重置冷却期和失败计数（验证成功后调用）
   void resetCooldown() {
     _cooldownUntil = null;

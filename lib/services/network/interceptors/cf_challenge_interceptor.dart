@@ -14,6 +14,7 @@ import '../webview/webview_adapter_settings_service.dart';
 import '../../../l10n/s.dart';
 import '../exceptions/api_exception.dart';
 import '../flux_request_spec.dart';
+import '../health/network_health_controller.dart';
 
 /// Cloudflare 验证拦截器
 /// 处理 CF Turnstile 验证
@@ -139,6 +140,9 @@ class CfChallengeInterceptor extends Interceptor {
           'tag=${requestTag ?? '-'}, skipCsrf=${err.requestOptions.spec.skipCsrf})';
       debugPrint('[Dio] $logMessage');
       AppLogger.warning(logMessage, tag: 'CfChallengeInterceptor');
+      // 撞盾是排查网络问题的关键时刻:把此刻的通道健康全貌拍进日志,
+      // 免得事后只有"某请求 403"这一条结果、没有引擎/降级/凭证状态。
+      NetworkHealthController.instance.dumpToLog('cf_challenge_detected');
       // 命中 CF 盾时立即重读系统代理状态:若用户刚开/关了系统代理,
       // 下一个请求就能用一致的出口重试,而不是等 10s 周期刷新。
       SystemProxyService.instance.refresh();

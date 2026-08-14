@@ -35,6 +35,16 @@ class CsrfTokenService {
 
   String? get csrfToken => _csrfToken;
 
+  /// 是否处于刷新失败冷却窗口内(诊断用)。
+  bool get isInFailureCooldown {
+    final lastFailureAt = _lastFailureAt;
+    if (lastFailureAt == null) return false;
+    return DateTime.now().difference(lastFailureAt) < _failureCooldown;
+  }
+
+  /// 上次刷新失败时刻(诊断用)。
+  DateTime? get lastFailureAt => _lastFailureAt;
+
   /// 初始化：从本地存储恢复 CSRF token
   Future<void> init() async {
     final raw = await _storage.read(key: _csrfTokenKey);

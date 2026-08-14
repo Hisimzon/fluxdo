@@ -5,6 +5,7 @@ import '../../log/log_writer.dart';
 import '../../user_presence_service.dart';
 import '../cookie/csrf_token_service.dart';
 import '../flux_request_spec.dart';
+import '../health/network_health_controller.dart';
 
 /// 请求头拦截器
 /// 负责设置 User-Agent 和 CSRF Token
@@ -52,6 +53,9 @@ class RequestHeaderInterceptor extends Interceptor {
           'url': options.uri.toString(),
           'isSilent': options.spec.isSilent,
         });
+        // 取不到 CSRF 就取消写请求,是用户可感知的失败(发帖/点赞失效)。
+        // 记录此刻通道健康,便于区分"CF 盾挡住了刷新"与"纯粹未登录"。
+        NetworkHealthController.instance.dumpToLog('csrf_unavailable');
         handler.reject(
           DioException(
             requestOptions: options,
