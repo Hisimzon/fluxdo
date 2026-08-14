@@ -334,8 +334,8 @@ mixin _UploadsMixin on _DiscourseServiceBase {
       } on DioException catch (e) {
         debugPrint('[DiscourseService] Upload image failed: $e');
 
-        // ErrorInterceptor 将 429 throw 为 RateLimitException，
-        // Dio 会将其包装在 DioException.error 中
+        // ErrorInterceptor 把 429 转成 DioException.error = RateLimitException
+        // (response 保留),这里按类型判定重试
         final innerError = e.error;
         if (innerError is RateLimitException && attempt < maxRetries) {
           final waitSeconds = innerError.retryAfterSeconds ?? 10;
@@ -437,8 +437,8 @@ mixin _UploadsMixin on _DiscourseServiceBase {
         }
         return result;
       } on DioException catch (e) {
-        // ErrorInterceptor 将 429 throw 为 RateLimitException，
-        // Dio 会将其包装在 DioException.error 中
+        // ErrorInterceptor 把 429 转成 DioException.error = RateLimitException
+        // (response 保留),这里按类型判定重试
         final innerError = e.error;
         if (innerError is RateLimitException && attempt < maxRetries) {
           final waitSeconds = innerError.retryAfterSeconds ?? 5;

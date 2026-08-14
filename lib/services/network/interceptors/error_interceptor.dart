@@ -60,7 +60,14 @@ class ErrorInterceptor extends Interceptor {
           (data['errors'] as List?)?.firstOrNull?.toString();
     }
 
-    // 重试耗尽后抛出自定义异常供 UI 层处理
+    // 转成类型化异常供 UI 层处理。
+    //
+    // 必须用 handler.next 携带原 err(含 response)而不是 throw:
+    // 拦截器 onError 里 throw 会让 DioException 被整体替换,response 丢失,
+    // 下游拦截器(CF 验证/网络日志)与调用方只能看到 statusCode=null——
+    // 网络日志里 429/5xx 恒记 null、业务层拿不到服务端报错文案都源于此。
+    // 用 next 而非 reject:保持与原 throw 一致的"继续走完错误链"语义,
+    // 让 NetworkLog 仍能记录这次失败。
     if (statusCode == 429) {
       final retryAfter = _extractRetryAfterSeconds(err.response);
       if (showErrorToast) {
@@ -69,7 +76,12 @@ class ErrorInterceptor extends Interceptor {
             : (errorMessage ?? S.current.network_rateLimited);
         ToastService.showError(toastMessage);
       }
-      throw RateLimitException(retryAfter, errorMessage);
+      handler.next(
+        err.copyWith(
+          error: RateLimitException(retryAfter, errorMessage, err.response),
+        ),
+      );
+      return;
     }
     if (statusCode == 502 || statusCode == 503 || statusCode == 504) {
       if (showErrorToast) {
@@ -77,7 +89,10 @@ class ErrorInterceptor extends Interceptor {
           errorMessage ?? S.current.network_serverUnavailableRetry,
         );
       }
-      throw ServerException(statusCode!);
+      handler.next(
+        err.copyWith(error: ServerException(statusCode!, err.response)),
+      );
+      return;
     }
 
     // 其他错误

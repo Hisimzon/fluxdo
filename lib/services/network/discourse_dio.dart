@@ -73,17 +73,20 @@ class DiscourseDio {
     // 4. Cookie 管理
     final cookieJarService = CookieJarService();
     if (enableCookies && cookieJarService.isInitialized) {
-      dio.interceptors.add(AppCookieManager(cookieJarService.cookieJar));
       // 4.1 v0.4.0: 401 / discourse-logged-out 透明自愈
       //
-      // 注册顺序: AppCookieManager 在前, SelfHealing 在后。
-      // Dio 规则: onResponse 按 LIFO 调用 → SelfHealing 先于 AppCookieManager。
+      // 注册顺序: SelfHealing 在前, AppCookieManager 在后。
+      // Dio 规则(5.11 实测): onRequest/onResponse/onError 三相**全部按注册
+      // 顺序 FIFO** 调用 → 先注册者先看到响应。
       //
       // 这是必要的: 服务器拒绝时常带 Set-Cookie 清 _t。如果 AppCookieManager
-      // 先 onResponse, jar 中 _t 被清空, SelfHealing 检查时认为"真登出"跳过自愈。
-      // 反之让 SelfHealing 先 onResponse, 看到的是 jar 上一个稳定状态,
-      // 能正确判定"jar 仍有效, WV 多变体导致服务器拒绝", 触发自愈。
+      // 先看到响应, jar 中 _t 会被这条删除指令清空, SelfHealing 随后检查时
+      // 认为"真登出"跳过自愈。让 SelfHealing 先看到, 它读到的是 jar 上一个
+      // 稳定状态, 能正确判定"jar 仍有效, WV 多变体导致服务器拒绝", 触发自愈。
+      //
+      // 契约测试: test/services/network/interceptors/self_heal_cookie_order_test.dart
       dio.interceptors.add(SelfHealingInterceptor(dio: dio));
+      dio.interceptors.add(AppCookieManager(cookieJarService.cookieJar));
     }
 
     // 5. Cronet 降级拦截器（在重试拦截器之前）

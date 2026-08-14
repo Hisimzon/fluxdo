@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:dio/dio.dart';
+import 'package:enhanced_cookie_jar/enhanced_cookie_jar.dart';
 import 'package:flutter/foundation.dart';
 
 import '../cookie/cookie_jar_service.dart';
@@ -45,16 +46,20 @@ class SelfHealingInterceptor extends Interceptor {
   // 可注入依赖（测试用）
   // ---------------------------------------------------------------------------
 
-  CookieJarService _jar = CookieJarService();
   SessionCookieSentinel _sentinel = SessionCookieSentinel.instance;
+
+  /// jar 中 `_t` 的读取口。默认走 CookieJarService 单例;
+  /// 单例的构造器是私有的无法伪造,测试通过替换这个回调来控制 jar 快照。
+  Future<CanonicalCookie?> Function() _readSessionToken =
+      () => CookieJarService().getCanonicalCookie('_t');
 
   @visibleForTesting
   void replaceDependenciesForTest({
-    CookieJarService? jar,
     SessionCookieSentinel? sentinel,
+    Future<CanonicalCookie?> Function()? readSessionToken,
   }) {
-    if (jar != null) _jar = jar;
     if (sentinel != null) _sentinel = sentinel;
+    if (readSessionToken != null) _readSessionToken = readSessionToken;
   }
 
   // ---------------------------------------------------------------------------
@@ -152,7 +157,7 @@ class SelfHealingInterceptor extends Interceptor {
     final uri = options.uri;
 
     // 检查 jar 中 _t 是否有效（jar 无 _t = 真登出）
-    final jarT = await _jar.getCanonicalCookie('_t');
+    final jarT = await _readSessionToken();
     final jarValid =
         jarT != null &&
         jarT.value.isNotEmpty &&
