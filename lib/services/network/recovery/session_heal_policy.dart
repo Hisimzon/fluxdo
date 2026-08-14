@@ -91,8 +91,9 @@ class SessionSelfHealPolicy implements RecoveryPolicy {
     }
 
     // 登出请求的 401 / discourse-logged-out 是**预期结果**而非故障。
-    // 此时 jar 里的 _t 往往还没清(登出流程后面才清),自愈会误判"会话
-    // 值得修"而触发 sweep + 重放,把登出卡住。
+    // 登出时 jar 里的 _t 往往还没清(流程后面才清),自愈会据此判定"会话
+    // 值得修"而去 sweep + 重放——纯属白做一次 WebView cookie 操作,还会
+    // 拖慢登出。
     if (_isLogoutRequest(options)) return false;
 
     final response = outcome.error?.response ?? outcome.response;

@@ -1585,14 +1585,9 @@ mixin _AuthMixin on _DiscourseServiceBase {
       await _dio.delete(
         '/session/$usernameForLogout',
         options: Options(
-          extra: const {
-            // 登出请求的 401 / discourse-logged-out 是**预期结果**,不是会话
-            // 故障。若让恢复层接手,自愈会看到 jar 里仍有效的 _t(登出后面
-            // 才清)判定"值得修",触发 sweep + 重放直到预算耗尽,这个 await
-            // 就把登出 UI 卡在 loading 上。策略侧也有登出端点排除做纵深防护。
-            FluxRequestKeys.noRecovery: true,
-            FluxRequestKeys.skipAuthCheck: true,
-          },
+          // 登出不该产生"会话失效"信号(它本来就是要失效)。
+          // 自愈的豁免在策略侧按端点判定,见 SessionSelfHealPolicy。
+          extra: const {FluxRequestKeys.skipAuthCheck: true},
         ),
       );
     } catch (e) {
@@ -1637,9 +1632,9 @@ mixin _AuthMixin on _DiscourseServiceBase {
 
     // ===== 第四步：清除内存状态 =====
     //
-    // 从这里到第六步用 try/finally 包住:凭证清理与状态广播是登出的**本质**,
-    // 任何一步(secure storage 写入、cookie 清理、预加载刷新)出意外都不能
-    // 让第七步的广播被跳过——否则 UI 收不到登出通知,会停在中间态。
+    // 第四~六步用 try/finally 包住:凭证已经清掉、状态广播却没发出去是最坏
+    // 的中间态(UI 仍以为在登录中)。secure storage 写入与 cookie 清理都是
+    // 平台通道调用,理论上可能抛,那时也必须把广播补上。
     try {
       _clearPreviousTTokenFallback();
       _tToken = null;
