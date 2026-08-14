@@ -113,7 +113,8 @@ class CfChallengeService {
   BuildContext? _context;
   static DateTime? _lastToastAt;
   Future<bool>? _activeSessionCompatPrompt;
-  bool _sessionCompatPromptDeclined = false;
+  /// 上次拒绝「切兼容」的时刻;超过 [_sessionCompatDeclineTtl] 后可再问。
+  DateTime? _sessionCompatDeclinedAt;
   Completer<BuildContext>? _contextReadyCompleter;
   VoidCallback? _activePromoteToForeground;
   bool _pendingPromoteToForeground = false;
@@ -125,6 +126,18 @@ class CfChallengeService {
   static const _ineffectiveClearanceCooldown = Duration(seconds: 60);
   static const _maxFailuresBeforeCooldown = 3;
   static const _toastCooldown = Duration(seconds: 2);
+
+  /// 等待 navigator context 就绪的上限。
+  ///
+  /// 启动早期 context 通常几百毫秒内到位;等不到说明当前环境根本没有前台
+  /// UI(后台 isolate 等),此时应放弃验证而不是挂死。
+  static const _contextWaitTimeout = Duration(seconds: 10);
+
+  /// "切兼容模式"询问被拒绝后的静默期。
+  ///
+  /// 此前一旦拒绝就沉默到登出,用户启动时随手点了取消,之后哪怕盾天天触发
+  /// 也不再询问。给它加时效:既不反复打扰,也不永久放弃。
+  static const _sessionCompatDeclineTtl = Duration(minutes: 30);
 
   /// 检查是否在冷却期
   bool get isInCooldown {
@@ -143,7 +156,12 @@ class CfChallengeService {
   int get consecutiveFailures => _consecutiveFailures;
 
   /// 本次会话是否已被用户拒绝过"切兼容模式"询问(诊断用)。
-  bool get sessionCompatPromptDeclined => _sessionCompatPromptDeclined;
+  /// 当前是否处于「已拒绝切兼容」的静默期内(诊断用)。
+  bool get sessionCompatPromptDeclined {
+    final declinedAt = _sessionCompatDeclinedAt;
+    if (declinedAt == null) return false;
+    return DateTime.now().difference(declinedAt) < _sessionCompatDeclineTtl;
+  }
 
   /// 重置冷却期和失败计数（验证成功后调用）
   void resetCooldown() {
@@ -200,7 +218,7 @@ class CfChallengeService {
   /// 原生链路在完成验证后仍被 CF 拒绝时，询问用户是否仅在本次会话
   /// 使用浏览器网络栈。并发失败请求共享同一个弹窗结果。
   Future<bool> confirmSessionCompatibilityMode() {
-    if (_sessionCompatPromptDeclined) return Future.value(false);
+    if (sessionCompatPromptDeclined) return Future.value(false);
     final active = _activeSessionCompatPrompt;
     if (active != null) return active;
 
@@ -243,14 +261,15 @@ class CfChallengeService {
     );
     final confirmed = result == true;
     if (!confirmed) {
-      // 用户本次会话已经明确拒绝，不在后续 CF 失败时反复打扰。
-      _sessionCompatPromptDeclined = true;
+      // 用户明确拒绝:进入静默期不再打扰。带时效而非永久——盾的成因
+      // (出口 IP、代理配置)可能在半小时内就变了,那时值得再问一次。
+      _sessionCompatDeclinedAt = DateTime.now();
     }
     return confirmed;
   }
 
   void resetSessionCompatibilityDecision() {
-    _sessionCompatPromptDeclined = false;
+    _sessionCompatDeclinedAt = null;
   }
 
   void setContext(BuildContext context) {
@@ -369,11 +388,31 @@ class CfChallengeService {
       }
     }
 
-    // 启动时可能还没有可用的 context，等到 context 可用后立即弹出
+    // 启动时可能还没有可用的 context，等到 context 可用后立即弹出。
+    //
+    // 但这个等待必须有上限:后台 isolate(iOS 后台拉取)与无 UI 环境里
+    // context 永远不会到来,无限等待会让请求挂死,只能靠系统任务超时收尸
+    // (历史上后台拉取撞盾就是这个形态)。启动早期的等待仍然有效——那时
+    // context 通常在几百毫秒内就绪。
     if (ctx == null || !ctx.mounted) {
       _contextReadyCompleter ??= Completer<BuildContext>();
       debugPrint('[CfChallenge] Waiting for context to be ready...');
-      ctx = await _contextReadyCompleter!.future;
+      try {
+        ctx = await _contextReadyCompleter!.future.timeout(
+          _contextWaitTimeout,
+        );
+      } on TimeoutException {
+        debugPrint(
+          '[CfChallenge] 等待 context 超时 '
+          '(${_contextWaitTimeout.inSeconds}s),按无 UI 环境处理',
+        );
+        CfChallengeLogger.log(
+          '[VERIFY] Skipped: no UI available after '
+          '${_contextWaitTimeout.inSeconds}s',
+          level: 'warning',
+        );
+        return null;
+      }
     }
     if (!ctx.mounted) {
       debugPrint('[CfChallenge] Context no longer mounted');
