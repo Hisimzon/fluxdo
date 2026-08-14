@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:enhanced_cookie_jar/enhanced_cookie_jar.dart';
 import 'package:flutter/foundation.dart';
 
@@ -89,6 +90,11 @@ class SessionSelfHealPolicy implements RecoveryPolicy {
       return false;
     }
 
+    // 登出请求的 401 / discourse-logged-out 是**预期结果**而非故障。
+    // 此时 jar 里的 _t 往往还没清(登出流程后面才清),自愈会误判"会话
+    // 值得修"而触发 sweep + 重放,把登出卡住。
+    if (_isLogoutRequest(options)) return false;
+
     final response = outcome.error?.response ?? outcome.response;
     if (response == null) return false;
 
@@ -102,6 +108,12 @@ class SessionSelfHealPolicy implements RecoveryPolicy {
     if (body is Map && body['error_type'] == 'not_logged_in') return false;
 
     return true;
+  }
+
+  /// 是否是登出请求(`DELETE /session/:username`)。
+  static bool _isLogoutRequest(RequestOptions options) {
+    return options.method.toUpperCase() == 'DELETE' &&
+        options.uri.path.startsWith('/session/');
   }
 
   @override

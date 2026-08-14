@@ -1563,6 +1563,40 @@ mixin _AuthMixin on _DiscourseServiceBase {
     await _storage.write(key: DiscourseService._usernameKey, value: username);
   }
 
+  /// 登出 API 调用的总超时。
+  ///
+  /// 撤销 User API Key + DELETE /session 两个请求合计。超时即放弃服务端
+  /// 撤销、继续清本地——绝不让网络把登出 UI 卡住。
+  static const Duration _logoutApiTimeout = Duration(seconds: 8);
+
+  /// 登出的服务端调用:撤销自愈凭证 + 删除会话。
+  Future<void> _performLogoutApiCalls() async {
+    // 显式登出:自愈凭证一并撤销,防止之后被自愈机制"复活"会话
+    await UserApiKeyService().revokeAndClear(_dio);
+
+    final usernameForLogout =
+        _username ?? await _storage.read(key: DiscourseService._usernameKey);
+    if (usernameForLogout == null || usernameForLogout.isEmpty) return;
+
+    try {
+      await _dio.delete(
+        '/session/$usernameForLogout',
+        options: Options(
+          extra: const {
+            // 登出请求的 401 / discourse-logged-out 是**预期结果**,不是会话
+            // 故障。若让恢复层接手,自愈会看到 jar 里仍有效的 _t(登出后面
+            // 才清)判定"值得修",触发 sweep + 重放直到预算耗尽,这个 await
+            // 就把登出 UI 卡在 loading 上。策略侧也有登出端点排除做纵深防护。
+            FluxRequestKeys.noRecovery: true,
+            FluxRequestKeys.skipAuthCheck: true,
+          },
+        ),
+      );
+    } catch (e) {
+      debugPrint('[DiscourseService] Logout API failed: $e');
+    }
+  }
+
   /// 登出
   Future<void> logout({bool callApi = true, bool refreshPreload = true}) async {
     // ===== 第一步：切断所有旧请求 =====
@@ -1575,17 +1609,26 @@ mixin _AuthMixin on _DiscourseServiceBase {
     CfChallengeService().resetSessionCompatibilityDecision();
 
     // ===== 第三步：调用登出 API（可选，用新的 generation） =====
+    //
+    // 整段带超时兜底:登出是用户的明确意图,本地状态清理(第四步起)绝不能
+    // 被网络卡住。服务端会话没撤销掉是可接受的降级——本地凭证清干净后,
+    // 那个会话也无法再被这台设备使用。
     if (callApi) {
-      // 显式登出:自愈凭证一并撤销,防止之后被自愈机制"复活"会话
-      await UserApiKeyService().revokeAndClear(_dio);
-      final usernameForLogout =
-          _username ?? await _storage.read(key: DiscourseService._usernameKey);
       try {
-        if (usernameForLogout != null && usernameForLogout.isNotEmpty) {
-          await _dio.delete('/session/$usernameForLogout');
-        }
-      } catch (e) {
-        debugPrint('[DiscourseService] Logout API failed: $e');
+        await _performLogoutApiCalls().timeout(_logoutApiTimeout);
+      } on TimeoutException {
+        debugPrint(
+          '[DiscourseService] 登出 API 超时 '
+          '(${_logoutApiTimeout.inSeconds}s),继续清理本地状态',
+        );
+        LogWriter.instance.write({
+          'timestamp': DateTime.now().toIso8601String(),
+          'level': 'warning',
+          'type': 'auth',
+          'event': 'logout_api_timeout',
+          'message': '登出 API 超时，已跳过并继续清理本地状态',
+          'timeoutSeconds': _logoutApiTimeout.inSeconds,
+        });
       }
     }
 
