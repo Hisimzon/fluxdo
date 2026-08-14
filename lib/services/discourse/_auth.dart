@@ -1569,6 +1569,9 @@ mixin _AuthMixin on _DiscourseServiceBase {
   /// 撤销、继续清本地——绝不让网络把登出 UI 卡住。
   static const Duration _logoutApiTimeout = Duration(seconds: 8);
 
+  /// 登出后预加载刷新的超时。它只是为下一个匿名会话预热,不必久等。
+  static const Duration _preloadRefreshTimeout = Duration(seconds: 10);
+
   /// 登出的服务端调用:撤销自愈凭证 + 删除会话。
   Future<void> _performLogoutApiCalls() async {
     // 显式登出:自愈凭证一并撤销,防止之后被自愈机制"复活"会话
@@ -1633,37 +1636,61 @@ mixin _AuthMixin on _DiscourseServiceBase {
     }
 
     // ===== 第四步：清除内存状态 =====
-    _clearPreviousTTokenFallback();
-    _tToken = null;
-    _username = null;
-    _cachedUserSummary = null;
-    _cachedUserSummaryUsername = null;
-    _userSummaryCacheTime = null;
-    await _storage.delete(key: DiscourseService._usernameKey);
-    _credentialsLoaded = false;
-    // bootstrap 成功态是「进程 × 登录会话」级(浏览器语义:每页面加载一次),
-    // 换账号 = 新浏览器会话,这里复位让下一个会话重新跑一次。
-    WebViewSessionCookieRefreshService.instance.resetSessionState();
+    //
+    // 从这里到第六步用 try/finally 包住:凭证清理与状态广播是登出的**本质**,
+    // 任何一步(secure storage 写入、cookie 清理、预加载刷新)出意外都不能
+    // 让第七步的广播被跳过——否则 UI 收不到登出通知,会停在中间态。
+    try {
+      _clearPreviousTTokenFallback();
+      _tToken = null;
+      _username = null;
+      _cachedUserSummary = null;
+      _cachedUserSummaryUsername = null;
+      _userSummaryCacheTime = null;
+      await _storage.delete(key: DiscourseService._usernameKey);
+      _credentialsLoaded = false;
+      // bootstrap 成功态是「进程 × 登录会话」级(浏览器语义:每页面加载一次),
+      // 换账号 = 新浏览器会话,这里复位让下一个会话重新跑一次。
+      WebViewSessionCookieRefreshService.instance.resetSessionState();
 
-    // ===== 第五步：清除 Cookie（保留 cf_clearance）=====
-    await _cookieSync.reset();
-    final cfClearanceCookie = await _cookieJar.getCfClearanceCookie();
-    await _cookieJar.clearAll();
-    if (cfClearanceCookie != null) {
-      await _cookieJar.restoreCfClearance(cfClearanceCookie);
+      // ===== 第五步：清除 Cookie（保留 cf_clearance）=====
+      await _cookieSync.reset();
+      final cfClearanceCookie = await _cookieJar.getCfClearanceCookie();
+      await _cookieJar.clearAll();
+      if (cfClearanceCookie != null) {
+        await _cookieJar.restoreCfClearance(cfClearanceCookie);
+      }
+
+      // ===== 第六步：刷新预加载数据（确保新状态就绪后再广播）=====
+      //
+      // 尽力而为:这一步是为下一个匿名会话预热站点数据,不是登出的必要条件。
+      // 它发 GET / 拉首页 HTML,可能撞 CF 盾、被限流、或解析失败抛
+      // FormatException —— 任何一种都不该让登出流程中断。
+      PreloadedDataService().reset();
+      if (refreshPreload) {
+        try {
+          await PreloadedDataService().refresh().timeout(
+            _preloadRefreshTimeout,
+          );
+        } catch (e) {
+          debugPrint('[DiscourseService] 登出后预加载刷新失败(忽略): $e');
+          LogWriter.instance.write({
+            'timestamp': DateTime.now().toIso8601String(),
+            'level': 'warning',
+            'type': 'auth',
+            'event': 'logout_preload_refresh_failed',
+            'message': '登出后预加载刷新失败，已忽略并继续',
+            'error': e.toString(),
+          });
+        }
+      }
+    } finally {
+      // ===== 第七步：广播状态变更（无论前面是否出错都必须执行）=====
+      currentUserNotifier.value = null;
+      _authStateController.add(null);
+
+      // ===== 第八步：重置 auth strike 状态 =====
+      _resetStrikes();
     }
-
-    // ===== 第六步：刷新预加载数据（确保新状态就绪后再广播）=====
-    PreloadedDataService().reset();
-    if (refreshPreload) {
-      await PreloadedDataService().refresh();
-    }
-
-    // ===== 第七步：广播状态变更（此时一切已就绪）=====
-    currentUserNotifier.value = null;
-    _authStateController.add(null);
-
-    // ===== 第八步：重置 auth strike 状态 =====
-    _resetStrikes();
   }
 }

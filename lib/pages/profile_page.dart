@@ -254,15 +254,29 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
         'message': '用户主动退出登录',
       });
 
-      await ref.read(discourseServiceProvider).logout(callApi: true);
-      if (mounted) {
-        await AppStateRefresher.resetForLogout(
-          ProviderScope.containerOf(context, listen: false),
-        );
-      }
-
-      if (mounted) {
-        LoadingDialog.hide(context);
+      // logout 内部任何一步抛错(如预加载刷新失败)都不能让 loading 弹窗
+      // 留在屏上——用户会看到永久的"正在退出…"。用 finally 保证关闭。
+      try {
+        await ref.read(discourseServiceProvider).logout(callApi: true);
+        if (mounted) {
+          await AppStateRefresher.resetForLogout(
+            ProviderScope.containerOf(context, listen: false),
+          );
+        }
+      } catch (e) {
+        debugPrint('[ProfilePage] 退出登录异常: $e');
+        LogWriter.instance.write({
+          'timestamp': DateTime.now().toIso8601String(),
+          'level': 'warning',
+          'type': 'lifecycle',
+          'event': 'logout_error',
+          'message': '退出登录过程出错，本地状态已尽力清理',
+          'error': e.toString(),
+        });
+      } finally {
+        if (mounted) {
+          LoadingDialog.hide(context);
+        }
       }
     }
   }
