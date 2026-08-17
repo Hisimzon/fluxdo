@@ -61,6 +61,8 @@ import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../utils/predictive_back_probe.dart';
+
 final Expando<ValueNotifier<bool>> _predictiveBackGestureStates =
     Expando<ValueNotifier<bool>>('predictive back gesture state');
 
@@ -132,7 +134,9 @@ class PredictiveBackCupertinoPageTransitionsBuilder
                 // 透明路由(opaque:false)不垫:会挡住其下方本该可见的页面
                 if (!route.opaque) return child;
                 return ColoredBox(
-                  color: Theme.of(context).colorScheme.surface,
+                  color: kPredictiveBackProbe
+                      ? const Color(kProbeFreezeBackdropColor)
+                      : Theme.of(context).colorScheme.surface,
                   child: child,
                 );
               }
@@ -818,7 +822,9 @@ Widget buildPredictiveBackPageTransitions(
                 phase == _PredictiveBackPhase.idle) {
               if (!route.opaque) return child;
               return ColoredBox(
-                color: Theme.of(context).colorScheme.surface,
+                color: kPredictiveBackProbe
+                    ? const Color(kProbeFreezeBackdropColor)
+                    : Theme.of(context).colorScheme.surface,
                 child: child,
               );
             }
