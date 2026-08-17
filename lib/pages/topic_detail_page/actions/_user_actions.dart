@@ -556,9 +556,25 @@ extension _UserActions on _TopicDetailPageState {
 
   void _handleSolutionChanged(int postId, bool accepted) {
     final params = _params;
+    Post? sourcePost;
+    if (_isNestedView) {
+      // 树形帖子在独立 provider:同步盖章状态;帖子对象供平铺侧 banner 反查
+      // (目标帖可能不在平铺加载窗口里)
+      sourcePost = _findPostInNestedTree(postId);
+      ref
+          .read(nestedTopicProvider(_activeNestedParams).notifier)
+          .updatePostSolution(postId, accepted);
+    }
+    sourcePost ??= ref
+        .read(topicDetailProvider(params))
+        .value
+        ?.postStream
+        .posts
+        .where((p) => p.id == postId)
+        .firstOrNull;
     ref
         .read(topicDetailProvider(params).notifier)
-        .updatePostSolution(postId, accepted);
+        .updatePostSolution(postId, accepted, sourcePost: sourcePost);
   }
 
   void _handleRefreshPost(int postId) {
