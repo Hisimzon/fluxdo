@@ -24,31 +24,23 @@
 //    追加在上游内容之后,不打断上游类排布。
 // 6. 预测返回期间冻结下层路由的 Cupertino secondaryAnimation。否则
 //    当前页缩小后,下层页仍停在向左偏移 1/3 屏的位置,右侧会露出
-//    Navigator 的黑色背景。
+//    Navigator 的黑色背景。判定用 phase == idle(下层 detector 从未
+//    认领,phase 恒 idle),禁用 !isCurrent —— commit 的 pop 同步翻非
+//    current,按 isCurrent 会把被弹路由自己的收尾动画吞成静态贴图。
 // 7. 手势中途 Activity 进后台(挂后台/锁屏)时代打 cancel。系统不为
 //    被打断的手势补发 commit/cancel,否则 userGestureInProgress 计数
-//    永不归零 → popGestureEnabled 恒 false,回前台后预测返回永久失效
-//    (手势无人认领,退场无动画),手势期 flag 也卡死。
-// 8. 转场期静默认领:入场未完成、或根路由压着退场中的上一划
-//    (isFirst 被 popGestureEnabled 排除)时,快速再划全员拒绝,引擎
-//    fallback 整树缩小露黑边;回调若仍注册,commit 还会兜到
-//    SystemNavigator.pop 关 app。栈顶 detector 静默认领:不驱动路由
-//    动画,commit 非根排队 maybePop、根路由吞掉,cancel 弃认领。
-// 9. 收尾事件按 phase 门控:binding 的认领者列表 commit/cancel 后不
-//    清空(下次 start 才清),原生 onStop 每次锁屏广播的
-//    cancelBackGesture 会打到上一次手势的陈旧认领者,无配对 start 的
-//    handleCancelBackGesture 令 userGesture 计数下溢,预测返回全局
-//    静默失效(浮层不查计数故独活)。phase 非 start/update 一律忽略。
-// 10. 全局手势活跃标记 [predictiveBackGestureActive](上游没有):
-//    BackDispatchHold 据此在手势进行中不撤 OnBackInvokedCallback
-//    注册 —— 否则第二划拖过退场窗口边界时被中途注销,系统当场接管
-//    出黑底。认领(含静默)置 true,commit/cancel/锁屏代打清 false。
-// 11. 差异点 6 的冻结分支必须带铺底(ColoredBox surface)。手势期 flag
-//    按 Navigator 存,同一 Navigator 下所有 phase==idle 的路由都进冻结
-//    分支,直接 return child 剥掉了 Cupertino 转场的背景填充 → 预测
-//    预览缩小后,框外/边缘无人铺底,露出 Navigator 底色纯黑(连划黑底
-//    实测几何:框内两页重影、框外全黑)。opaque:false 路由不垫(会挡
-//    住其下本该可见的页面)。
+//    永不归零 → popGestureEnabled 恒 false,回前台后预测返回永久失效。
+//    只在 phase 为 start/update 时代打(commit/cancel 后的窗口内再代打
+//    会与收尾动画回调各触发一次 didStopUserGesture,计数下溢)。
+// 8. commit/cancel 按 phase 门控:binding 的认领者列表在 commit/cancel
+//    后不清空(仅下次 start 才清),而原生 MainActivity.onStop 每次锁屏
+//    都无条件广播 cancelBackGesture,会打到陈旧认领者上 → 无配对 start
+//    的 didStopUserGesture 让计数下溢成负 → userGestureInProgress 永久
+//    false,预测返回渲染全灭。非 start/update 一律忽略。
+// 9. [buildPredictiveBackPageTransitions] 的 useSharedElementPreview:
+//    false 时仍认领手势(HeroController 只为 user gesture 转场启动带
+//    transitionOnUserGestures 的 Hero 飞行,不认领则 Hero 完全不飞),
+//    只是视觉走 fallback —— 缩放预览会与 Hero 飞行体打架。
 //
 // Copyright 2014 The Flutter Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
@@ -61,18 +53,8 @@ import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../../utils/predictive_back_probe.dart';
-
 final Expando<ValueNotifier<bool>> _predictiveBackGestureStates =
     Expando<ValueNotifier<bool>>('predictive back gesture state');
-
-/// 差异点 10:预测返回手势是否活跃(任一 detector 已认领,含静默
-/// 认领)。BackDispatchHold 在手势进行中保持 OnBackInvokedCallback
-/// 注册不被撤销 —— 引擎收到 setFrameworkHandlesBack(false) 会立刻
-/// unregister,进行中的手势被截断,后续 progress/commit 直接改由
-/// 系统接管(整窗缩小黑底)。
-final ValueNotifier<bool> predictiveBackGestureActive =
-    ValueNotifier<bool>(false);
 
 ValueNotifier<bool>? _predictiveBackGestureStateFor(PageRoute<dynamic> route) {
   final navigator = route.navigator;
@@ -116,29 +98,14 @@ class PredictiveBackCupertinoPageTransitionsBuilder
             Widget buildTransition(bool predictiveBackInProgress) {
               // Cupertino 的 secondaryAnimation 会把上一页向左推出约
               // 1/3 屏。预测返回缩小当前页时,上一页应作为静态背景铺满。
-              // 判定「未参与手势」必须用 phase == idle(下层路由的
-              // detector 从未认领手势,phase 恒为 idle),不能用
-              // !route.isCurrent:commit 的 navigator.pop() 同步把被弹
-              // 路由翻成非 current,而手势 flag 要等收尾动画播完才清,
-              // 按 isCurrent 判定会把 commit 收尾动画整段吞成静态贴图。
-              //
-              // 差异点 12:冻结必须**带铺底**。手势期 flag 按 Navigator
-              // 存(Expando 键是 navigator),同一 Navigator 下所有
-              // phase==idle 的路由都会进本分支 —— 包括预览缩小后露出
-              // 边缘的下层/根路由。直接 return child 等于剥掉 Cupertino
-              // 转场的背景填充,预览框外与边缘无人铺底 → 露出 Navigator
-              // 底色纯黑(连划黑底实测几何:缩小框内两页重影、框外全黑)。
-              // 用 ColoredBox 垫主题 surface 后,任何露出区域都是主题色。
+              // 判定「未参与手势」用 phase == idle:下层路由的 detector
+              // 从未认领手势,phase 恒 idle。不能用 !route.isCurrent —— commit
+              // 的 navigator.pop() 同步把被弹路由翻成非 current,而手势 flag
+              // 要等收尾动画播完才清,按 isCurrent 判定会把 commit 收尾动画
+              // 整段吞成静态贴图(快划返回时可见动画完全消失)。
               if (predictiveBackInProgress &&
                   phase == _PredictiveBackPhase.idle) {
-                // 透明路由(opaque:false)不垫:会挡住其下方本该可见的页面
-                if (!route.opaque) return child;
-                return ColoredBox(
-                  color: kPredictiveBackProbe
-                      ? const Color(kProbeFreezeBackdropColor)
-                      : Theme.of(context).colorScheme.surface,
-                  child: child,
-                );
+                return child;
               }
 
               // Only do a predictive back transition when the user is performing a
@@ -232,48 +199,14 @@ class _PredictiveBackGestureDetectorState
     with WidgetsBindingObserver {
   bool _ownsPredictiveBackGesture = false;
 
-  // 差异点(文件头第 7 条):后台/锁屏打断手势后,系统不会为这条
-  // 手势补发 commit/cancel。置位后忽略迟到的收尾事件,直到下一次
-  // startBackGesture 重新认领。
+  /// 差异点 7:后台/锁屏代打 cancel 后置位,忽略系统迟到的收尾事件,
+  /// 直到下一次 startBackGesture 重新认领。
   bool _gestureForceCancelled = false;
 
   /// True when the predictive back gesture is enabled.
   bool get _isEnabled {
     return widget.route.isCurrent && widget.route.popGestureEnabled;
   }
-
-  /// 差异点(文件头第 8 条,修订):退场转场窗口内的兜底认领。
-  ///
-  /// 非根路由不需要:B 压着退场中的 C 时,B 自己的 animation 已
-  /// completed,popGestureEnabled 为 true,正常路径即可认领。
-  /// 真正无人认领的是两种窗口:
-  /// - 当前路由自己的入场动画未完成(push 进行中再划);
-  /// - **根路由 + 上方路由退场中**(secondaryAnimation 非 dismissed):
-  ///   isFirst 被 popGestureEnabled 排除,全员拒绝 → 引擎/系统接管
-  ///   出黑边;若回调仍注册,commit 还会兜底到 SystemNavigator.pop
-  ///   直接关 app。
-  /// 静默认领:不驱动路由动画;commit 时根路由吞掉(退场中的第二划
-  /// 意图是"回上一页",上一页已在退场,不该再退成关 app),非根排队
-  /// maybePop;cancel 弃认领。
-  bool get _shouldClaimDuringTransition {
-    final route = widget.route;
-    // 注意:不检查 popDisposition。双击退出模式下根路由 PopScope
-    // canPop:false → popDisposition == doNotPop,若以此拒绝武装,
-    // 退场窗口的第二划全员不认领 → 系统直接关 Activity(黑边+app
-    // 进后台,logcat 实证 2026-08-11)。静默认领的 commit 走
-    // maybePop,PopScope 的拦截语义在 maybePop 里天然生效,认领
-    // 本身不需要这个前置。
-    if (!route.isCurrent || route.willHandlePopInternally) {
-      return false;
-    }
-    final bool ownEntranceInFlight = !route.animation!.isCompleted;
-    final bool aboveExitInFlight =
-        route.secondaryAnimation!.status != AnimationStatus.dismissed;
-    return ownEntranceInFlight || aboveExitInFlight;
-  }
-
-  /// 本次认领是「转场期静默认领」(不驱动路由动画,commit 只 pop)
-  bool _silentClaim = false;
 
   _PredictiveBackPhase get phase => _phase;
   _PredictiveBackPhase _phase = _PredictiveBackPhase.idle;
@@ -305,26 +238,15 @@ class _PredictiveBackGestureDetectorState
 
   @override
   bool handleStartBackGesture(PredictiveBackEvent backEvent) {
-    if (backEvent.isButtonEvent) {
-      return false;
-    }
-    if (!_isEnabled) {
-      // 差异点 8:转场期静默认领,防引擎 fallback 黑边
-      if (_shouldClaimDuringTransition) {
-        _gestureForceCancelled = false;
-        _silentClaim = true;
-        predictiveBackGestureActive.value = true;
-        return true;
-      }
+    final bool gestureInProgress = !backEvent.isButtonEvent && _isEnabled;
+    if (!gestureInProgress) {
       return false;
     }
 
-    _gestureForceCancelled = false;
-    _silentClaim = false;
     phase = _PredictiveBackPhase.start;
     _ownsPredictiveBackGesture = true;
-    predictiveBackGestureActive.value = true;
     _predictiveBackGestureStateFor(widget.route)?.value = true;
+    _gestureForceCancelled = false;
     widget.route.handleStartBackGesture(progress: 1 - backEvent.progress);
     startBackEvent = currentBackEvent = backEvent;
     return true;
@@ -332,7 +254,7 @@ class _PredictiveBackGestureDetectorState
 
   @override
   void handleUpdateBackGestureProgress(PredictiveBackEvent backEvent) {
-    if (_gestureForceCancelled || _silentClaim) return;
+    if (_gestureForceCancelled) return;
     phase = _PredictiveBackPhase.update;
 
     widget.route.handleUpdateBackGestureProgress(
@@ -343,19 +265,14 @@ class _PredictiveBackGestureDetectorState
 
   @override
   void handleCancelBackGesture() {
-    predictiveBackGestureActive.value = false;
     if (_gestureForceCancelled) return;
-    if (_silentClaim) {
-      _silentClaim = false;
-      return;
-    }
-    // 差异点 9:只在手势活跃期收 cancel。binding 的认领者列表在
-    // commit/cancel 后不清空(仅下次 start 时清),原生 onStop 每次
-    // 锁屏广播的 cancelBackGesture 会打到上一次手势的认领者上;
-    // 不设门则 route.handleCancelBackGesture → didStopUserGesture
-    // 无配对 start,计数器下溢成负,userGestureInProgress 永久
-    // false,预测返回渲染全灭(浮层 handler 有 _gestureActive 同款
-    // 门控,故「全 app 坏、唯独浮层活」)。
+    // 只在手势活跃期收 cancel。binding 的认领者列表在 commit/cancel 后
+    // 不清空(仅下次 start 时清),而原生 MainActivity.onStop 每次锁屏都
+    // 无条件广播 cancelBackGesture,会打到上一次手势的陈旧认领者上;不
+    // 设门则 handleCancelBackGesture → didStopUserGesture 无配对 start,
+    // userGesture 计数下溢成负,userGestureInProgress 永久 false,预测
+    // 返回渲染全灭(浮层 handler 有自己的门控,故「全 app 坏、唯独浮层
+    // 活」)。
     if (phase != _PredictiveBackPhase.start &&
         phase != _PredictiveBackPhase.update) {
       return;
@@ -368,21 +285,8 @@ class _PredictiveBackGestureDetectorState
 
   @override
   void handleCommitBackGesture() {
-    predictiveBackGestureActive.value = false;
     if (_gestureForceCancelled) return;
-    if (_silentClaim) {
-      _silentClaim = false;
-      // 转场期 commit:排队再退一层(等本帧转场态结算,直接 pop 会
-      // 撞上仍在 popping 的上一路由)。用 maybePop:PopScope 的
-      // doNotPop(双击退出拦截等)在此天然生效;根路由 maybePop 是
-      // no-op(除 LocalHistory 外),自动退化为「吞掉」。
-      final navigator = widget.route.navigator;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        navigator?.maybePop();
-      });
-      return;
-    }
-    // 差异点 9:同 cancel,陈旧认领者不得响应伪事件
+    // 同 cancel:陈旧认领者不得响应伪事件(否则计数下溢)
     if (phase != _PredictiveBackPhase.start &&
         phase != _PredictiveBackPhase.update) {
       return;
@@ -393,21 +297,17 @@ class _PredictiveBackGestureDetectorState
     startBackEvent = currentBackEvent = null;
   }
 
-  // 差异点(文件头第 7 条):Activity 进后台(挂后台/锁屏)会打断
-  // 进行中的预测返回手势,且系统不再补发 commit/cancel。若不收尾,
-  // navigator.userGestureInProgress 计数永不归零 → popGestureEnabled
-  // 恒 false,回前台后所有预测返回被静默拒绝(手势无人认领,系统
-  // 只能整 app 缩走/无动画),且手势期 flag 卡 true 让下层路由永远
-  // 渲染成静态背景。这里代打 cancel 把手势态完整归零。
-  // hidden/paused 会先后各触发一次,_gestureForceCancelled 防重入
-  // (_ownsPredictiveBackGesture 要等取消动画播完才清,挡不住)。
+  // 差异点 7:Activity 进后台(挂后台/锁屏)会打断进行中的预测返回手势,
+  // 且系统不再补发 commit/cancel。若不收尾,navigator.userGestureInProgress
+  // 计数永不归零 → popGestureEnabled 恒 false,回前台后所有预测返回被静默
+  // 拒绝(手势无人认领,退场无动画)。这里代打 cancel 把手势态完整归零。
   //
-  // 只在 phase 为 start/update(手势活跃未收尾)时代打:commit/cancel
-  // 之后 _ownsPredictiveBackGesture 仍为 true(等收尾动画),这个窗口
-  // 内锁屏若再代打 cancel,会与 commit/cancel 自己挂的动画完成回调
-  // 各触发一次 didStopUserGesture → 计数下溢(release 无 assert,
-  // 计数变 -1),之后 userGestureInProgress 永久 off-by-one 恒 false,
-  // 预测返回全局静默失效 —— 恰是本修复要防的症状,别自己造一遍。
+  // 只在 phase 为 start/update(手势活跃未收尾)时代打:commit/cancel 之后
+  // 的窗口内若再代打,会与 commit/cancel 自己挂的动画完成回调各触发一次
+  // didStopUserGesture → 计数下溢(release 无 assert,计数变 -1),之后
+  // userGestureInProgress 永久 off-by-one 恒 false —— 恰是本修复要防的
+  // 症状,别自己造一遍。hidden/paused 先后各触发一次,靠
+  // _gestureForceCancelled 防重入。
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
@@ -415,20 +315,13 @@ class _PredictiveBackGestureDetectorState
         state != AppLifecycleState.paused) {
       return;
     }
-    // 转场期静默认领没碰路由动画,锁屏只需弃掉认领
-    if (_silentClaim) {
-      _silentClaim = false;
-      predictiveBackGestureActive.value = false;
-      return;
-    }
-    if (!_ownsPredictiveBackGesture || _gestureForceCancelled) return;
+    if (_gestureForceCancelled) return;
     if (phase != _PredictiveBackPhase.start &&
         phase != _PredictiveBackPhase.update) {
       return;
     }
 
     _gestureForceCancelled = true;
-    predictiveBackGestureActive.value = false;
     phase = _PredictiveBackPhase.cancel;
     widget.route.handleCancelBackGesture();
     startBackEvent = currentBackEvent = null;
@@ -484,18 +377,7 @@ class _PredictiveBackGestureDetectorState
 
   @override
   void dispose() {
-    // dispose 可能发生在树锁定期间(被弹路由退场动画结束帧),同步
-    // notify 手势 flag 会命中 markNeedsBuild-when-locked 断言;
-    // 延迟到帧后清理。
-    if (_ownsPredictiveBackGesture || _silentClaim) {
-      _ownsPredictiveBackGesture = false;
-      _silentClaim = false;
-      final route = widget.route;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _predictiveBackGestureStateFor(route)?.value = false;
-        predictiveBackGestureActive.value = false;
-      });
-    }
+    _clearPredictiveBackGesture();
     _userGestureInProgress?.removeListener(_handleUserGestureChanged);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
@@ -769,13 +651,6 @@ class _PredictiveBackSharedElementPageTransitionState
 /// shared-element 预览,其余(push、按钮/程序化 pop、其它平台)保持
 /// 路由原有的 [fallbackBuilder] 转场。
 ///
-/// [useSharedElementPreview] = false 时仍认领手势(路由动画由手势进度
-/// 驱动),但视觉沿用 [fallbackBuilder] —— 供 Hero 路由使用:预览的
-/// 缩放/裁切会跟 Hero 飞行体打架,而认领手势恰恰是 Hero 跟手飞行的
-/// 前提(HeroController 只为 user gesture 转场启动带
-/// transitionOnUserGestures 标记的 Hero;不认领则系统整 app 缩走,
-/// Hero 完全不飞)。两端 Hero 都需置 transitionOnUserGestures: true。
-///
 /// 判定与 [PredictiveBackCupertinoPageTransitionsBuilder] 同标准
 /// (popGestureInProgress 且 phase 非 idle,见文件头差异点 4):这些
 /// 路由今天没挂 app 内拖拽返回手势,但 fullscreen_swipe_back 等手势
@@ -812,22 +687,15 @@ Widget buildPredictiveBackPageTransitions(
           final predictiveBackState = _predictiveBackGestureStateFor(route);
 
           Widget buildTransition(bool predictiveBackInProgress) {
-            // 同上方主题 builder:判定「未参与手势」用 phase == idle,
-            // 不能用 !isCurrent(commit 的 pop 同步翻非 current,会把
-            // 被弹路由自己的 commit 收尾动画吞掉)。
-            // 差异点 12:冻结带铺底,否则露出区域是 Navigator 底色纯黑。
-            // 本 helper 的路由多为 opaque:false(查看器等),铺底会挡住
-            // 底层页面 —— 仅在不透明路由上垫。
+            // 同上:用 phase == idle,不能用 !isCurrent(会吞 commit 收尾动画)
             if (predictiveBackInProgress &&
                 phase == _PredictiveBackPhase.idle) {
-              if (!route.opaque) return child;
-              return ColoredBox(
-                color: kPredictiveBackProbe
-                    ? const Color(kProbeFreezeBackdropColor)
-                    : Theme.of(context).colorScheme.surface,
-                child: child,
-              );
+              return child;
             }
+            // useSharedElementPreview: false —— 仍认领手势(HeroController
+            // 只为 user gesture 转场启动带 transitionOnUserGestures 的 Hero
+            // 飞行,不认领则 Hero 完全不飞),但视觉走 fallback:缩放预览会
+            // 跟 Hero 飞行体打架。
             if (useSharedElementPreview &&
                 route.popGestureInProgress &&
                 phase != _PredictiveBackPhase.idle) {
@@ -842,8 +710,6 @@ Widget buildPredictiveBackPageTransitions(
               );
             }
 
-            // 手势期间落到这里(useSharedElementPreview: false):路由
-            // 动画已被手势进度驱动,fallback 转场自然跟手。
             return fallbackBuilder(
               context,
               animation,

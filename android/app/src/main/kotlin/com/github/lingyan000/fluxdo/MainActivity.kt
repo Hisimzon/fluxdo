@@ -43,26 +43,6 @@ class MainActivity : FlutterActivity() {
         window.decorView.requestApplyInsets()
     }
 
-    // OnBackInvokedCallback 常驻注册:无视 Dart 侧下发的 false。
-    //
-    // 引擎默认行为(FlutterActivity.setFrameworkHandlesBack):收到 false 就
-    // 从系统 OnBackInvokedDispatcher **注销**回调。注销后返回手势不再进
-    // Flutter,由系统按「关闭 Activity」处理 —— 表现为整窗缩小、窗外纯黑
-    // (windowBackground 在窗内管不到),连划场景实测必现。
-    //
-    // 而 Dart 侧无法阻止这条注销:BackGestureChannel.startBackGesture() 调
-    // invokeMethod 时不传 Result 回调,引擎根本不读框架的「是否认领」返回值
-    // (该布尔值只在 Dart 内部决定后续 update/commit 派发给谁)。
-    //
-    // 恒 true 后所有返回事件都进 Flutter,由 Dart 层统一决策:栈内 pop /
-    // PopScope 拦截(双击退出 Toast)/ 根路由退出。副作用:根路由退出 app
-    // 不再有系统「回桌面」预览动画,由我们自己的收尾承担 —— 以消灭黑底为
-    // 优先的取舍。release()/onDestroy 走 unregisterOnBackInvokedCallback
-    // 直接注销,不经本 override,销毁清理不受影响。
-    override fun setFrameworkHandlesBack(frameworkHandlesBack: Boolean) {
-        super.setFrameworkHandlesBack(true)
-    }
-
     // 修复 Android 14+ 预见式返回手势进行中时, 锁屏 / 切后台导致 UI 卡死
     // 根因: 系统不会在 Activity 进入 stopped 时补发 onBackCancelled, Flutter 引擎
     //       不知道手势已中断, Dart 路由 AnimationController 卡在 0.x 中间值,

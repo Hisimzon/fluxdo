@@ -71,7 +71,6 @@ import 'services/log/log_writer.dart';
 import 'services/download_service.dart';
 import 'services/migration_service.dart';
 import 'services/navigation/app_route_observer.dart';
-import 'services/navigation/back_dispatch_hold.dart';
 import 'services/navigation/back_exit_guard.dart';
 import 'services/navigation/keyboard_focus_guard.dart';
 import 'services/window_state_service.dart';
@@ -779,7 +778,6 @@ class MainApp extends ConsumerWidget {
                 keyboardFocusGuard,
                 JankNavObserver(),
                 EscFallbackObserver(),
-                backDispatchHold,
               ],
               title: 'FluxDO',
               locale: TranslationProvider.of(context).flutterLocale,
@@ -789,11 +787,6 @@ class MainApp extends ConsumerWidget {
                 GlobalCupertinoLocalizations.delegate,
               ],
               supportedLocales: AppLocaleUtils.supportedLocales,
-              // 退场动画窗口内不撤 OnBackInvokedCallback 注册,连划
-              // 第二下仍进 Flutter(配合转场期静默认领),不再被系统
-              // 当「关 Activity」接管出黑边预览。见 BackDispatchHold。
-              onNavigationNotification:
-                  backDispatchHold.onNavigationNotification,
               themeMode: resolvedTheme.mode,
               // 仅注入 fontFamilyFallback，不替换 textTheme，避免覆盖 Android OEM
               // 系统字体（chinese_font_library 自带的 ThemeData.useSystemChineseFont
