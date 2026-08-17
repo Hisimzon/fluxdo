@@ -1435,9 +1435,40 @@ extension _UserActions on _TopicDetailPageState {
       _resolvedViewportPostNumber,
     );
     if (refreshStream) {
-      notifier.refreshWithPostNumber(anchor);
+      unawaited(_reloadStreamKeepingViewport(notifier, anchor));
     } else {
       notifier.reloadTopicMetadata();
+    }
+  }
+
+  /// 整流刷新(reload_topic refresh_stream / 积压坍缩)落地后按锚点重定位。
+  ///
+  /// 与手动刷新 [_handleRefresh] 对齐：刷新只替换数据而不重定位时，
+  /// center 由陈旧的 initialCenterPostNumber（初次定位楼层，阅读中不
+  /// 更新）计算，大概率错锚到新窗口首/末帖 —— 视口被甩到窗口边缘，
+  /// eyeline 随即上报错误楼层，进度条跳到顶部/底部，跳幅是窗口偏移
+  /// 量而非实际阅读位移。state 落地与 prepareRefresh 的标脏在同一
+  /// 微任务链内，合并为一帧 build，错锚帧不会上屏。
+  Future<void> _reloadStreamKeepingViewport(
+    TopicDetailNotifier notifier,
+    int anchor,
+  ) async {
+    await notifier.refreshWithPostNumber(anchor);
+    if (!mounted) return;
+    final updated = ref.read(topicDetailProvider(_params)).value;
+    if (updated == null) return;
+    // 刷新在途(网络往返)期间用户可能已继续滚动:落地时重取当前位置,
+    // 仍在新窗口内就按新位置重锚,避免把用户拽回刷新前的楼层。
+    final currentAnchor = _controller.getRefreshAnchorPostNumber(
+      _resolvedViewportPostNumber,
+    );
+    final posts = updated.postStream.posts;
+    final effectiveAnchor =
+        posts.any((p) => p.postNumber == currentAnchor) ? currentAnchor : anchor;
+    if (posts.any((p) => p.postNumber == effectiveAnchor)) {
+      _controller.prepareRefresh(effectiveAnchor, skipHighlight: true);
+    } else {
+      _controller.clearJumpTarget();
     }
   }
 
