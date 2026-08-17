@@ -7,6 +7,7 @@ import '../../models/topic.dart';
 import '../../pages/topic_detail_page/topic_detail_page.dart';
 import '../../providers/discourse_providers.dart';
 import '../../providers/selected_topic_provider.dart';
+import '../../providers/topic_summary_request.dart';
 import '../common/error_view.dart';
 import '../common/relative_time_text.dart';
 import '../markdown_editor/markdown_renderer.dart';
@@ -14,19 +15,21 @@ import '../../../../../l10n/s.dart';
 
 /// 话题 AI 摘要组件
 class TopicSummaryWidget extends ConsumerWidget {
-  final int topicId;
+  final TopicSummaryRequest request;
+  final VoidCallback onRegenerate;
   /// 跳转到当前话题的指定帖子
   final void Function(int postNumber)? onJumpToPost;
 
   const TopicSummaryWidget({
     super.key,
-    required this.topicId,
+    required this.request,
+    required this.onRegenerate,
     this.onJumpToPost,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final summaryAsync = ref.watch(topicSummaryProvider(topicId));
+    final summaryAsync = ref.watch(topicSummaryProvider(request));
     final theme = Theme.of(context);
 
     // 使用 AnimatedSize 和 AnimatedSwitcher 优化状态切换动画
@@ -57,7 +60,7 @@ class TopicSummaryWidget extends ConsumerWidget {
             child: InlineErrorView(
               error: error,
               message: S.current.topic_summaryLoadFailed,
-              onRetry: () => ref.invalidate(topicSummaryProvider(topicId)),
+              onRetry: () => ref.invalidate(topicSummaryProvider(request)),
             ),
           ),
           data: (summary) {
@@ -209,7 +212,9 @@ class TopicSummaryWidget extends ConsumerWidget {
             text: summary.summarizedText,
             isStreaming: summary.isStreaming,
             onInternalLinkTap: (linkTopicId, topicSlug, postNumber) {
-              if (linkTopicId == topicId && postNumber != null && onJumpToPost != null) {
+              if (linkTopicId == request.topicId &&
+                  postNumber != null &&
+                  onJumpToPost != null) {
                 // 当前话题链接 → 跳转到对应帖子
                 onJumpToPost!(postNumber);
               } else {
@@ -253,7 +258,7 @@ class TopicSummaryWidget extends ConsumerWidget {
                 // 刷新按钮
                 if (summary.canRegenerate && summary.outdated)
                   TextButton.icon(
-                    onPressed: () => _refreshSummary(ref),
+                    onPressed: onRegenerate,
                     icon: const Icon(Symbols.refresh_rounded, size: 16),
                     label: Text(S.current.common_refresh),
                     style: TextButton.styleFrom(
@@ -267,10 +272,6 @@ class TopicSummaryWidget extends ConsumerWidget {
         ],
       ),
     );
-  }
-
-  void _refreshSummary(WidgetRef ref) {
-    ref.invalidate(topicSummaryProvider(topicId));
   }
 }
 
@@ -419,15 +420,25 @@ class _CollapsibleTopicSummaryState
     with SingleTickerProviderStateMixin {
   bool _isExpanded = false;
   bool _hasRequested = false; // 是否已触发过请求
+  late TopicSummaryRequest _summaryRequest;
   late final AnimationController _controller;
   late final Animation<double> _animation;
 
   @override
   void initState() {
     super.initState();
+    _summaryRequest = TopicSummaryRequest(widget.topicId);
     _controller = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 300));
     _animation = CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic);
+  }
+
+  @override
+  void didUpdateWidget(covariant CollapsibleTopicSummary oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.topicId != widget.topicId) {
+      _summaryRequest = TopicSummaryRequest(widget.topicId);
+    }
   }
 
   @override
@@ -452,7 +463,7 @@ class _CollapsibleTopicSummaryState
 
     // 只有在已请求后才 watch provider
     final summaryAsync = _hasRequested
-        ? ref.watch(topicSummaryProvider(widget.topicId))
+        ? ref.watch(topicSummaryProvider(_summaryRequest))
         : null;
 
     final isLoading = summaryAsync?.isLoading == true ||
@@ -545,7 +556,8 @@ class _CollapsibleTopicSummaryState
               ? Padding(
                   padding: const EdgeInsets.only(top: 12),
                   child: TopicSummaryWidget(
-                    topicId: widget.topicId,
+                    request: _summaryRequest,
+                    onRegenerate: _regenerateSummary,
                     onJumpToPost: widget.onJumpToPost,
                   ),
                 )
@@ -567,6 +579,12 @@ class _CollapsibleTopicSummaryState
       } else {
         _controller.reverse();
       }
+    });
+  }
+
+  void _regenerateSummary() {
+    setState(() {
+      _summaryRequest = _summaryRequest.nextRegeneration();
     });
   }
 }

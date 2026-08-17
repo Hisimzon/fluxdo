@@ -11,6 +11,7 @@ import '../widgets/common/anchor_guard_sliver.dart';
 import 'bookmark_sync_controller.dart';
 import 'core_providers.dart';
 import 'message_bus/models.dart';
+import 'topic_summary_request.dart';
 
 part 'topic_detail/_loading_methods.dart';
 part 'topic_detail/_filter_methods.dart';
@@ -223,7 +224,10 @@ final topicDetailProvider = AsyncNotifierProvider.family.autoDispose<TopicDetail
 
 /// 话题 AI 摘要 Provider
 final topicSummaryProvider = StreamProvider.autoDispose
-    .family<TopicSummary?, int>((ref, topicId) {
+    .family<TopicSummary?, TopicSummaryRequest>((ref, request) {
   final service = ref.read(discourseServiceProvider);
-  return service.watchTopicSummary(topicId);
+  return service.watchTopicSummary(
+    request.topicId,
+    skipAgeCheck: request.skipAgeCheck,
+  );
 });
