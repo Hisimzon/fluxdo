@@ -249,7 +249,7 @@ extension _ScrollActions on _TopicDetailPageState {
     }
     _controller.updateSelectedPostIndicator(targetPostNumber);
     _selectShortcutPostNumber(detail, targetPostNumber);
-    await _scrollToPost(targetPostNumber);
+    await _jumpToPostInTopic(targetPostNumber);
   }
 
   int _resolveNavigationAnchorPostNumber(List<Post> posts, int delta) {

@@ -101,6 +101,9 @@ extension _UserActions on _TopicDetailPageState {
 
   /// 等待键盘完全收起后再滚动到指定帖子
   void _scrollAfterKeyboardDismiss(int postNumber) {
+    // 树形视图:新帖已就地插入树中(根回复 prepend/子回复自动展开),
+    // 对齐 Discourse nested 的 skipJumpOnSave,不做跳转
+    if (_isNestedView) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       if (MediaQuery.of(context).viewInsets.bottom > 0) {
@@ -142,8 +145,7 @@ extension _UserActions on _TopicDetailPageState {
                     : () async {
                         setState(() => isDeleting = true);
                         try {
-                          await DiscourseService()
-                              .deleteReviewable(pending.id);
+                          await DiscourseService().deleteReviewable(pending.id);
                           if (dialogContext.mounted) {
                             Navigator.pop(dialogContext, true);
                           }
@@ -618,7 +620,9 @@ extension _UserActions on _TopicDetailPageState {
         ? detail.highestPostNumber
         : detail.postsCount;
     final container = _providerContainer;
-    container.read(topicTrackingStateProvider.notifier).markTopicUnread(
+    container
+        .read(topicTrackingStateProvider.notifier)
+        .markTopicUnread(
           widget.topicId,
           highestPostNumber: highest,
           categoryId: detail.categoryId,
@@ -1017,7 +1021,9 @@ extension _UserActions on _TopicDetailPageState {
               final postNumber = int.tryParse(controller.text.trim());
               Navigator.pop(context);
               if (postNumber != null && postNumber > 0) {
-                _scrollToPost(postNumber.clamp(1, detail.postsCount));
+                unawaited(
+                  _jumpToPostInTopic(postNumber.clamp(1, detail.postsCount)),
+                );
               }
             },
             child: Text(context.l10n.topic_jump),
@@ -1046,7 +1052,7 @@ extension _UserActions on _TopicDetailPageState {
         (maxReadPostNumber < detail.postsCount ? maxReadPostNumber + 1 : null);
 
     if (targetPostNumber != null) {
-      await _scrollToPost(targetPostNumber);
+      await _jumpToPostInTopic(targetPostNumber);
     }
   }
 
@@ -1197,7 +1203,7 @@ extension _UserActions on _TopicDetailPageState {
             S.current.post_replySent,
             type: ToastType.success,
             actionLabel: S.current.post_replySentAction,
-            onAction: () => _scrollToPost(newPost.postNumber),
+            onAction: () => unawaited(_jumpToPostInTopic(newPost.postNumber)),
           );
         }
       }
@@ -1282,7 +1288,7 @@ extension _UserActions on _TopicDetailPageState {
       FrameJankMonitor.logEvent(
         'MSGBUS',
         '积压批量 ${updates.length} 条(${networkPostIds.length} 帖需刷新),'
-        '坍缩为一次整流刷新',
+            '坍缩为一次整流刷新',
       );
       // 旧积压全部作废:整流刷新拉回的就是最终态
       _deferredPostUpdates.clear();

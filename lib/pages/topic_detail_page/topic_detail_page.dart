@@ -25,6 +25,7 @@ import 'package:uuid/uuid.dart';
 import 'dart:async';
 import 'dart:math' as math;
 import '../../models/draft.dart';
+import '../../models/nested_topic.dart';
 import '../../models/topic.dart';
 import '../../models/pending_post.dart';
 import '../../utils/blocked_user_filter.dart';
@@ -231,6 +232,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
   bool _isNestedView = false; // 嵌套视图模式
   bool _defaultNestedViewApplied = false; // 默认嵌套视图配置是否已应用（依赖 detail 加载后判定）
   int? _nestedTargetPostNumber; // 树形 context 定位的目标楼层（通知等带楼层进入）
+  int _nestedRelocateToken = 0; // 同目标重跳令牌:递增触发 NestedPostList 重新滚动定位+高亮重播
   bool _nestedAutoEnabled = false; // 树形视图是否为默认配置自动开启（失败时静默回落平铺）
   bool _nestedFallbackNotified = false; // 回落提示只弹一次
   // 搜索相关
@@ -423,6 +425,16 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     final postId = int.tryParse(match.group(1)!);
     if (postId == null) return;
 
+    // 树形视图:平铺流窗口未必含该帖,改为在嵌套树里查楼层号后走统一跳转
+    if (_isNestedView) {
+      final postNumber = _findPostNumberInNestedTree(postId);
+      if (postNumber == null) return;
+      await _jumpToPostInTopic(postNumber);
+      await WidgetsBinding.instance.endOfFrame;
+      await WidgetsBinding.instance.endOfFrame;
+      return;
+    }
+
     final detail = ref.read(topicDetailProvider(_params)).value;
     final posts = detail?.postStream.posts;
     if (posts == null) return;
@@ -435,6 +447,30 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     await WidgetsBinding.instance.endOfFrame;
     await WidgetsBinding.instance.endOfFrame;
   }
+
+  /// 在嵌套树（根列表 / context 单链）里按 postId 查帖子。
+  /// 懒加载的子节点挂在各卡片本地状态里、不在 provider 状态中,查不到属正常。
+  Post? _findPostInNestedTree(int postId) {
+    final state = ref.read(nestedTopicProvider(_activeNestedParams)).value;
+    if (state == null) return null;
+
+    Post? dfs(List<NestedNode> nodes) {
+      for (final node in nodes) {
+        if (node.post.id == postId) return node.post;
+        final hit = dfs(node.children);
+        if (hit != null) return hit;
+      }
+      return null;
+    }
+
+    final chain = state.contextChain;
+    if (state.contextMode && chain != null) return dfs([chain]);
+    return dfs(state.roots);
+  }
+
+  /// 在嵌套树里按 postId 查楼层号
+  int? _findPostNumberInNestedTree(int postId) =>
+      _findPostInNestedTree(postId)?.postNumber;
 
   bool _isAiSheetOpen = false;
 
@@ -459,8 +495,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
 
   void _onScrollIdle() {
     if (!mounted) return;
-    final scrolling =
-        _idleFlushPosition?.isScrollingNotifier.value ?? true;
+    final scrolling = _idleFlushPosition?.isScrollingNotifier.value ?? true;
     if (scrolling) return;
     if (_deferredPostUpdates.isEmpty) return;
     // 推迟一帧回放:isScrollingNotifier 翻 false 发生在惯性最后一个 tick
@@ -1001,10 +1036,60 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     if (route.isActive) navigator.removeRoute(route);
   }
 
+  /// 话题内跳转统一入口（对齐 Discourse nested 视图的路由层重定向思路：
+  /// 网页版所有带楼层 URL 在 nested 话题下由 topic/from-params 统一
+  /// replaceWith 到 nestedPost context 路由，各功能对视图模式零感知）。
+  ///
+  /// 树形视图下平铺滚动定位链路不可用（平铺列表未挂载），带楼层跳转
+  /// 一律切 context 定位视图（祖先链+目标+子树）；平铺下走原滚动定位。
+  Future<void> _jumpToPostInTopic(int postNumber) async {
+    if (_isNestedView) {
+      if (postNumber <= 1) {
+        // OP 恒在树形视图顶部区域，直接回顶
+        await _controller.scrollToTop();
+        return;
+      }
+      setState(() {
+        // 同目标重跳也要生效（滚走后想跳回来）：递增令牌触发
+        // NestedPostList 重置定位守卫、换 key 重播高亮。
+        _nestedRelocateToken++;
+        _nestedTargetPostNumber = postNumber;
+      });
+      return;
+    }
+    await _scrollToPost(postNumber);
+  }
+
+  /// 按 postId 跳转的树形感知版本（时间线 sheet 等只有 postId 的入口）。
+  /// 树形下平铺流窗口未必含该帖：先本地查，查不到拉取帖子拿真实楼层号。
+  Future<void> _jumpToPostByIdInTopic(int postId) async {
+    if (!_isNestedView) {
+      await _scrollToPostById(postId);
+      return;
+    }
+    final detail = ref.read(topicDetailProvider(_params)).value;
+    final posts = detail?.postStream.posts ?? const <Post>[];
+    final local = posts.where((p) => p.id == postId).firstOrNull;
+    if (local != null) {
+      await _jumpToPostInTopic(local.postNumber);
+      return;
+    }
+    try {
+      final postStream = await DiscourseService().getPosts(widget.topicId, [
+        postId,
+      ]);
+      if (postStream.posts.isEmpty) return;
+      if (!mounted) return;
+      await _jumpToPostInTopic(postStream.posts.first.postNumber);
+    } catch (e) {
+      debugPrint('[TopicDetail] 树形跳转取帖子 $postId 失败: $e');
+    }
+  }
+
   Future<void> _handleExternalScrollTargetUpdate(int postNumber) async {
     // 树形视图下不走平铺跳转,切到 context 定位视图
-    if (_isNestedView && postNumber > 1) {
-      setState(() => _nestedTargetPostNumber = postNumber);
+    if (_isNestedView) {
+      await _jumpToPostInTopic(postNumber);
       return;
     }
     final detail = ref.read(topicDetailProvider(_params)).value;
@@ -1788,7 +1873,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
       context: context,
       currentIndex: _controller.currentVisibleStreamIndex,
       stream: detail.postStream.stream,
-      onJumpToPostId: _scrollToPostById,
+      onJumpToPostId: _jumpToPostByIdInTopic,
       title: detail.title,
     );
   }
@@ -1872,7 +1957,8 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
   /// 自动展开的最小页面宽度:正文列(maxContentWidth 800)居中后,单侧
   /// 留白要装得下展开面板(240)+右偏移(12)+呼吸间距(16),展开才不
   /// 遮挡正文 = 800 + 2×268 = 1336。
-  static const double _tocAutoExpandMinWidth = Breakpoints.maxContentWidth +
+  static const double _tocAutoExpandMinWidth =
+      Breakpoints.maxContentWidth +
       2 * (TopicTocSidePanel.expandedWidth + 12 + 16);
 
   Widget _buildTocLayer(BuildContext context, bool panelVisible) {
@@ -1931,7 +2017,8 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
         child: TopicTocSidePanel(
           controller: _tocController,
           visible: panelVisible,
-          maxHeight: MediaQuery.sizeOf(context).height -
+          maxHeight:
+              MediaQuery.sizeOf(context).height -
               kToolbarHeight -
               MediaQuery.paddingOf(context).top -
               88 -
@@ -2269,7 +2356,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
             _autoOpenRevisionHandled = true;
             WidgetsBinding.instance.addPostFrameCallback((_) async {
               if (!mounted) return;
-              await _scrollToPost(widget.initialRevisionPostNumber!);
+              await _jumpToPostInTopic(widget.initialRevisionPostNumber!);
               if (!mounted) return;
               if (!context.mounted) return;
               await showPostRevisionSheet(
@@ -2422,8 +2509,9 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
                 _KeepAlivePage(
                   child: Consumer(
                     builder: (context, ref, _) {
-                      final detail =
-                          ref.watch(topicDetailProvider(params)).value;
+                      final detail = ref
+                          .watch(topicDetailProvider(params))
+                          .value;
                       return AiChatPage(
                         topicId: widget.topicId,
                         detail: detail,
@@ -2540,7 +2628,8 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     // TOC 面板展开状态:null = 自动(宽度够才默认展开,否则收起成细条,
     // 不遮挡正文);用户手动切换后为显式持久化选择。watch 在此层,
     // 切换只走 _buildTocLayer 重建。
-    final tocPanelVisible = ref.watch(topicTocVisibilityProvider) ??
+    final tocPanelVisible =
+        ref.watch(topicTocVisibilityProvider) ??
         MediaQuery.sizeOf(context).width >= _tocAutoExpandMinWidth;
 
     // 初始加载或切换模式时显示骨架屏
@@ -2605,7 +2694,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
 
     // Stack 组装
     return Stack(
-        children: [
+      children: [
         // 使用 Offstage 保持帖子列表存在但在搜索模式下隐藏，保留滚动位置
         Offstage(offstage: isSearchMode, child: content),
 
@@ -2619,7 +2708,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
                   .read(topicSearchProvider(widget.topicId).notifier)
                   .exitSearchMode();
               _searchController.clear();
-              _scrollToPost(postNumber);
+              unawaited(_jumpToPostInTopic(postNumber));
             },
           ),
 
@@ -2686,7 +2775,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
                                       notifier,
                                       level,
                                     ),
-                                onJumpToPost: _scrollToPost,
+                                onJumpToPost: _jumpToPostInTopic,
                               ),
                             ),
                           ),
@@ -2697,7 +2786,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
               );
             },
           ),
-        ],
+      ],
     );
   }
 
@@ -2818,11 +2907,17 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
       if (nestedAsync.hasError && _nestedAutoEnabled) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted || !_isNestedView || !_nestedAutoEnabled) return;
+          // context 定位(通知进入/页内跳转)失败:保存目标,回落平铺后接力。
+          // 平铺初始定位只在 hasInitialScrolled 前跑一次,时序上未必接管。
+          final pendingTarget = _nestedTargetPostNumber;
           setState(() {
             _isNestedView = false;
             _nestedTargetPostNumber = null;
           });
           _scheduleCheckTitleVisibility();
+          if (pendingTarget != null && pendingTarget > 1) {
+            unawaited(_jumpToPostInTopic(pendingTarget));
+          }
           if (!_nestedFallbackNotified) {
             _nestedFallbackNotified = true;
             ScaffoldMessenger.maybeOf(context)?.showSnackBar(
@@ -2839,7 +2934,8 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
             : ErrorView(
                 error: e,
                 stackTrace: s,
-                onRetry: () => ref.invalidate(nestedTopicProvider(nestedParams)),
+                onRetry: () =>
+                    ref.invalidate(nestedTopicProvider(nestedParams)),
               ),
         data: (nestedState) => NestedPostList(
           nestedState: nestedState,
@@ -2854,7 +2950,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
           onReply: _handleReply,
           onEdit: _handleEdit,
           onRefreshPost: _handleRefreshPost,
-          onJumpToPost: _scrollToPost,
+          onJumpToPost: _jumpToPostInTopic,
           onVoteChanged: _handleVoteChanged,
           onSharedIssueChanged: _handleSharedIssueChanged,
           onNotificationLevelChanged: (level) =>
@@ -2863,6 +2959,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
           onQuoteSelection: isLoggedIn ? _handleQuoteSelection : null,
           onScrollNotification: _controller.handleScrollNotification,
           onVisiblePostsChanged: _updateVisiblePosts,
+          relocateToken: _nestedRelocateToken,
           onViewFullTopic: _nestedTargetPostNumber != null
               ? () => setState(() => _nestedTargetPostNumber = null)
               : null,
@@ -2897,9 +2994,8 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
               highlightBoostUsername: widget.highlightBoostUsername,
               isLoggedIn: isLoggedIn,
               isActivitySort: notifier.isActivityMode,
-              onAnswerSortChanged: (byActivity) => byActivity
-                  ? _handleShowByActivity()
-                  : _handleCancelFilter(),
+              onAnswerSortChanged: (byActivity) =>
+                  byActivity ? _handleShowByActivity() : _handleCancelFilter(),
               headingAnchorRegistry: _tocController.registry,
               hasMoreBefore: notifier.hasMoreBefore,
               hasMoreAfter: notifier.hasMoreAfter,
@@ -2918,7 +3014,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
               onScrollIndexToPostNumberChanged:
                   _controller.updateScrollIndexToPostNumber,
               onPostSegmentRangesChanged: _controller.updatePostSegmentRanges,
-              onJumpToPost: _scrollToPost,
+              onJumpToPost: _jumpToPostInTopic,
               onReply: _handleReply,
               onEdit: _handleEdit,
               onShareAsImage: _sharePostAsImage,
@@ -2943,11 +3039,12 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
                 topicTitle: detail.title,
                 isPrivateMessageTopic: detail.isPrivateMessage,
                 isPmWithNonHumanUser: detail.pmWithNonHumanUser,
-                onJumpToPost: _scrollToPost,
+                onJumpToPost: _jumpToPostInTopic,
               ),
               onWithdrawPendingPost: isLoggedIn ? _handleWithdrawPending : null,
-              onWithdrawAndEditPendingPost:
-                  isLoggedIn ? _handleWithdrawAndEditPending : null,
+              onWithdrawAndEditPendingPost: isLoggedIn
+                  ? _handleWithdrawAndEditPending
+                  : null,
             );
           },
         );
