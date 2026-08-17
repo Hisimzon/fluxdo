@@ -463,6 +463,8 @@ mixin _TopicsMixin on _DiscourseServiceBase {
         return;
       }
 
+      Map<String, dynamic>? latestSummaryJson;
+
       await for (final update in updates.stream) {
         if (update['error'] == true) {
           throw StateError(
@@ -472,12 +474,17 @@ mixin _TopicsMixin on _DiscourseServiceBase {
 
         final summaryData = update['ai_topic_summary'];
         if (summaryData is Map) {
-          final summaryJson = Map<String, dynamic>.from(summaryData);
-          summaryJson['done'] = update['done'];
+          latestSummaryJson = Map<String, dynamic>.from(summaryData);
+        }
+
+        final isDone = _isTopicSummaryDone(update['done']);
+        if (latestSummaryJson != null) {
+          final summaryJson = Map<String, dynamic>.from(latestSummaryJson!);
+          summaryJson['done'] = isDone;
           yield TopicSummary.fromJson(summaryJson);
         }
 
-        if (update['done'] == true) {
+        if (isDone) {
           return;
         }
       }
@@ -499,6 +506,10 @@ mixin _TopicsMixin on _DiscourseServiceBase {
     bool skipAgeCheck = false,
   }) {
     return watchTopicSummary(topicId, skipAgeCheck: skipAgeCheck).last;
+  }
+
+  bool _isTopicSummaryDone(dynamic value) {
+    return value == true || value == 'true' || value == 1;
   }
 
   /// 获取话题主贴的 HTML 内容（轻量请求，只解析第一楼）
