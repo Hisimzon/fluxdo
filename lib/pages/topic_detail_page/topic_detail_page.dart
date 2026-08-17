@@ -19,7 +19,8 @@ import '../../utils/code_selection_context.dart';
 import '../../utils/link_launcher.dart';
 import '../../utils/quote_builder.dart';
 import '../../utils/scroll_jump.dart';
-import 'package:fluxdo_render/fluxdo_render.dart' show SelectionCoordinator;
+import 'package:fluxdo_render/fluxdo_render.dart'
+    show SelectionCoordinator, TocEntry;
 import 'package:uuid/uuid.dart';
 import 'dart:async';
 import 'dart:math' as math;
@@ -58,9 +59,11 @@ import '../../widgets/common/emoji_text.dart';
 import '../../widgets/common/error_view.dart';
 import '../../providers/nested_topic_provider.dart';
 import 'controllers/topic_detail_controller.dart';
+import 'controllers/topic_toc_controller.dart';
 import 'widgets/nested_post_list.dart';
 import 'widgets/topic_detail_overlay.dart';
 import 'widgets/topic_post_list.dart';
+import 'widgets/topic_toc_panel.dart';
 import 'widgets/topic_detail_header.dart';
 import '../../widgets/layout/master_detail_layout.dart';
 import '../../widgets/share/share_image_preview.dart';
@@ -71,6 +74,7 @@ import '../../widgets/search/topic_search_view.dart';
 import '../../providers/read_later_provider.dart';
 import '../../models/read_later_item.dart';
 import '../../providers/topic_search_provider.dart';
+import '../../providers/topic_toc_provider.dart';
 import '../edit_topic_page.dart';
 import 'topic_bookmark_edit_target.dart';
 import 'topic_more_menu_actions.dart';
@@ -190,6 +194,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
 
   // Controller
   late final TopicDetailController _controller;
+  late final TopicTocController _tocController;
   late final ScreenTrack _screenTrack;
 
   // UI State
@@ -379,6 +384,9 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
         }
       },
     );
+
+    // 话题目录(TOC):依赖 detailController 的段映射做标题级跳转
+    _tocController = TopicTocController(detailController: _controller);
 
     _controller.scrollController.addListener(_onScroll);
     // 滚动停止 → 回放滚动期间推迟的 msgbus 帖子更新
@@ -757,6 +765,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     _controller.scrollController.removeListener(_onScroll);
     _screenTrack.stop();
     _controller.dispose();
+    _tocController.dispose();
     if (PlatformUtils.isDesktop) {
       toggleAiPanelNotifier.removeListener(_onToggleAiPanel);
       _shortcutScopeBinding.disposeDeferred();
@@ -1856,6 +1865,95 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     return overlay;
   }
 
+  /// 话题目录(TOC)浮层:宽屏右侧常驻可折叠面板,窄屏右下浮动按钮
+  /// (叠在回复 FAB 上方,随底栏显隐联动)。平行视界右栏(embeddedMode)
+  /// 宽度有限,也走浮动按钮形态。
+  ///
+  /// 自动展开的最小页面宽度:正文列(maxContentWidth 800)居中后,单侧
+  /// 留白要装得下展开面板(240)+右偏移(12)+呼吸间距(16),展开才不
+  /// 遮挡正文 = 800 + 2×268 = 1336。
+  static const double _tocAutoExpandMinWidth = Breakpoints.maxContentWidth +
+      2 * (TopicTocSidePanel.expandedWidth + 12 + 16);
+
+  Widget _buildTocLayer(BuildContext context, bool panelVisible) {
+    final bottomPadding = MediaQuery.of(context).padding.bottom;
+    // 显隐门控(对齐 DiscoTOC:仅当前阅读位置是 1 楼时可见,
+    // 滚过 1 楼即隐、回到 1 楼复显;点击跳转途中 isJumping 冻结防闪隐)。
+    // hasToc 由 _tocController 通知,eyeline 位置走 viewportPostNumberNotifier。
+    Widget gateVisibility({required Widget child}) {
+      return ListenableBuilder(
+        listenable: _tocController,
+        builder: (context, _) {
+          if (!_tocController.hasToc) return const SizedBox.shrink();
+          return ValueListenableBuilder<int?>(
+            valueListenable: _controller.viewportPostNumberNotifier,
+            builder: (context, viewportPost, _) {
+              final visible = viewportPost == 1 || _tocController.isJumping;
+              return AnimatedOpacity(
+                opacity: visible ? 1.0 : 0.0,
+                duration: const Duration(milliseconds: 180),
+                child: IgnorePointer(ignoring: !visible, child: child),
+              );
+            },
+          );
+        },
+      );
+    }
+
+    if (Responsive.isMobile(context) || widget.embeddedMode) {
+      return ValueListenableBuilder<bool>(
+        valueListenable: _controller.showBottomBarNotifier,
+        builder: (context, showBottomBar, _) {
+          // 回复 FAB 的底部定位公式(见 TopicDetailOverlay),TOC 叠其上
+          final replyBottom = showBottomBar
+              ? bottomPadding + (80 - bottomPadding - 56) / 2
+              : 16 + bottomPadding;
+          return AnimatedPositioned(
+            key: const ValueKey('toc_fab'),
+            duration: const Duration(milliseconds: 200),
+            right: 16,
+            bottom: replyBottom + 56 + 12,
+            child: gateVisibility(
+              child: TopicTocFab(
+                controller: _tocController,
+                onEntryTap: _handleTocEntryTap,
+              ),
+            ),
+          );
+        },
+      );
+    }
+    return Positioned(
+      right: 12,
+      top: 88,
+      // 不定 bottom:高度随目录内容自适应,上限扣除顶距与底部操作栏区
+      child: gateVisibility(
+        child: TopicTocSidePanel(
+          controller: _tocController,
+          visible: panelVisible,
+          maxHeight: MediaQuery.sizeOf(context).height -
+              kToolbarHeight -
+              MediaQuery.paddingOf(context).top -
+              88 -
+              120,
+          onToggleVisible: () => ref
+              .read(topicTocVisibilityProvider.notifier)
+              .toggle(panelVisible),
+          onEntryTap: _handleTocEntryTap,
+        ),
+      ),
+    );
+  }
+
+  /// 目录项点击:跳转到标题(长帖先段级定位再精确化,见 controller)。
+  void _handleTocEntryTap(TocEntry entry) {
+    final detail = ref.read(topicDetailProvider(_params)).value;
+    if (detail == null) return;
+    // 段映射基于过滤后列表,跳转目标必须同口径
+    final posts = _filteredDetail(detail).postStream.posts;
+    unawaited(_tocController.scrollToHeading(entry, posts));
+  }
+
   /// 路由进度悬浮条手势触发的 [ProgressGestureAction] 到对应业务方法
   void _handleProgressGesture(
     ProgressGestureAction action,
@@ -2439,6 +2537,11 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     final params = _params;
     final searchState = ref.watch(topicSearchProvider(widget.topicId));
     final isSearchMode = searchState.isSearchMode;
+    // TOC 面板展开状态:null = 自动(宽度够才默认展开,否则收起成细条,
+    // 不遮挡正文);用户手动切换后为显式持久化选择。watch 在此层,
+    // 切换只走 _buildTocLayer 重建。
+    final tocPanelVisible = ref.watch(topicTocVisibilityProvider) ??
+        MediaQuery.sizeOf(context).width >= _tocAutoExpandMinWidth;
 
     // 初始加载或切换模式时显示骨架屏
     // 注意：当 hasError 为 true 时，即使 isLoading 也为 true（AsyncLoading.copyWithPrevious 语义），
@@ -2528,6 +2631,11 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
         // (实测全量重建一次 4.5~8ms)。
         if (detail != null && !isSearchMode)
           _buildOverlayCached(detail, notifier, isLoggedIn),
+
+        // 话题目录(TOC):宽屏右侧常驻面板,窄屏浮动按钮(叠回复 FAB 上方)。
+        // 嵌套视图自有滚动体系,不挂(对齐段映射只对平铺流有效)。
+        if (detail != null && !isSearchMode && !_isNestedView)
+          _buildTocLayer(context, tocPanelVisible),
 
         // Expanded Header 相关组件（使用 ValueListenableBuilder 隔离状态变化）
         if (!isSearchMode)
@@ -2628,6 +2736,12 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     detail = _filteredDetail(detail);
     final posts = detail.postStream.posts;
     final hasFirstPost = posts.isNotEmpty && posts.first.postNumber == 1;
+
+    // TOC 提取:签名守卫,重复调度零成本;post-frame 避免 build 期
+    // notifyListeners。用过滤后 detail —— 段映射与滚动目标都基于它。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _tocController.updateTopic(detail);
+    });
     // read 而非 watch：sessionState 只用于合成 readPostNumbers 推给 controller,
     // 不驱动任何 UI(未读圆点由 PostItem 内部细粒度 Consumer 自行监听)。
     // watch 会让每次 timings 上报成功(markAsRead)都整页 rebuild;
@@ -2786,6 +2900,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
               onAnswerSortChanged: (byActivity) => byActivity
                   ? _handleShowByActivity()
                   : _handleCancelFilter(),
+              headingAnchorRegistry: _tocController.registry,
               hasMoreBefore: notifier.hasMoreBefore,
               hasMoreAfter: notifier.hasMoreAfter,
               loadingPreviousListenable: notifier.loadingPreviousListenable,

@@ -21,7 +21,13 @@ import '../../../widgets/common/anchor_guard_sliver.dart';
 import '../../../widgets/post/post_item/widgets/post_voting_answer_header.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 import 'package:fluxdo_render/fluxdo_render.dart'
-    show BlockNode, HtmlChunk, ParagraphWarmup, ParagraphWarmupProbe;
+    show
+        BlockNode,
+        HeadingAnchorRegistry,
+        HeadingAnchorScope,
+        HtmlChunk,
+        ParagraphWarmup,
+        ParagraphWarmupProbe;
 import '../../../widgets/post/post_item/post_item.dart';
 import '../../../widgets/post/post_item/render_parse_cache.dart';
 import '../../../widgets/post/post_item/segmented_long_post.dart';
@@ -113,6 +119,10 @@ class TopicPostList extends StatefulWidget {
   /// 帖子"更多"菜单里"指定帖子"这一项是否显示。
   final bool canAssignPost;
 
+  /// 话题目录(TOC)的标题锚点注册表;非 null 时给 1 楼各段包
+  /// HeadingAnchorScope,标题挂载即注册(跳转/高亮定位用)。
+  final HeadingAnchorRegistry? headingAnchorRegistry;
+
   /// 问答话题排序(「N 个回答」头部的按票数/按活动 pill):
   /// null = 非问答话题不渲染头部
   final bool isActivitySort;
@@ -168,6 +178,7 @@ class TopicPostList extends StatefulWidget {
     this.onWithdrawAndEditPendingPost,
     this.isActivitySort = false,
     this.onAnswerSortChanged,
+    this.headingAnchorRegistry,
   });
 
   @override
@@ -1579,6 +1590,14 @@ class _TopicPostListState extends State<TopicPostList> {
         break;
     }
 
+    // TOC 锚点作用域只挂 1 楼:节点 id 跨帖重复,其他楼的标题不能进
+    // 注册表(见 HeadingAnchorRegistrar/headingAnchorKey)。
+    final anchorRegistry = widget.headingAnchorRegistry;
+    final scopedChild =
+        anchorRegistry != null && segment.post.postNumber == 1
+            ? HeadingAnchorScope(registry: anchorRegistry, child: child)
+            : child;
+
     final wrapped = _wrapContent(
       context,
       AutoScrollTag(
@@ -1600,10 +1619,10 @@ class _TopicPostListState extends State<TopicPostList> {
                     onSortChanged: (byActivity) =>
                         widget.onAnswerSortChanged?.call(byActivity),
                   ),
-                  child,
+                  scopedChild,
                 ],
               )
-            : child,
+            : scopedChild,
       ),
     );
 
