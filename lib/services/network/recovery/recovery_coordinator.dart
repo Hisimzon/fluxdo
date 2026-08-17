@@ -36,6 +36,23 @@ class RecoveryCoordinator extends Interceptor {
   /// (重放走 dio.fetch 会重跑整条拦截器链)。
   static const String _managedKey = '_recoveryManaged';
 
+  /// 请求体是否可以重放。
+  ///
+  /// dio 的 [FormData] 是**一次性**的:`finalize()` 把字段与文件提交成流,
+  /// 二次使用直接抛 `StateError('The FormData has already been finalized')`。
+  /// 上传就是这个形态 —— 若恢复层去重放它,一个本可恢复的 429 会变成硬失败。
+  ///
+  /// 这类请求的重试必须由调用方做(每轮重建 FormData),`_uploads.dart` 的
+  /// 重试循环正是为此存在,不是历史遗留。
+  ///
+  /// 流式请求体同理:Stream 消费过就没法再读。
+  static bool _canReplayBody(RequestOptions options) {
+    final data = options.data;
+    if (data is FormData) return false;
+    if (data is Stream) return false;
+    return true;
+  }
+
   /// 成功响应也可能需要恢复。
   ///
   /// 典型场景:服务端返回 2xx 但带 `discourse-logged-out` 头(会话已失效的
@@ -46,7 +63,8 @@ class RecoveryCoordinator extends Interceptor {
     ResponseInterceptorHandler handler,
   ) async {
     if (response.requestOptions.extra[_managedKey] == true ||
-        response.requestOptions.spec.recoveryDisabled) {
+        response.requestOptions.spec.recoveryDisabled ||
+        !_canReplayBody(response.requestOptions)) {
       handler.next(response);
       return;
     }
@@ -81,6 +99,13 @@ class RecoveryCoordinator extends Interceptor {
 
     // 调用方声明不需要恢复(长轮询/后台 isolate/页面数据自己降级)
     if (err.requestOptions.spec.recoveryDisabled) {
+      handler.next(err);
+      return;
+    }
+
+    // 请求体不可重放(FormData/Stream):重放会抛 StateError,把可恢复的
+    // 失败变成硬失败。这类请求的重试归调用方(每轮重建请求体)。
+    if (!_canReplayBody(err.requestOptions)) {
       handler.next(err);
       return;
     }

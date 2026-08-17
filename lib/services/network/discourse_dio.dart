@@ -32,9 +32,6 @@ class DiscourseDio {
     bool enableCfChallenge = true,
     bool enableCookies = true,
     bool enableNetworkLog = true,
-    /// true 时强制使用稳定的 NativeAdapter,绕过 _DynamicAdapter 的 rhttp 切换。
-    /// 用于 MessageBus 长轮询等需要长期保持连接、依赖系统级省电的场景。
-    bool useStableAdapter = false,
   }) {
     final dio = Dio(
       BaseOptions(
@@ -56,11 +53,10 @@ class DiscourseDio {
     dio.transformer = BackgroundTransformer();
 
     // 1. 配置平台适配器
-    if (useStableAdapter) {
-      configureStableNativeAdapter(dio);
-    } else {
-      configurePlatformAdapter(dio);
-    }
+    //
+    // 需要绕开 rhttp 走系统栈的场景(如 MessageBus 长轮询依赖系统级省电)
+    // 由请求侧的 FluxRequestKeys.skipRhttpAdapter 逐请求声明,不在这里分档。
+    configurePlatformAdapter(dio);
 
     // 2. 会话代守卫（最先执行，确保过期请求不进入后续拦截器）
     dio.interceptors.add(SessionGuardInterceptor());
