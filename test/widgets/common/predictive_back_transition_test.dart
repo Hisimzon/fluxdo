@@ -190,4 +190,64 @@ void main() {
     },
     variant: const TargetPlatformVariant({TargetPlatform.android}),
   );
+
+  testWidgets(
+    'commit 后退场进度单调递减,不回跳到 1.0(差异点 7:无重播)',
+    (tester) async {
+      final navigatorKey = GlobalKey<NavigatorState>();
+      await tester.pumpWidget(buildApp(navigatorKey));
+      await tester.tap(find.text('page A'));
+      await tester.pumpAndSettle();
+
+      final route =
+          ModalRoute.of(tester.element(find.text('page B')))!
+              as PageRoute<dynamic>;
+
+      // 拖到 0.4:退场进度 = 1 - 0.4 = 0.6
+      await send('startBackGesture', gestureArgs(0.0));
+      await tester.pump();
+      await send('updateBackGestureProgress', gestureArgs(0.4));
+      await tester.pump();
+      final double atRelease = route.animation!.value;
+      expect(atRelease, closeTo(0.6, 0.01), reason: '手势进度应驱动路由动画');
+
+      // commit:框架实现会在此把进度硬拽回 1.0 再重走(重播)
+      await send('commitBackGesture');
+      await tester.pump();
+
+      // 逐帧采样整段退场
+      final samples = <double>[route.animation!.value];
+      for (var i = 0; i < 25; i++) {
+        await tester.pump(const Duration(milliseconds: 16));
+        final v = route.animation?.value;
+        if (v == null) break;
+        samples.add(v);
+        if (v == 0.0) break;
+      }
+
+      // 关键断言 1:没有任何一帧高于松手进度(重播必产生 ~1.0 的帧)
+      final double peak = samples.reduce((a, b) => a > b ? a : b);
+      expect(
+        peak,
+        lessThanOrEqualTo(atRelease + 0.01),
+        reason: '出现高于松手进度的帧 = 被拽回 1.0 重播;序列=$samples',
+      );
+
+      // 关键断言 2:全程单调不增
+      for (var i = 1; i < samples.length; i++) {
+        expect(
+          samples[i],
+          lessThanOrEqualTo(samples[i - 1] + 0.001),
+          reason: '第 $i 帧进度回升 = 重播;序列=$samples',
+        );
+      }
+
+      await tester.pumpAndSettle();
+      expect(find.text('page A'), findsOneWidget);
+      expect(find.text('page B'), findsNothing);
+      // 手势计数必须归零(自管 didStopUserGesture 的正确性)
+      expect(navigatorKey.currentState!.userGestureInProgress, isFalse);
+    },
+    variant: const TargetPlatformVariant({TargetPlatform.android}),
+  );
 }

@@ -144,6 +144,7 @@ class _PredictiveBackGestureDetectorState
 
     _phase = _PredictiveBackPhase.start;
     _gestureForceCancelled = false;
+    _userGestureFinished = false;
     widget.route.handleStartBackGesture(progress: 1 - backEvent.progress);
     return true;
   }
@@ -179,8 +180,82 @@ class _PredictiveBackGestureDetectorState
       return;
     }
     _phase = _PredictiveBackPhase.commit;
-    widget.route.handleCommitBackGesture();
+    _commitWithoutReplay();
   }
+
+  /// 差异点 7:自己收尾 commit,不走框架的
+  /// `TransitionRoute.handleCommitBackGesture`,消除**重播**。
+  ///
+  /// 框架 `_handleDragEnd(animateForward: false)` 在同一次 commit 里让
+  /// 路由动画 reverse 了**两次**(routes.dart:601-606):
+  /// ```dart
+  /// navigator?.pop();                       // ①didPop → controller.reverse()
+  ///                                         //   从当前进度反向 —— 正确、跟手
+  /// if (_controller?.isAnimating ?? false) { // ①已置 animating,故必然成立
+  ///   _controller!.reverse(from: _controller!.upperBound); // ②硬拽回 1.0 重走
+  /// }
+  /// ```
+  /// ②把①的成果作废:页面刚从松手进度(如 0.6)往外走,下一帧被拽回
+  /// 1.0 重新走一遍 —— 用户反馈的「返回时重放/动了两次」就是它。快扫
+  /// 返回(进度仅 ~0.05)时落差高达 95%,观感最差;且这是**位置突变**,
+  /// 缩短时长无从缓解(试过,已否决)。
+  ///
+  /// ①本身就是完整正确的收尾,故这里只做 `navigator.pop()`,不触发②。
+  /// pop 是公开 API,不必碰 @protected 的 controller(自己驱动动画那条
+  /// 路已验证不可行)。代价是要自管手势计数归零 —— 见
+  /// [_finishUserGestureWhenSettled]。
+  void _commitWithoutReplay() {
+    final route = widget.route;
+    final navigator = route.navigator;
+    if (navigator == null) {
+      // 拿不到 navigator:退回框架实现,至少保证路由出栈
+      route.handleCommitBackGesture();
+      return;
+    }
+    // 顺序要紧:必须先 pop 让退场动画起转,再挂归零监听。
+    // 手势期的进度是被直接赋值(非动画驱动),此刻 animation.isAnimating
+    // 为 false —— 若先挂监听会走「立即归零」分支,userGestureInProgress
+    // 当帧就翻 false,依赖它的消费方(如查看器缩放松弛靠它判断手势是否
+    // 结束)会在退场刚开始时就收工,后半段不再跟随。
+    navigator.pop();
+    _finishUserGestureWhenSettled(navigator, route.animation);
+  }
+
+  /// 手势计数归零(替代框架 `_handleDragEnd` 尾部的同名逻辑)。
+  ///
+  /// **必须恰好调用一次**:漏调 → userGestureInProgress 恒 true →
+  /// popGestureEnabled 恒 false → 预测返回全局失效;重复调用 → 计数
+  /// 下溢成负 → 同样全灭。两个坑都踩过(见差异点 4/5)。
+  ///
+  /// 与框架同口径:监听退场动画的 status,任一变化即归零并摘监听
+  /// (框架用 controller,我们只有只读 animation,派发时机一致);
+  /// 若 pop 已同步走完(无动画),立即归零。
+  void _finishUserGestureWhenSettled(
+    NavigatorState navigator,
+    Animation<double>? animation,
+  ) {
+    if (_userGestureFinished) return;
+
+    void finish() {
+      if (_userGestureFinished) return;
+      _userGestureFinished = true;
+      navigator.didStopUserGesture();
+    }
+
+    if (animation == null || !animation.isAnimating) {
+      finish();
+      return;
+    }
+    late final AnimationStatusListener listener;
+    listener = (AnimationStatus status) {
+      animation.removeStatusListener(listener);
+      finish();
+    };
+    animation.addStatusListener(listener);
+  }
+
+  /// 一次性标记:见 [_finishUserGestureWhenSettled]
+  bool _userGestureFinished = false;
 
   /// 差异点 4:Activity 进后台(挂后台/锁屏)会打断进行中的手势,且系统
   /// 不再补发 commit/cancel;不收尾则 userGestureInProgress 计数永不归零,
