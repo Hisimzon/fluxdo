@@ -76,7 +76,7 @@ class _MermaidViewerPageState extends State<MermaidViewerPage> {
               animation,
               secondaryAnimation,
               child,
-              fallbackBuilder: (_, animation, _, child) =>
+              transitionBuilder: (_, animation, _, child) =>
                   FadeTransition(opacity: animation, child: child),
             ),
       ),

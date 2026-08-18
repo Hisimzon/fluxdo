@@ -93,10 +93,6 @@ class ImageViewerPage extends ConsumerStatefulWidget {
     );
   }
 
-  static bool _hasHeroTransition(String? heroTag, List<String>? heroTags) {
-    return heroTag != null || (heroTags?.isNotEmpty ?? false);
-  }
-
   /// 使用透明路由打开图片查看器。返回的 Future 在查看器关闭时完成
   /// (调用方可借此恢复被隐藏的浮层等)。
   static Future<void> open(
@@ -152,12 +148,10 @@ class ImageViewerPage extends ConsumerStatefulWidget {
               animation,
               secondaryAnimation,
               child,
-              // 有配对 Hero 时不用缩放预览(会跟 Hero 飞行体打架),但
-              // 仍认领手势:HeroController 只为 user gesture 转场启动
-              // 飞行,认领 + 两端 transitionOnUserGestures 才有跟手
-              // Hero 返回;fade 由手势进度驱动。
-              useSharedElementPreview: !_hasHeroTransition(heroTag, heroTags),
-              fallbackBuilder: (_, animation, _, child) => FadeTransition(
+              // 透明路由用 fade:滑出对「下方要透出内容」的查看器没有
+              // 意义。手势期同样是这个 fade(由手势进度驱动),与按钮
+              // 返回一致 —— 单一分支原则。
+              transitionBuilder: (_, animation, _, child) => FadeTransition(
                 opacity: _routeFadeAnimation(animation),
                 child: child,
               ),
@@ -182,7 +176,7 @@ class ImageViewerPage extends ConsumerStatefulWidget {
               animation,
               secondaryAnimation,
               child,
-              fallbackBuilder: (_, animation, _, child) => FadeTransition(
+              transitionBuilder: (_, animation, _, child) => FadeTransition(
                 opacity: _routeFadeAnimation(animation),
                 child: child,
               ),

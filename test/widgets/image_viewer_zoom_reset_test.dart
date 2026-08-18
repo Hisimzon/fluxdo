@@ -127,8 +127,7 @@ void main() {
                             animation,
                             secondaryAnimation,
                             child,
-                            useSharedElementPreview: false,
-                            fallbackBuilder: (_, animation, _, child) =>
+                            transitionBuilder: (_, animation, _, child) =>
                                 FadeTransition(
                                   opacity: animation,
                                   child: child,
