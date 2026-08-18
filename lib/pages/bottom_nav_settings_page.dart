@@ -598,9 +598,10 @@ class _AvailableTile extends StatelessWidget {
   }
 }
 
-/// 手势分组：读取 [buildBottomNavGroups] 的 SettingsGroup，
-/// 用 SettingsRenderer 渲染 items
-class _GestureGroup extends StatelessWidget {
+/// 设置分组：读取 [buildBottomNavGroups] 的 SettingsGroup，
+/// 用 SettingsRenderer 渲染 items（先按可见性过滤，避免隐藏项零高占位
+/// 顶掉分段卡片组尾的大圆角）
+class _GestureGroup extends ConsumerWidget {
   const _GestureGroup({
     required this.group,
     required this.itemKeys,
@@ -611,8 +612,12 @@ class _GestureGroup extends StatelessWidget {
   final String? highlightedId;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    // 隐藏项（如依赖前置开关的条目）不进卡片组，否则零高占位会顶掉
+    // 组尾的大圆角（SegmentedCardGroup 按位置分配圆角）
+    final visibleItems =
+        group.items.where((item) => item.isVisible(ref)).toList();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -635,7 +640,7 @@ class _GestureGroup extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: SegmentedCardGroup(
             children: [
-              for (final item in group.items)
+              for (final item in visibleItems)
                 AnimatedContainer(
                   key: itemKeys.putIfAbsent(item.id, () => GlobalKey()),
                   duration: const Duration(milliseconds: 500),

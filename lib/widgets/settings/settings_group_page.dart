@@ -103,11 +103,11 @@ class _SettingsGroupPageState extends ConsumerState<SettingsGroupPage> {
   }
 
   Widget _buildGroupItems(ThemeData theme, SettingsGroup group) {
-    final effectiveItems = group.items.where((item) {
-      if (item is PlatformConditionalModel) return item.shouldShow;
-      return true;
-    }).toList();
-
+    // 先按 isVisible 过滤（含 SwitchModel.enabledWhen / PlatformConditionalModel）：
+    // 隐藏项若留在分段卡片组里会以零高占位，顶掉组尾的大圆角。
+    final effectiveItems = group.items
+        .where((item) => item.isVisible(ref))
+        .toList();
     if (!group.wrapInCard) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -143,10 +143,7 @@ class _SettingsGroupPageState extends ConsumerState<SettingsGroupPage> {
   }
 
   bool _hasVisibleItems(SettingsGroup group) {
-    return group.items.any((item) {
-      if (item is PlatformConditionalModel) return item.shouldShow;
-      return true;
-    });
+    return group.items.any((item) => item.isVisible(ref));
   }
 
   Widget _buildSectionHeader(ThemeData theme, String title, IconData icon) {
