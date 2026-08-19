@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../../cf_challenge_service.dart';
 import '../../cf_challenge_logger.dart';
 import '../../cf_clearance_refresh_service.dart';
+import '../../cf_clearance_registry.dart';
 import '../../app_logger.dart';
 import '../adapters/platform_adapter.dart';
 import '../cookie/boundary_sync_service.dart';
@@ -169,6 +170,14 @@ class CfChallengeInterceptor extends Interceptor {
       CfChallengeLogger.logInterceptorDetected(
         url: requestUrl,
         statusCode: statusCode!,
+      );
+      // 墓碑：本次请求携带的 cf_clearance 已被 CF 明确拒绝，登记后任何
+      // 同步来源都不得再把它写回 jar（这块反反复复的「旧值复活」病——
+      // 2026-08-19 实锤的「过一次盾只管一次」循环——根因就是被拒值被
+      // Turnstile WebView 残留副本等路径反复写回）。
+      CfClearanceRegistry.instance.markRejectedFromCookieHeader(
+        err.requestOptions.headers['Cookie']?.toString() ??
+            err.requestOptions.headers['cookie']?.toString(),
       );
       final cfService = CfChallengeService();
       final isSilent = err.requestOptions.spec.isSilent;
@@ -357,6 +366,12 @@ class CfChallengeInterceptor extends Interceptor {
               // 多少次都一样,立即熔断进入冷却,阻断验证无限循环。
               if (CfChallengeService.isCfChallengeResponse(e.response)) {
                 cfService.startIneffectiveClearanceCooldown();
+                // 刚铸出的 clearance 对 Dio 同样无效：一并墓碑，防止它被
+                // 任何同步路径当作「新值」再写回 jar 后反复撞盾。
+                CfClearanceRegistry.instance.markRejectedFromCookieHeader(
+                  retryOptions.headers['Cookie']?.toString() ??
+                      retryOptions.headers['cookie']?.toString(),
+                );
                 CfChallengeLogger.log(
                   '[INTERCEPTOR] Verified clearance ineffective for Dio '
                   '(retry ${e.response?.statusCode}), entering cooldown: '

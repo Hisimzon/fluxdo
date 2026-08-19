@@ -1605,6 +1605,8 @@ mixin _AuthMixin on _DiscourseServiceBase {
     unawaited(CfClearanceRefreshService().stop());
     WebViewAdapterSettingsService.instance.resetSessionFallback();
     CfChallengeService().resetSessionCompatibilityDecision();
+    // 被拒 cf_clearance 墓碑随登录会话失效，一并清空
+    CfClearanceRegistry.instance.reset();
 
     // ===== 第三步：调用登出 API（可选，用新的 generation） =====
     //
