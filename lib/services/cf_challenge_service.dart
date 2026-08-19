@@ -294,34 +294,61 @@ class CfChallengeService {
     final choice = await showDialog<_CompatPromptChoice>(
       context: context,
       useRootNavigator: true,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(S.current.cf_sessionCompatTitle),
-        content: Text(S.current.cf_sessionCompatMessage),
-        actions: [
-          TextButton(
-            onPressed: () =>
-                Navigator.of(dialogContext).pop(_CompatPromptChoice.dismiss),
-            child: Text(
-              MaterialLocalizations.of(dialogContext).cancelButtonLabel,
+      builder: (dialogContext) {
+        final theme = Theme.of(dialogContext);
+        return AlertDialog(
+          title: Text(S.current.cf_sessionCompatTitle),
+          // 三个动作横排放不下(中文约 360px、英文约 500px,而对话框可用宽度
+          // 只有 280~320px,OverflowBar 会自动竖排,把"取消"顶到最上面、
+          // 主次层级反过来)。故把第三条出路降级为正文里的文字链接:
+          // 主次分明,且它紧跟在解释文字后面,阅读顺序自然。
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(S.current.cf_sessionCompatMessage),
+              const SizedBox(height: 16),
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: TextButton(
+                  style: TextButton.styleFrom(
+                    padding: EdgeInsets.zero,
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  onPressed: () => Navigator.of(
+                    dialogContext,
+                  ).pop(_CompatPromptChoice.disableAutoVerify),
+                  child: Text(
+                    S.current.cf_sessionCompatDisableAuto,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.primary,
+                      decoration: TextDecoration.underline,
+                      decorationColor: theme.colorScheme.primary,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () =>
+                  Navigator.of(dialogContext).pop(_CompatPromptChoice.dismiss),
+              child: Text(
+                MaterialLocalizations.of(dialogContext).cancelButtonLabel,
+              ),
             ),
-          ),
-          // 第二条出路:自动过盾本身就是这套流程的起点,用户可以直接关掉它,
-          // 改为撞盾时手动点验证(ErrorView / 网络设置页都有入口)。
-          // 对"盾很频繁但兼容模式又不想开"的用户,这比反复被打扰更合适。
-          TextButton(
-            onPressed: () => Navigator.of(
-              dialogContext,
-            ).pop(_CompatPromptChoice.disableAutoVerify),
-            child: Text(S.current.cf_sessionCompatDisableAuto),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(
-              dialogContext,
-            ).pop(_CompatPromptChoice.enableCompat),
-            child: Text(S.current.cf_sessionCompatEnable),
-          ),
-        ],
-      ),
+            FilledButton(
+              onPressed: () => Navigator.of(
+                dialogContext,
+              ).pop(_CompatPromptChoice.enableCompat),
+              child: Text(S.current.cf_sessionCompatEnable),
+            ),
+          ],
+        );
+      },
     );
 
     switch (choice) {
@@ -572,6 +599,9 @@ class CfChallengeService {
     // 引用当前的拦截 Route，用于 cleanup
     ModalRoute? interceptorRoute;
 
+    /// 验证结束清理时放行 interceptorRoute 的 PopScope（见 cleanup 内注释）。
+    final interceptorRoutePopAllowed = ValueNotifier<bool>(false);
+
     // Page Key 用于触发内部弹窗
     final pageKey = GlobalKey<_CfChallengePageState>();
     _activePromoteToForeground = () {
@@ -600,8 +630,29 @@ class CfChallengeService {
       } else {
         removeEntry();
       }
-      if (interceptorRoute?.isActive ?? false) {
-        interceptorRoute?.navigator?.removeRoute(interceptorRoute!);
+      final routeToClose = interceptorRoute;
+      if (routeToClose != null && routeToClose.isActive) {
+        // 绝不能 removeRoute：框架 _flushHistoryUpdates 的 remove 分支不会
+        // 给下方路由补发 didPopNext（RouteObserver 也没有 didRemove 实现），
+        // 下方页面的 RouteAware 订阅者（话题详情 ScreenTrack、视频、iframe）
+        // 会永远停在「被覆盖」状态——曾表现为 CF 验证通过后 ScreenTrack 不再
+        // start，阅读时长怎么滑动都不上报。放行 PopScope 后走正常 pop，让
+        // 路由生命周期通知完整派发。canPop 变更要等下一帧重建才生效，pop
+        // 放到 post-frame。
+        interceptorRoutePopAllowed.value = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!routeToClose.isActive) return;
+          final nav = routeToClose.navigator;
+          if (nav == null) return;
+          if (routeToClose.isCurrent) {
+            nav.pop();
+          } else {
+            // 极端兜底：验证期间有别的路由压到它上面（正常不会发生——前台
+            // 验证时全屏 Overlay 拦截所有交互）。pop 动画是异步的，无法同步
+            // 回收到本 route，退化为 removeRoute。
+            nav.removeRoute(routeToClose);
+          }
+        });
       }
       _activePromoteToForeground = null;
       _pendingPromoteToForeground = false;
@@ -631,23 +682,32 @@ class CfChallengeService {
         opaque: false,
         barrierColor: Colors.transparent,
         pageBuilder: (context, _, _) {
-          return PopScope(
-            canPop: false,
-            onPopInvokedWithResult: (didPop, result) async {
-              if (didPop) return;
-              if (!_isVerifying) return;
+          // canPop 由 cleanup 在验证结束时放行：验证期间拦截系统返回键
+          // 弹退出确认；结束时必须让本 route 走正常 pop（而非 removeRoute），
+          // 否则下方路由永远收不到 didPopNext（见 cleanup 内注释）。
+          return ValueListenableBuilder<bool>(
+            valueListenable: interceptorRoutePopAllowed,
+            builder: (context, canPop, _) {
+              return PopScope(
+                canPop: canPop,
+                onPopInvokedWithResult: (didPop, result) async {
+                  if (didPop) return;
+                  if (!_isVerifying) return;
 
-              // 触发内部弹窗 via GlobalKey
-              pageKey.currentState?.showExitConfirmation();
+                  // 触发内部弹窗 via GlobalKey
+                  pageKey.currentState?.showExitConfirmation();
+                },
+                // 使用 IgnorePointer 让点击事件穿透到下层的 Overlay (WebView)
+                child: const IgnorePointer(child: SizedBox.expand()),
+              );
             },
-            // 使用 IgnorePointer 让点击事件穿透到下层的 Overlay (WebView)
-            child: const IgnorePointer(child: SizedBox.expand()),
           );
         },
       );
 
       Navigator.of(pageContext).push(interceptorRoute!).then((_) {
-        // Route 被 pop
+        // Route 被 pop（cleanup 走正常 pop 后在这里完成）
+        interceptorRoutePopAllowed.dispose();
       });
     }
 
