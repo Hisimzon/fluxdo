@@ -15,6 +15,18 @@ class HeroVisibilityController extends ChangeNotifier {
   /// 查看器翻页时借此把源缩略图滚进可视区,保证 pop 时 Hero 有目的地。
   final Map<String, BuildContext> _sources = {};
 
+  /// 退场时查看器里图片的**实际可见矩形**(全局坐标),放大态即放大后的
+  /// 矩形。由查看器在 pop 前写入,源端 Hero 的 createRectTween 以它作
+  /// 飞行起点 —— 这样「放大 → 缩略图」是 Hero 飞行本身的一段连续插值,
+  /// 而不是先把画面归位到 contain 再起飞(那会看到「大图先变小图,再播
+  /// 返回动画」两段动作,即用户所指的膈应感)。参考 Telegram PhotoViewer
+  /// closePhoto:animationValues[0] 直接取当前 scale/translation 作起点。
+  ///
+  /// null = 未放大或无快照,Hero 走默认布局盒子几何(与旧行为一致)。
+  Rect? _exitFlightRect;
+  Rect? get exitFlightRect => _exitFlightRect;
+  void setExitFlightRect(Rect? rect) => _exitFlightRect = rect;
+
   /// 源页注册的"按 heroTag 滚到附近"能力(段级粗滚,滚后源缩略图
   /// 构建并注册,再由 [ensureSourceVisible] 二次精确化)。
   Future<void> Function(String heroTag)? sourceScrollResolver;
@@ -101,6 +113,7 @@ class HeroVisibilityController extends ChangeNotifier {
   void clear() {
     _hiddenHeroTag = null;
     _isPopping = false;
+    _exitFlightRect = null;
     _safeNotify();
   }
 

@@ -273,6 +273,21 @@ class _HeroImageState extends State<HeroImage> {
             tag: heroTag,
             // Android 预测返回是 user gesture 转场,须显式开启才有飞行
             transitionOnUserGestures: true,
+            // 放大态返回:飞行起点用查看器发布的**实际可见矩形**(含缩放
+            // 与平移),而不是查看器的布局盒子(全屏)。于是「放大 3x 的
+            // 画面 → 缩略图」是 Hero 飞行本身的一段连续插值,不再需要先
+            // 把缩放归位到 contain 再起飞(那会看到「大图先变小图,再播
+            // 返回动画」两段动作)。参考 Telegram PhotoViewer.closePhoto:
+            // animationValues[0] 直接取当前 scale/translation 作起点。
+            // 未放大时 exitFlightRect 为 null → 走框架默认几何。
+            createRectTween: (begin, end) {
+              final zoomed = HeroVisibilityController.instance.exitFlightRect;
+              if (zoomed == null) return MaterialRectArcTween(begin: begin, end: end);
+              // pop 方向:begin=查看器端(全屏布局盒子)→ 换成放大后矩形;
+              // end=源端缩略图,保持不动。push 方向 exitFlightRect 为 null
+              // (仅退场时发布),不受影响。
+              return RectTween(begin: zoomed, end: end);
+            },
             // 飞行动画：pop 飞行结束时设置 isPopping;网格瓦片来源
             // (coverFlight)换裁切插值飞行体,否则返回纯图片
             flightShuttleBuilder: (flightContext, animation, direction, fromContext, toContext) {

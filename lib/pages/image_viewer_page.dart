@@ -1,5 +1,4 @@
 import 'dart:async' show unawaited;
-import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
@@ -227,10 +226,6 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
   ModalRoute<dynamic>? _route;
   ValueListenable<bool>? _navUserGesture;
 
-  /// 松弛会话:手势开始时捕获的起始缩放态(null = 无会话)
-  double? _relaxStartScale;
-  Offset? _relaxStartOffset;
-  bool _relaxListening = false;
 
   ImageGestureController _obtainGestureController(
     int index, {
@@ -421,76 +416,35 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
   /// t=0 恰为 contain = Hero 落地帧,全程无跳变点。
   void _onRouteAnimationStatus(AnimationStatus status) {
     if (status != AnimationStatus.reverse) return;
-    if (_relaxListening) return;
-    _resetZoomForExit();
+    _publishExitFlightRect();
   }
 
-  /// 预测返回/iOS 拖拽:手势置位开启缩放松弛会话(跟手渐进归位,
-  /// cancel 自动恢复);手势结束(cancel 弹回后)收会话。
+  /// 预测返回/iOS 拖拽:手势置位即发布飞行矩形(早于 HeroController
+  /// 测量飞行几何)。手势期不再改动缩放 —— 缩放由 Hero 飞行承载。
   void _onNavUserGestureChanged() {
-    final active = _navUserGesture?.value == true;
-    if (active && (_route?.isCurrent ?? false)) {
-      _beginZoomRelaxation();
-    } else if (!active) {
-      _endZoomRelaxation(restore: true);
+    if (_navUserGesture?.value == true && (_route?.isCurrent ?? false)) {
+      _publishExitFlightRect();
     }
   }
 
-  void _beginZoomRelaxation() {
-    if (_relaxListening) return;
-    final controller = _gestureControllers[currentIndex];
-    final details = controller?.details;
+  /// 把「当前页图片在屏幕上的可见矩形」发布给源端 Hero 作飞行起点。
+  ///
+  /// destinationRect 是画布级变换后的目标矩形(含缩放与平移),坐标系为
+  /// 查看器绘制层的局部坐标;查看器是全屏路由,局部原点即屏幕原点,可
+  /// 直接当全局矩形用。未放大(scale<=1)时发布 null —— 走 Hero 默认的
+  /// 布局盒子几何,与旧行为一致。
+  void _publishExitFlightRect() {
+    final details = _gestureControllers[currentIndex]?.details;
     final scale = details?.totalScale ?? 1.0;
-    if (controller == null || scale <= 1.0) return;
-    // 双击缩放动画可能在途:以当前帧值为起点即可,无需显式 stop
-    // (松弛每帧覆写 details,动画回灌会被下一帧覆盖)
-    _relaxStartScale = scale;
-    _relaxStartOffset = details?.offset ?? Offset.zero;
-    _relaxListening = true;
-    _route?.animation?.addListener(_onRelaxTick);
-    _onRelaxTick();
-  }
-
-  /// 手势进度驱动:认领后 route.animation.value = 1 - 手势进度。
-  /// t=1(未拖)= 起始缩放,t 越小越收拢到 contain。
-  void _onRelaxTick() {
-    final t = _route?.animation?.value ?? 1.0;
-    final startScale = _relaxStartScale;
-    final controller = _gestureControllers[currentIndex];
-    if (startScale == null || controller == null) return;
-    final eased = Curves.easeOut.transform(1.0 - t.clamp(0.0, 1.0));
-    final scale = lerpDouble(startScale, 1.0, eased)!;
-    final offset = Offset.lerp(_relaxStartOffset, Offset.zero, eased)!;
-    controller.details = GestureDetails(
-      totalScale: scale,
-      offset: offset,
-      userOffset: false,
-      gestureDetails: controller.details,
+    final rect = details?.destinationRect;
+    HeroVisibilityController.instance.setExitFlightRect(
+      (scale <= 1.0 || rect == null || rect.isEmpty) ? null : rect,
     );
-  }
-
-  /// [restore] = cancel 路径:动画已弹回 1.0,末帧 lerp 即原缩放,
-  /// 只需摘监听;commit/按钮路径动画在反转,摘监听后由
-  /// [_resetZoomForExit] 收残余。
-  void _endZoomRelaxation({bool restore = false}) {
-    if (!_relaxListening) return;
-    _relaxListening = false;
-    _route?.animation?.removeListener(_onRelaxTick);
-    if (restore) _onRelaxTick();
-    _relaxStartScale = null;
-    _relaxStartOffset = null;
-  }
-
-  void _resetZoomForExit() {
-    final controller = _gestureControllers[currentIndex];
-    final scale = controller?.details?.totalScale ?? 1.0;
-    if (scale == 1.0) return;
-    controller?.reset();
   }
 
   @override
   void dispose() {
-    _endZoomRelaxation();
+    HeroVisibilityController.instance.setExitFlightRect(null);
     _route?.animation?.removeStatusListener(_onRouteAnimationStatus);
     _navUserGesture?.removeListener(_onNavUserGestureChanged);
     _dynamicContentLease.release();
