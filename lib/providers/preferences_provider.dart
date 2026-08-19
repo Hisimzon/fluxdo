@@ -654,6 +654,10 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
     isPortraitLocked = state.portraitLock;
     TopicCardStyleScope.current = state.topicCardStyle;
     CfChallengeService().autoVerifyEnabled = state.autoCfChallenge;
+    // CF 服务在「切兼容」询问里给用户第二条出路(关掉自动过盾),但它拿不到
+    // Riverpod 容器,也不该自己写 SharedPreferences —— 这里把持久化通道注入。
+    CfChallengeService().disableAutoVerifyRequest = () =>
+        setAutoCfChallenge(false);
     _syncSchedulerConfig();
   }
 

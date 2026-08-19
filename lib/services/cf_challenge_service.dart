@@ -26,6 +26,18 @@ import '../widgets/draggable_floating_pill.dart';
 CookieManager get _cfCookieManager =>
     WindowsWebViewEnvironmentService.instance.cookieManager;
 
+/// 「切兼容模式」询问的三种去向。
+enum _CompatPromptChoice {
+  /// 本次会话改用浏览器网络栈发主站请求。
+  enableCompat,
+
+  /// 关掉自动过盾,改为撞盾时手动点验证。
+  disableAutoVerify,
+
+  /// 什么都不做(含关闭弹窗)。
+  dismiss,
+}
+
 /// CF 验证服务
 /// 处理 Cloudflare Turnstile 验证（仅手动模式）
 class CfChallengeService {
@@ -109,6 +121,13 @@ class CfChallengeService {
   /// 关闭后 [CfChallengeInterceptor] 命中 CF 盾时会静默 reject，
   /// 交给 ErrorView 提供"手动验证"入口。由 PreferencesNotifier 同步维护。
   bool autoVerifyEnabled = true;
+
+  /// 请求把「自动过盾」开关持久化关闭。
+  ///
+  /// 服务层拿不到 Riverpod 容器,由 PreferencesNotifier 在初始化时注入
+  /// (它才是这个开关的真正归属方,要写 SharedPreferences)。
+  /// 未注入时只改内存态,不持久化 —— 不阻塞功能。
+  Future<void> Function()? disableAutoVerifyRequest;
 
   final _verifyCompleter = <Completer<bool>>[];
   BuildContext? _context;
@@ -272,7 +291,7 @@ class CfChallengeService {
     }
     if (context == null || !context.mounted) return false;
 
-    final result = await showDialog<bool>(
+    final choice = await showDialog<_CompatPromptChoice>(
       context: context,
       useRootNavigator: true,
       builder: (dialogContext) => AlertDialog(
@@ -280,25 +299,58 @@ class CfChallengeService {
         content: Text(S.current.cf_sessionCompatMessage),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
+            onPressed: () =>
+                Navigator.of(dialogContext).pop(_CompatPromptChoice.dismiss),
             child: Text(
               MaterialLocalizations.of(dialogContext).cancelButtonLabel,
             ),
           ),
+          // 第二条出路:自动过盾本身就是这套流程的起点,用户可以直接关掉它,
+          // 改为撞盾时手动点验证(ErrorView / 网络设置页都有入口)。
+          // 对"盾很频繁但兼容模式又不想开"的用户,这比反复被打扰更合适。
+          TextButton(
+            onPressed: () => Navigator.of(
+              dialogContext,
+            ).pop(_CompatPromptChoice.disableAutoVerify),
+            child: Text(S.current.cf_sessionCompatDisableAuto),
+          ),
           FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
+            onPressed: () => Navigator.of(
+              dialogContext,
+            ).pop(_CompatPromptChoice.enableCompat),
             child: Text(S.current.cf_sessionCompatEnable),
           ),
         ],
       ),
     );
-    final confirmed = result == true;
-    if (!confirmed) {
-      // 用户明确拒绝:进入静默期不再打扰。带时效而非永久——盾的成因
-      // (出口 IP、代理配置)可能在半小时内就变了,那时值得再问一次。
-      _sessionCompatDeclinedAt = DateTime.now();
+
+    switch (choice) {
+      case _CompatPromptChoice.enableCompat:
+        return true;
+
+      case _CompatPromptChoice.disableAutoVerify:
+        autoVerifyEnabled = false;
+        // 持久化交给设置层(它持有 SharedPreferences);未注入时只改内存态。
+        await disableAutoVerifyRequest?.call();
+        // 关掉自动过盾后不必再问兼容模式 —— 后续撞盾会静默 reject 并由
+        // ErrorView 给出手动验证入口,不再走到本询问。
+        _sessionCompatDeclinedAt = DateTime.now();
+        showGlobalMessage(
+          S.current.cf_autoVerifyDisabledHint,
+          isError: false,
+        );
+        CfChallengeLogger.log(
+          '[PROMPT] User disabled auto verify from compat prompt',
+        );
+        return false;
+
+      case _CompatPromptChoice.dismiss:
+      case null:
+        // 用户明确拒绝:进入静默期不再打扰。带时效而非永久——盾的成因
+        // (出口 IP、代理配置)可能在半小时内就变了,那时值得再问一次。
+        _sessionCompatDeclinedAt = DateTime.now();
+        return false;
     }
-    return confirmed;
   }
 
   void resetSessionCompatibilityDecision() {
