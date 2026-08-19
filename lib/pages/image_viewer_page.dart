@@ -84,13 +84,34 @@ class ImageViewerPage extends ConsumerStatefulWidget {
   /// pop 前 60% 完成淡出(reverseCurve 的 t 轴仍是 parent 值,
   /// Interval(0.4,1.0) 即 parent 1→0.4 期间完成 1→0),背景先立住/
   /// 先退场,图片随后落位/飞回,分层感更自然。
-  static Animation<double> _routeFadeAnimation(Animation<double> animation) {
+  ///
+  /// **必须跨帧持有,不能每帧新建**(故有 [_RouteFade] 这层壳):
+  /// [CurvedAnimation] 用跨帧字段 `_curveDirection` 记住「进入动画时
+  /// 的方向」,`_curveDirection ?? status` 在动画中途保留旧方向,正是
+  /// 上游用来「换向不跳变」的机制;而构造函数拿**当帧 status** 初始化
+  /// 它。_ModalScopeState 用 ListenableBuilder 监听路由动画,转场树
+  /// **每帧重建**,所以在 transitionsBuilder 里 new 一份 = 每帧把方向
+  /// 记忆抹成当帧值 = 机制失效。
+  ///
+  /// 配上这里前后不对称的区间,后果是 Hero 飞行未结束就关闭时,同一帧
+  /// parent 值不变而 alpha 断崖:实测 parent 恒为 0.427,alpha 0.879 →
+  /// 0.004(reverseCurve 的 Interval(0.4,1.0) 在 0.427 处几乎为 0)。
+  /// 观感即「整页黑底瞬间消失、底页全露,图片却还在飞」的黑闪。
+  static CurvedAnimation _buildRouteFade(Animation<double> animation) {
     return CurvedAnimation(
       parent: animation,
       curve: const Interval(0.0, 0.6, curve: Curves.easeOut),
       reverseCurve: const Interval(0.4, 1.0, curve: Curves.easeIn),
     );
   }
+
+  /// 仅供测试:查看器实际使用的淡入淡出层(黑闪回归防线)。
+  /// 走真 widget 而非只取曲线 —— 否则测不到「跨帧持有」这个关键点。
+  @visibleForTesting
+  static Widget debugRouteFade({
+    required Animation<double> animation,
+    required Widget child,
+  }) => _RouteFade(animation: animation, child: child);
 
   /// 使用透明路由打开图片查看器。返回的 Future 在查看器关闭时完成
   /// (调用方可借此恢复被隐藏的浮层等)。
@@ -150,10 +171,8 @@ class ImageViewerPage extends ConsumerStatefulWidget {
               // 透明路由用 fade:滑出对「下方要透出内容」的查看器没有
               // 意义。手势期同样是这个 fade(由手势进度驱动),与按钮
               // 返回一致 —— 单一分支原则。
-              transitionBuilder: (_, animation, _, child) => FadeTransition(
-                opacity: _routeFadeAnimation(animation),
-                child: child,
-              ),
+              transitionBuilder: (_, animation, _, child) =>
+                  _RouteFade(animation: animation, child: child),
             ),
       ),
     );
@@ -175,10 +194,8 @@ class ImageViewerPage extends ConsumerStatefulWidget {
               animation,
               secondaryAnimation,
               child,
-              transitionBuilder: (_, animation, _, child) => FadeTransition(
-                opacity: _routeFadeAnimation(animation),
-                child: child,
-              ),
+              transitionBuilder: (_, animation, _, child) =>
+                  _RouteFade(animation: animation, child: child),
             ),
       ),
     );
@@ -186,6 +203,52 @@ class ImageViewerPage extends ConsumerStatefulWidget {
 
   @override
   ConsumerState<ImageViewerPage> createState() => _ImageViewerPageState();
+}
+
+/// 承载查看器整页淡入淡出的壳:唯一职责是**跨帧持有那一份
+/// [CurvedAnimation]**,见 [ImageViewerPage._buildRouteFade] 的说明。
+///
+/// 转场树每帧重建,但同一路由的 [animation] 对象恒定,故本 State 只在
+/// animation 换了对象时才重建曲线(didUpdateWidget),其余帧一直复用同
+/// 一份 —— `_curveDirection` 得以跨帧存活,换向不再断崖。
+class _RouteFade extends StatefulWidget {
+  const _RouteFade({required this.animation, required this.child});
+
+  final Animation<double> animation;
+  final Widget child;
+
+  @override
+  State<_RouteFade> createState() => _RouteFadeState();
+}
+
+class _RouteFadeState extends State<_RouteFade> {
+  late CurvedAnimation _opacity;
+
+  @override
+  void initState() {
+    super.initState();
+    _opacity = ImageViewerPage._buildRouteFade(widget.animation);
+  }
+
+  @override
+  void didUpdateWidget(_RouteFade oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.animation, widget.animation)) {
+      _opacity.dispose();
+      _opacity = ImageViewerPage._buildRouteFade(widget.animation);
+    }
+  }
+
+  @override
+  void dispose() {
+    // CurvedAnimation 在 parent 上挂了 status 监听,不摘会一直吊着路由动画
+    _opacity.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) =>
+      FadeTransition(opacity: _opacity, child: widget.child);
 }
 
 class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
