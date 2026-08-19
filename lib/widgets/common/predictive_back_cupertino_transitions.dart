@@ -32,12 +32,29 @@
 // 6. 文件尾新增 [buildPredictiveBackPageTransitions](上游没有):给不走
 //    PageTransitionsTheme 的 PageRouteBuilder 自定义转场补挂手势探测器,
 //    追加在上游内容之后,不打断上游类排布。
+// 7. commit 自己收尾([_commitWithoutReplay]),不走框架的
+//    handleCommitBackGesture —— 后者在同一次 commit 里 reverse 两次
+//    (routes.dart:601-606),第二次硬拽回 1.0 重走 = 用户反馈的「返回重播」。
+// 8. 探测器持有的 route 类型从 `PageRoute<dynamic>` 放宽到
+//    `ModalRoute<dynamic>`,文件尾 helper 的类型闸门同步放宽。
+//    预测返回**不是 PageRoute 专属能力**:PredictiveBackRoute 的实现体在
+//    TransitionRoute(routes.dart:111 `implements PredictiveBackRoute`),
+//    ModalBottomSheetRoute → PopupRoute → ModalRoute → TransitionRoute
+//    与 PageRoute → ModalRoute → TransitionRoute 共享同一父类,四个 handler
+//    和 popGestureEnabled 全都继承得到。上游写 PageRoute 只因
+//    PageTransitionsBuilder.buildTransitions 的签名只喂 PageRoute<T> ——
+//    那是入口的限制,不是能力的限制。放宽后底部弹框可跟手下滑。
+//    实测:sheet 的 popGestureEnabled=true、手势进度驱动位移
+//    6.7px→48.2px→150.0px 单调跟手、下层 page route isCurrent=false
+//    (故不会同时认领)。
 //
 // Copyright 2014 The Flutter Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -112,7 +129,16 @@ class _PredictiveBackGestureDetector extends StatefulWidget {
   });
 
   final _PredictiveBackGestureDetectorWidgetBuilder builder;
-  final PageRoute<dynamic> route;
+
+  /// 差异点 8:上游此处是 `PageRoute<dynamic>`,本仓库放宽到 [ModalRoute]。
+  ///
+  /// 探测器只用到 `isCurrent`、`popGestureEnabled` 和 PredictiveBackRoute
+  /// 的四个 handler —— 这些全部定义在 [ModalRoute] 及其父类
+  /// `TransitionRoute`(它才是 `implements PredictiveBackRoute` 的那一层)。
+  /// 上游写 `PageRoute` 是因为 `PageTransitionsBuilder.buildTransitions`
+  /// 的签名只喂 `PageRoute<T>`,**那是入口的限制,不是能力的限制**。
+  /// 放宽后 `ModalBottomSheetRoute`(PopupRoute 分支)也能认领手势。
+  final ModalRoute<dynamic> route;
 
   @override
   State<_PredictiveBackGestureDetector> createState() =>
@@ -323,8 +349,10 @@ Widget buildPredictiveBackPageTransitions(
   )
   transitionBuilder,
 }) {
+  // 差异点 8:闸门放宽到 ModalRoute(原为 PageRoute)。仍需这道检查 ——
+  // 从弹窗以外的非 ModalRoute 上下文调用时静默降级,不挂探测器。
   final route = ModalRoute.of(context);
-  if (route is! PageRoute<dynamic>) {
+  if (route == null) {
     return transitionBuilder(context, animation, secondaryAnimation, child);
   }
 
@@ -332,5 +360,29 @@ Widget buildPredictiveBackPageTransitions(
     route: route,
     builder: (BuildContext context) =>
         transitionBuilder(context, animation, secondaryAnimation, child),
+  );
+}
+
+/// 给底部弹框一类 [ModalRoute] 补挂 Android 预测返回手势(差异点 8)。
+///
+/// 与 [buildPredictiveBackPageTransitions] 的区别:调用方**已持有 route
+/// 对象**(在 route 自己的 buildTransitions 里),不必从 context 反查。
+///
+/// **本函数不包任何视觉 widget** —— 只认领手势、把进度喂给路由动画。
+/// 底部弹框的位移本来就绑 `route.animation`(`_ModalBottomSheetState` 里
+/// `_sheetAnimation.parent = widget.route.animation`),而官方的手指下拉
+/// 关闭就是改同一个 controller 的 value。于是手势进度天然驱动 sheet 跟手
+/// 下滑,**与手指下拉关闭是同一套动画**,零新增动画代码。这也满足方案 A
+/// 的单一分支原则:同一个 sheet 在任何关闭路径下动画一致。
+///
+/// 只在 Android 生效;其它平台原样返回 [child],零行为变化。
+Widget wrapPredictiveBackForModalRoute({
+  required ModalRoute<dynamic> route,
+  required Widget child,
+}) {
+  if (defaultTargetPlatform != TargetPlatform.android) return child;
+  return _PredictiveBackGestureDetector(
+    route: route,
+    builder: (BuildContext context) => child,
   );
 }
