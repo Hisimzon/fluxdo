@@ -68,6 +68,7 @@ class CfChallengeService {
     if (_isVerifying == value) return;
     _isVerifying = value;
     if (value) {
+      _verifyRound++;
       _completedVerificationResult = null;
       final current = _manualTeardownCompleter;
       if (current == null || current.isCompleted) {
@@ -122,6 +123,18 @@ class CfChallengeService {
   /// 冷却机制：连续失败 N 次后进入冷却期
   DateTime? _cooldownUntil;
   int _consecutiveFailures = 0;
+
+  /// 验证轮次序号。每次真正起一轮验证(_setVerifying(true))时递增。
+  ///
+  /// 多个并发请求撞盾时会合流到同一轮验证(见 showManualVerify 的排队分支),
+  /// 但它们各自拿到结果后会**各自**走后续处置。失败计数必须按轮次去重,
+  /// 否则五个并发请求把一次时序抖动记成五次失败,瞬间打满阈值 → 冷却 +
+  /// 弹切兼容询问,而用户全程无感(实测:启动时五个首屏请求同时撞盾,
+  /// cookie 同步慢一拍,9 秒后自行恢复正常)。
+  int _verifyRound = 0;
+
+  /// 已被记过失败的轮次号,防止同一轮被多个等待者重复计数。
+  int? _failureCountedRound;
   static const _cooldownDuration = Duration(seconds: 30);
   static const _ineffectiveClearanceCooldown = Duration(seconds: 60);
   static const _maxFailuresBeforeCooldown = 3;
@@ -167,11 +180,31 @@ class CfChallengeService {
   void resetCooldown() {
     _cooldownUntil = null;
     _consecutiveFailures = 0;
+    // 去重标记随计数一起清:下一轮失败要能重新记账
+    _failureCountedRound = null;
     CfChallengeLogger.logCooldown(entering: false);
   }
 
-  /// 记录一次验证失败，连续达到上限后进入冷却期
-  void startCooldown() {
+  /// 当前验证轮次号。
+  ///
+  /// 拦截器在"验证成功但后续处置失败"时把它传给 [startCooldown],
+  /// 让同一轮验证的多个等待者只记一次失败。
+  int get verifyRound => _verifyRound;
+
+  /// 记录一次验证失败，连续达到上限后进入冷却期。
+  ///
+  /// [round] 传入触发本次失败的验证轮次号(见 [verifyRound])。同一轮只记一次
+  /// —— 多个并发请求撞盾会合流到同一轮验证,却各自走后续处置,不去重会把
+  /// 一次失败放大成 N 次,瞬间打满阈值。不传则按独立失败计数(如验证本身
+  /// 被用户取消,那与并发无关)。
+  void startCooldown({int? round}) {
+    if (round != null) {
+      if (_failureCountedRound == round) {
+        debugPrint('[CfChallenge] 轮次 $round 的失败已记过，跳过重复计数');
+        return;
+      }
+      _failureCountedRound = round;
+    }
     _consecutiveFailures++;
     if (_consecutiveFailures >= _maxFailuresBeforeCooldown) {
       _cooldownUntil = DateTime.now().add(_cooldownDuration);

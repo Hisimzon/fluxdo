@@ -222,10 +222,17 @@ class CfChallengeInterceptor extends Interceptor {
       // vendored 插件的 aliveGuard/TextureBridge 修复落地后恢复。)
       final result = await cfService.showManualVerify(null, !isSilent);
 
+      // 本次验证的轮次号。多个并发请求撞盾会合流到同一轮验证,却各自走下面
+      // 的处置分支 —— 失败计数必须带上轮次去重,否则一次时序抖动会被记成
+      // N 次失败(实测:启动时五个首屏请求同时撞盾,cookie 同步慢一拍,
+      // 计数瞬间打满阈值 → 进冷却 + 弹切兼容询问,而 9 秒后一切自愈,
+      // 用户全程无感却被弹窗打断)。
+      final verifyRound = cfService.verifyRound;
+
       if (result == true) {
         final syncOk = await _syncCookiesOnce();
         if (!syncOk) {
-          cfService.startCooldown();
+          cfService.startCooldown(round: verifyRound);
           debugPrint(
             '[Dio] cf_clearance not found after sync, entering cooldown',
           );
