@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fluxdo/widgets/common/predictive_back_cupertino_transitions.dart';
+import 'package:common_ui/common_ui.dart';
 
 /// 方案 A 的核心保证:**同一页面在任何返回路径下动画一致**。
 ///

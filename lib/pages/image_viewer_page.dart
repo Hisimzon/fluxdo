@@ -27,7 +27,6 @@ import '../utils/share_utils.dart';
 import '../widgets/common/app_bottom_sheet.dart';
 import '../widgets/common/hero_image.dart';
 import '../widgets/common/image_context_menu.dart';
-import '../widgets/common/predictive_back_cupertino_transitions.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 import '../l10n/s.dart';
 

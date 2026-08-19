@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fluxdo/widgets/common/predictive_back_cupertino_transitions.dart';
+import 'package:common_ui/common_ui.dart';
 
 /// Hero 路由 × 预测返回:路由认领手势是 Hero 跟手飞行的前提
 /// (HeroController 只为 user gesture 转场启动带 transitionOnUserGestures

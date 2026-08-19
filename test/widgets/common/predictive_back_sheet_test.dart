@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/utils/dialog_utils.dart';
-import 'package:fluxdo/widgets/common/predictive_back_cupertino_transitions.dart';
+import 'package:common_ui/common_ui.dart';
 
 /// 底部弹框的 Android 预测返回(差异点 8)。
 ///
@@ -340,4 +340,52 @@ void main() {
       reason: '非 Android 应原样返回 child,不包任何 widget',
     );
   }, variant: const TargetPlatformVariant({TargetPlatform.iOS}));
+
+  testWidgets(
+    '统一入口产出的 route 才带探测器(裸用官方 API 不带)',
+    (tester) async {
+      final navigatorKey = GlobalKey<NavigatorState>();
+      await tester.pumpWidget(buildApp(navigatorKey));
+      await tester.tap(find.text('page A'));
+      await tester.pumpAndSettle();
+
+      // 统一入口:_BlurModalBottomSheetRoute(私有类,按名字断言)
+      await openSheet(tester, navigatorKey.currentContext!);
+      expect(
+        sheetRoute(tester).runtimeType.toString(),
+        contains('BlurModalBottomSheetRoute'),
+        reason:
+            '统一入口应产出带探测器的 route。若这里变成 ModalBottomSheetRoute,'
+            '说明调用点被改回裸用 showModalBottomSheet,预测返回会静默失效',
+      );
+      navigatorKey.currentState!.pop();
+      await tester.pumpAndSettle();
+
+      // 裸用官方:没有探测器 —— 作为对照,证明上面那条断言有鉴别力
+      showModalBottomSheet<void>(
+        context: navigatorKey.currentContext!,
+        builder: (_) => const SizedBox(
+          height: 300,
+          child: Center(child: Text('sheet 内容')),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final bare = sheetRoute(tester);
+      expect(bare.runtimeType.toString(), 'ModalBottomSheetRoute<void>');
+
+      final double atRest = sheetTop(tester);
+      await send('startBackGesture', gestureArgs(0.0));
+      await tester.pump();
+      await send('updateBackGestureProgress', gestureArgs(0.5));
+      await tester.pump();
+      expect(
+        sheetTop(tester),
+        atRest,
+        reason: '裸用官方 API 的 sheet 无探测器,不该跟手 —— 对照组',
+      );
+      await send('cancelBackGesture');
+      await tester.pumpAndSettle();
+    },
+    variant: const TargetPlatformVariant({TargetPlatform.android}),
+  );
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:fluxdo_render/fluxdo_render.dart';
 
 import '../../../l10n/s.dart';
+import '../../../utils/dialog_utils.dart';
 import '../controllers/topic_toc_controller.dart';
 
 /// 话题目录(TOC)面板 —— 对齐 DiscoTOC 双形态:
@@ -182,7 +183,7 @@ Future<void> showTocBottomSheet({
   required TopicTocController controller,
   required ValueChanged<TocEntry> onEntryTap,
 }) {
-  return showModalBottomSheet<void>(
+  return showAppBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     showDragHandle: true,

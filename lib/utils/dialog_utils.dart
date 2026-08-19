@@ -5,7 +5,7 @@ import 'package:m3e_ui/m3e_ui.dart';
 import '../providers/preferences_provider.dart';
 import '../providers/shortcut_provider.dart';
 import '../services/dynamic_content_suspension_service.dart';
-import '../widgets/common/predictive_back_cupertino_transitions.dart';
+import 'package:common_ui/common_ui.dart';
 import 'blur_config.dart';
 
 /// 根据用户偏好判断是否启用模糊

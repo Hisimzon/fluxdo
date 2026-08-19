@@ -27,7 +27,7 @@ import 'services/highlighter_service.dart';
 import 'widgets/common/notification_icon_button.dart';
 import 'widgets/common/anchor_guard_sliver.dart';
 import 'widgets/common/fullscreen_swipe_back.dart';
-import 'widgets/common/predictive_back_cupertino_transitions.dart';
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter_displaymode/flutter_displaymode.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'services/network/cookie/csrf_token_service.dart';
