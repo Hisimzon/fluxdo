@@ -94,9 +94,23 @@ class HeroVisibilityController extends ChangeNotifier {
     _safeNotify();
   }
 
-  /// Pop 飞行结束时调用
-  /// 从动画状态监听器调用，在 handleBeginFrame 阶段（build 之前），
-  /// 直接通知以确保同帧内 rebuild，避免闪烁
+  /// 宣告「本次关闭的退场已经开始」:源端缩略图立即恢复可见,好让
+  /// Hero 飞行体有个落点、飞行体撤走时那个位置不是空洞。
+  ///
+  /// **不可依赖「pop 方向的 shuttle 被构建过」**。曾经的实现是在
+  /// `flightShuttleBuilder` 的 `direction == pop` 分支里挂动画监听来调
+  /// 本方法,但 push 飞行未结束就被 pop 打断时(用户连点两下、开图立刻
+  /// 返回),框架走 `_HeroFlight.divert` 的 push→pop 分支,它只换
+  /// `_proxyAnimation.parent` 与 `heroRectTween`,**不清 `shuttle`**
+  /// (`heroes.dart`:`shuttle ??= manifest.shuttleBuilder(...)`)——
+  /// shuttleBuilder 全程只以 push 方向被调用一次,那个监听器从未注册,
+  /// `_isPopping` 恒 false ⇒ 源端 Opacity 锁死在 0 ⇒ 飞行体撤走后缩略图
+  /// 位置是空洞,直到 [clear] 的 post-frame 才恢复 = 用户看到的黑闪。
+  /// 实测:飞完再 pop 时 shuttle=[push, pop]、isPopping=true;中途打断
+  /// 时 shuttle=[push]、isPopping=false。
+  ///
+  /// 故改由查看器在路由动画转 reverse / 手势置位时直接调用 —— 这两件事
+  /// 与「是否新建 shuttle」无关,打断路径同样成立。
   void startPopping() {
     if (_isPopping) return;
     _isPopping = true;

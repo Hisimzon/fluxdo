@@ -469,24 +469,27 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     }
   }
 
-  /// 按钮/程序化 pop:路由动画转 reverse 的第一帧归位缩放,
-  /// 早于 HeroController 对 to 路由的测量与飞行起跳。
+  /// 退场起点(按钮/程序化 pop):路由动画转 reverse 的第一帧,早于
+  /// HeroController 对 to 路由的测量与飞行起跳。
   ///
-  /// 松弛会话在途(预测返回 commit)则什么都不做:真机 fling 常在
-  /// 低进度(0.1~0.3)就 commit,此刻 snap 会把剩余 70%+ 缩放一把
-  /// 打掉,正是「大图突然变小」;让 lerp 骑完退场动画(commit 后
-  /// 路由动画从当前值继续反转到 0),残余缩放随退场连续收拢,
-  /// t=0 恰为 contain = Hero 落地帧,全程无跳变点。
+  /// 这里必须**同时**宣告 startPopping:它原先挂在源端
+  /// flightShuttleBuilder 的 pop 分支里,而 push 飞行未跑完就被 pop 打断
+  /// 时框架走 divert 且不重建 shuttle,那个监听器根本不会注册 ⇒ 源端
+  /// 缩略图 Opacity 锁死在 0 ⇒ 飞行体撤走瞬间是空洞(黑闪)。详见
+  /// [HeroVisibilityController.startPopping]。
   void _onRouteAnimationStatus(AnimationStatus status) {
     if (status != AnimationStatus.reverse) return;
     _publishExitFlightRect();
+    HeroVisibilityController.instance.startPopping();
   }
 
-  /// 预测返回/iOS 拖拽:手势置位即发布飞行矩形(早于 HeroController
-  /// 测量飞行几何)。手势期不再改动缩放 —— 缩放由 Hero 飞行承载。
+  /// 退场起点(预测返回/iOS 拖拽):手势置位即发布飞行矩形(早于
+  /// HeroController 测量飞行几何)。手势期不改动缩放 —— 缩放由 Hero
+  /// 飞行承载。同样要宣告 startPopping,理由同上。
   void _onNavUserGestureChanged() {
     if (_navUserGesture?.value == true && (_route?.isCurrent ?? false)) {
       _publishExitFlightRect();
+      HeroVisibilityController.instance.startPopping();
     }
   }
 

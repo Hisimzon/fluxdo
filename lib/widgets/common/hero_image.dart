@@ -288,18 +288,15 @@ class _HeroImageState extends State<HeroImage> {
               // (仅退场时发布),不受影响。
               return RectTween(begin: zoomed, end: end);
             },
-            // 飞行动画：pop 飞行结束时设置 isPopping;网格瓦片来源
-            // (coverFlight)换裁切插值飞行体,否则返回纯图片
+            // 网格瓦片来源(coverFlight)换裁切插值飞行体,否则返回纯图片。
+            //
+            // 这里**不再**挂 startPopping 的动画监听:push 飞行未跑完就被
+            // pop 打断时,框架走 _HeroFlight.divert 且不重建 shuttle
+            // (heroes.dart:`shuttle ??= manifest.shuttleBuilder(...)`),
+            // 本 builder 全程只以 push 方向调用一次,pop 分支永不执行 ⇒
+            // 源端 Opacity 锁死在 0 ⇒ 空洞黑闪。宣告退场已改由查看器在
+            // 路由转 reverse / 手势置位时直接做,与 shuttle 无关。
             flightShuttleBuilder: (flightContext, animation, direction, fromContext, toContext) {
-              if (direction == HeroFlightDirection.pop) {
-                void listener(AnimationStatus status) {
-                  if (status == AnimationStatus.completed || status == AnimationStatus.dismissed) {
-                    animation.removeStatusListener(listener);
-                    HeroVisibilityController.instance.startPopping();
-                  }
-                }
-                animation.addStatusListener(listener);
-              }
               if (widget.coverFlight && widget.flightImage != null) {
                 return CoverContainFlightImage(
                   image: widget.flightImage!,
