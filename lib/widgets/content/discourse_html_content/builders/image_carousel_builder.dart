@@ -7,6 +7,7 @@ import 'package:app_icons/app_icons.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 import '../../../../services/discourse_cache_manager.dart';
 import '../../../../services/image_decode_spec_memo.dart';
+import '../../../../utils/hero_visibility_controller.dart';
 import '../image_utils.dart';
 import 'image_grid_builder.dart';
 
@@ -363,14 +364,28 @@ class _CarouselSlideState extends State<_CarouselSlide>
       // 是拿算式去追结构,治标;且改 begin 那版还引入了新的落点偏移。
       //
       // 这里改结构:用 AspectRatio 把 Hero 盒子收到图片真实比例,居中放进
-      // 槽位。于是 Hero 盒子 ≡ 画面,飞行两端天然像素级对齐,不再需要任何
-      // 落点修正。原始宽高缺失时退回旧结构(无从得知比例),但**仍要有
-      // Hero** —— 否则那些没带宽高的图会彻底失去飞行(测试已拦住这个坑)。
+      // 槽位。于是 Hero 盒子 ≡ 画面,**未放大态**飞行两端天然像素级对齐,
+      // 不需要落点修正。原始宽高缺失时退回旧结构(无从得知比例),但
+      // **仍要有 Hero** —— 否则那些没带宽高的图会彻底失去飞行。
       child: Center(
         child: Hero(
           tag: heroTag,
           // Android 预测返回是 user gesture 转场,须显式开启才有飞行
           transitionOnUserGestures: true,
+          // 放大态返回:起点必须换成查看器发布的**实际可见矩形**,否则
+          // 起点是查看器的布局盒子(全屏),而放大后的画面远大于它 ——
+          // 观感就是「大图瞬间变成小图,然后才播动画」。这与
+          // hero_image.dart 的 HeroImage 同口径(正常图一直有这段,轮播
+          // 此前漏了,故只有轮播放大后返回没动画)。
+          // 未放大时 exitFlightRect 为 null → 走框架默认几何,即上面
+          // AspectRatio 保证的天然对齐,不做任何修正。
+          createRectTween: (begin, end) {
+            final zoomed = HeroVisibilityController.instance.exitFlightRect;
+            if (zoomed == null) {
+              return MaterialRectArcTween(begin: begin, end: end);
+            }
+            return RectTween(begin: zoomed, end: end);
+          },
           child: aspect == null
               ? _buildImage(url, cacheWidth, cacheHeight, fillSlot: true)
               : AspectRatio(

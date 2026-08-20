@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fluxdo/utils/hero_visibility_controller.dart';
 import 'package:fluxdo/widgets/content/discourse_html_content/builders/image_carousel_builder.dart';
 import 'package:fluxdo/widgets/content/discourse_html_content/builders/image_grid_builder.dart';
 import 'package:fluxdo/widgets/content/discourse_html_content/image_utils.dart';
@@ -16,16 +17,24 @@ import 'package:fluxdo/widgets/content/discourse_html_content/image_utils.dart';
 /// 盒子,于是尾帧铺满槽位,Hero 撤走后才由 Image 的 contain 缩成小图。
 ///
 /// **修法:让 Hero 只包住画面**。用 AspectRatio 把盒子收到图片真实比例、
-/// 居中放进槽位,于是 Hero 盒子 ≡ 画面,飞行两端天然对齐。
+/// 居中放进槽位,于是 Hero 盒子 ≡ 画面,**未放大态**飞行两端天然对齐,不需要
+/// 落点修正。
 ///
-/// 此前三轮都在 createRectTween 上打补丁(拿算式去追结构),留档免得重走:
-///  1. 「落点收成 contain 矩形」—— 算式与真机 paintedRect 逐位一致,但治标;
+/// 放大态另需 createRectTween 把起点换成查看器发布的可见矩形(见下方分组):
+/// 否则起点是查看器布局盒子(全屏),而放大后画面远大于它 —— 观感是「大图
+/// 瞬间变小,然后才播动画」。正常图(HeroImage)一直有这段,轮播此前漏了,
+/// 所以真机上只有轮播放大后返回没动画。
+///
+/// 此前在 createRectTween 上打过的补丁(拿算式追结构),留档免得重走:
+///  1. 「落点收成 contain 矩形」—— 算式与真机 paintedRect 逐位一致,但治标,
+///     已被 AspectRatio 结构修法取代;
 ///  2. 「落点选中离屏 keepAlive 页拿到 NaN」—— 离屏页确实恒 NaN,但那会让
 ///     飞行体退化成固有尺寸乱摆,与症状不符;且实机确认第一张就会,不翻页;
-///  3. 「用 exitFlightRect 覆盖 begin」—— **有害**。该字段判据是
-///     totalScale > 1,而查看器对小图本身就放大适配(500x500 撑到 1212 宽),
-///     故用户没放大它也非 null,实测 1212x1212 且上下溢出屏幕 191px,
-///     拿它当起点整条路径歪掉,反而引入了落点偏移。
+///  3. 「无条件用 exitFlightRect 覆盖 begin」—— 曾因该字段判据是
+///     totalScale > 1 而有害:查看器对小图本身就放大适配(500x500 撑到
+///     1212 宽),用户没放大它也非 null(实测 1212x1212、上下溢出 191px)。
+///     判据已改为「矩形是否偏离 contain 基线」(见
+///     image_viewer_exit_rect_predicate_test),故现在可以安全消费它。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -109,14 +118,66 @@ void main() {
     expect(r.height, closeTo(300, 0.5));
   });
 
-  testWidgets('不再依赖 createRectTween(结构已保证两端对齐)', (tester) async {
-    await pumpCarousel(tester, imgW: 500, imgH: 500);
-    final hero = tester.widget<Hero>(find.byType(Hero).first);
-    expect(
-      hero.createRectTween,
-      isNull,
-      reason: '结构修法下不该再有落点修正 —— 若又加回来,说明在拿算式追结构',
-    );
+  group('放大态返回的飞行起点', () {
+    // 这一组守的是真机报的「轮播放大后返回没有大图→小图动画,直接变小」。
+    // 成因:轮播的 Hero 漏了 createRectTween,于是放大态起点仍是查看器的
+    // 布局盒子(全屏),而放大后画面远大于它 —— 视觉上就是瞬间变小再播。
+    // 正常图(HeroImage)一直有这段,所以只有轮播出问题。
+    tearDown(() => HeroVisibilityController.instance.setExitFlightRect(null));
+
+    testWidgets('未放大:走框架默认几何(结构已保证两端对齐)', (tester) async {
+      await pumpCarousel(tester, imgW: 500, imgH: 500);
+      final make =
+          tester.widget<Hero>(find.byType(Hero).first).createRectTween!;
+      const viewerBox = Rect.fromLTWH(0, 0, 1212, 758);
+      const heroBox = Rect.fromLTWH(675, 357, 225, 300);
+      final tween = make(viewerBox, heroBox);
+      expect(tween.begin, viewerBox, reason: '未放大不该改起点');
+      expect(tween.end, heroBox, reason: '落点始终是 Hero 盒子(=画面)');
+    });
+
+    testWidgets('放大态:起点换成查看器发布的实际可见矩形', (tester) async {
+      await pumpCarousel(tester, imgW: 500, imgH: 500);
+      final make =
+          tester.widget<Hero>(find.byType(Hero).first).createRectTween!;
+
+      // 3x 放大且平移过:矩形远大于屏幕、原点为负
+      const zoomed = Rect.fromLTRB(-400, -600, 1600, 2000);
+      HeroVisibilityController.instance.setExitFlightRect(zoomed);
+
+      const viewerBox = Rect.fromLTWH(0, 0, 1212, 758);
+      const heroBox = Rect.fromLTWH(675, 357, 225, 300);
+      final tween = make(viewerBox, heroBox);
+      expect(
+        tween.begin,
+        zoomed,
+        reason: '放大态起点仍是布局盒子 ⇒ 大图瞬间变小再播动画(真机报的症状)',
+      );
+      expect(tween.end, heroBox);
+    });
+
+    testWidgets('放大态飞行全程:尺寸从放大矩形单调收到画面', (tester) async {
+      await pumpCarousel(tester, imgW: 500, imgH: 500);
+      final make =
+          tester.widget<Hero>(find.byType(Hero).first).createRectTween!;
+      const zoomed = Rect.fromLTRB(-400, -600, 1600, 2000);
+      HeroVisibilityController.instance.setExitFlightRect(zoomed);
+
+      final tween = make(
+        const Rect.fromLTWH(0, 0, 1212, 758),
+        const Rect.fromLTWH(675, 357, 225, 300),
+      );
+      double prev = tween.transform(0.0)!.width;
+      expect(prev, closeTo(2000, 1), reason: '起点应是放大后的宽度');
+      for (var i = 1; i <= 10; i++) {
+        final w = tween.transform(i / 10)!.width;
+        expect(w, lessThanOrEqualTo(prev + 0.01),
+            reason: 't=${i / 10} 处宽度回升,飞行不单调');
+        prev = w;
+      }
+      expect(tween.transform(1.0)!.width, closeTo(225, 1),
+          reason: '终点必须落到画面宽度');
+    });
   });
 
   testWidgets('槽位变窄时 Hero 盒子跟着走(不写死尺寸)', (tester) async {
