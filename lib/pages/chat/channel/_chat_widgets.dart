@@ -454,6 +454,8 @@ class _MessageUploads extends StatelessWidget {
       child: Hero(
         tag: heroTag,
         transitionOnUserGestures: true,
+        // 放大态返回的飞行起点(共享口径,见 viewerHeroRectTween)
+        createRectTween: viewerHeroRectTween,
         child: image,
       ),
     );

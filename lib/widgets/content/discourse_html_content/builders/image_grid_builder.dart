@@ -8,6 +8,7 @@ import '../../../../utils/url_helper.dart';
 import '../image_utils.dart';
 import '../../lazy_load_scope.dart';
 import 'image_carousel_builder.dart';
+import '../../../../utils/hero_visibility_controller.dart';
 
 /// 构建 Discourse 图片网格 (d-image-grid)
 /// 支持 grid 和 carousel 两种模式
@@ -275,6 +276,8 @@ class _GridImageTileState extends State<_GridImageTile> {
             tag: widget.heroTag,
             // Android 预测返回是 user gesture 转场,须显式开启才有飞行
             transitionOnUserGestures: true,
+            // 放大态返回的飞行起点(共享口径,见 viewerHeroRectTween)
+            createRectTween: viewerHeroRectTween,
             // RepaintBoundary:加载 spinner 动画/首绘隔离在格子内,
             // 不连带整个帖子 segment 每帧重绘
             child: RepaintBoundary(

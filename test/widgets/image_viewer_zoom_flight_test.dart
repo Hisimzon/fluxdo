@@ -15,14 +15,9 @@ void main() {
   setUp(() => HeroVisibilityController.instance.setExitFlightRect(null));
   tearDown(() => HeroVisibilityController.instance.setExitFlightRect(null));
 
-  /// 与 hero_image.dart 的 createRectTween 同构
-  Tween<Rect?> buildTween(Rect? begin, Rect? end) {
-    final zoomed = HeroVisibilityController.instance.exitFlightRect;
-    if (zoomed == null) {
-      return MaterialRectArcTween(begin: begin, end: end);
-    }
-    return RectTween(begin: zoomed, end: end);
-  }
+  /// 直接用产品代码那一个共享实现,不复刻 —— 复刻的话产品逻辑改坏了这里
+  /// 照样过(自洽装置)。所有源端 Hero 都挂的就是它。
+  const buildTween = viewerHeroRectTween;
 
   const viewerBox = Rect.fromLTWH(0, 0, 400, 800); // 查看器布局盒子(全屏)
   const thumbBox = Rect.fromLTWH(20, 300, 80, 80); // 源端缩略图

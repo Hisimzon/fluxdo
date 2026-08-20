@@ -57,6 +57,7 @@ import 'chat/channel/chat_channel_page.dart';
 import 'package:common_ui/common_ui.dart';
 import '../l10n/s.dart';
 import '../utils/dialog_utils.dart';
+import '../utils/hero_visibility_controller.dart';
 
 /// 用户个人页
 class UserProfilePage extends ConsumerStatefulWidget {
@@ -1755,6 +1756,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
           avatar: Hero(
             tag: 'user_avatar_${_user?.username ?? ''}',
             transitionOnUserGestures: true,
+            // 放大态返回的飞行起点(共享口径,见 viewerHeroRectTween)
+            createRectTween: viewerHeroRectTween,
             child: SmartAvatar(
               imageUrl: avatarUrl,
               radius: radius,
@@ -2236,6 +2239,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                         // 预测返回是 user gesture 转场,
                         // 不开此标记头像不飞(查看器侧已开)
                         transitionOnUserGestures: true,
+                        // 放大态返回的飞行起点(见 viewerHeroRectTween)
+                        createRectTween: viewerHeroRectTween,
                         child: SmartAvatar(
                           imageUrl: avatarUrl,
                           radius: 36,

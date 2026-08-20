@@ -5,6 +5,7 @@ import '../../services/discourse/discourse_service.dart';
 import '../../services/discourse_cache_manager.dart';
 import '../../pages/image_viewer_page.dart';
 import 'svg_view.dart';
+import '../../utils/hero_visibility_controller.dart';
 
 /// Discourse 图片组件
 ///
@@ -143,6 +144,8 @@ class _DiscourseImageState extends State<DiscourseImage> {
       imageWidget = Hero(
         tag: widget.heroTag!,
         transitionOnUserGestures: true,
+        // 放大态返回的飞行起点(共享口径,见 viewerHeroRectTween)
+        createRectTween: viewerHeroRectTween,
         child: imageWidget,
       );
     }

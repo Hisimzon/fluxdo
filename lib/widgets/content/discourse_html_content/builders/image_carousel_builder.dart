@@ -372,20 +372,9 @@ class _CarouselSlideState extends State<_CarouselSlide>
           tag: heroTag,
           // Android 预测返回是 user gesture 转场,须显式开启才有飞行
           transitionOnUserGestures: true,
-          // 放大态返回:起点必须换成查看器发布的**实际可见矩形**,否则
-          // 起点是查看器的布局盒子(全屏),而放大后的画面远大于它 ——
-          // 观感就是「大图瞬间变成小图,然后才播动画」。这与
-          // hero_image.dart 的 HeroImage 同口径(正常图一直有这段,轮播
-          // 此前漏了,故只有轮播放大后返回没动画)。
-          // 未放大时 exitFlightRect 为 null → 走框架默认几何,即上面
-          // AspectRatio 保证的天然对齐,不做任何修正。
-          createRectTween: (begin, end) {
-            final zoomed = HeroVisibilityController.instance.exitFlightRect;
-            if (zoomed == null) {
-              return MaterialRectArcTween(begin: begin, end: end);
-            }
-            return RectTween(begin: zoomed, end: end);
-          },
+          // 放大态返回的飞行起点(共享口径,见 viewerHeroRectTween)。
+          // 未放大时它返回框架默认几何,即上面 AspectRatio 保证的天然对齐。
+          createRectTween: viewerHeroRectTween,
           child: aspect == null
               ? _buildImage(url, cacheWidth, cacheHeight, fillSlot: true)
               : AspectRatio(

@@ -30,6 +30,7 @@ import '../../../services/toast_service.dart';
 import '../../../utils/adaptive_menu.dart';
 import '../../../utils/dialog_utils.dart';
 import '../../../utils/fluxdo_render_callbacks.dart';
+import '../../../utils/hero_visibility_controller.dart';
 import '../../../utils/platform_utils.dart';
 import '../../../utils/emoji_shortcodes.dart';
 import '../../../utils/time_utils.dart';
