@@ -41,6 +41,22 @@ class PreviewAction {
   });
 }
 
+/// 取卡片(或任意锚点 widget)的屏幕 rect 作为一镜到底动画起点。
+/// [cardContext] 必须是卡片自身的 context(Builder 紧贴卡片构造);
+/// 卡片外壳含底部间距(Padding),[bottomGap] 裁掉后才是视觉卡身:
+/// 普通/自绘卡 8、置顶紧凑卡 6。卡片未挂载/未布局时返回 null。
+Rect? topicCardAnchorRect(BuildContext cardContext, {double bottomGap = 8}) {
+  final box = cardContext.findRenderObject();
+  if (box is! RenderBox || !box.hasSize) return null;
+  final origin = box.localToGlobal(Offset.zero);
+  return Rect.fromLTRB(
+    origin.dx,
+    origin.dy,
+    origin.dx + box.size.width,
+    origin.dy + box.size.height - bottomGap,
+  );
+}
+
 /// 话题预览弹窗 - 长按卡片时显示
 class TopicPreviewDialog extends ConsumerStatefulWidget {
   final Topic topic;
@@ -54,6 +70,22 @@ class TopicPreviewDialog extends ConsumerStatefulWidget {
   /// 压回锚点的栈(与正文内链同语义),没有则全屏 push。
   final SelectedTopicProvider? paneStack;
 
+  /// 一镜到底模式:非空时弹窗壳从 [anchorRect](长按卡片的屏幕 rect)
+  /// 连续变形到居中弹窗 —— 内容自始至终嵌在壳内随其变形(裁剪窗从
+  /// 卡片大小展开),没有"空壳飞行"段;关闭沿同路径收回。由路由
+  /// animation 驱动([show] 的 anchorRect 路径传入)。
+  final Animation<double>? morphAnimation;
+
+  /// 一镜到底起点:卡片的屏幕 rect(已裁掉卡片底部间距)
+  final Rect? anchorRect;
+
+  /// 一镜到底起点底色:卡片外壳底色(surfaceContainerLow 系),
+  /// 与弹窗壳 surface 做插值,起步无缝
+  final Color? anchorColor;
+
+  /// 一镜到底起点圆角(卡片 10 → 弹窗 20)
+  final double anchorRadius;
+
   const TopicPreviewDialog({
     super.key,
     required this.topic,
@@ -62,12 +94,20 @@ class TopicPreviewDialog extends ConsumerStatefulWidget {
     this.customActionPanelBuilder,
     this.firstPostLoader,
     this.paneStack,
+    this.morphAnimation,
+    this.anchorRect,
+    this.anchorColor,
+    this.anchorRadius = 10,
   });
 
   @override
   ConsumerState<TopicPreviewDialog> createState() => _TopicPreviewDialogState();
 
   /// 显示预览弹窗
+  ///
+  /// [anchorRect] 为长按卡片的全局 rect(已裁掉卡片底部间距)。
+  /// 传入时走一镜到底:弹窗壳从卡片位置/底色/圆角连续变形到居中
+  /// 弹窗,关闭沿同路径收回;未传入回退为中心缩放(防御兜底)。
   static Future<void> show(
     BuildContext context, {
     required Topic topic,
@@ -75,12 +115,44 @@ class TopicPreviewDialog extends ConsumerStatefulWidget {
     List<PreviewAction>? actions,
     WidgetBuilder? customActionPanelBuilder,
     Future<String?> Function()? firstPostLoader,
+    Rect? anchorRect,
+    Color? anchorColor,
+    double anchorRadius = 10,
   }) {
     // 触觉反馈
     HapticFeedback.mediumImpact();
 
     // pop 弹窗后锚点 context 可能已失效,进弹窗前先捕获平行视界栈。
     final paneStack = EmbeddedStackScope.maybeOf(context);
+
+    if (anchorRect != null) {
+      // 一镜到底:变形由弹窗内部根据路由 animation 自驱(内容嵌在壳内
+      // 随壳变形),这里 transitionBuilder 必须恒等 —— 默认的整页淡入
+      // 会让壳从透明浮现,破坏"卡片浮起"的连续性
+      return showAppGeneralDialog(
+        context: context,
+        barrierDismissible: true,
+        barrierLabel: S.current.common_closePreview,
+        barrierColor: Colors.black54,
+        transitionDuration: const Duration(milliseconds: 350),
+        transitionBuilder: (context, animation, secondaryAnimation, child) =>
+            child,
+        pageBuilder: (context, animation, secondaryAnimation) {
+          return TopicPreviewDialog(
+            topic: topic,
+            onOpen: onOpen,
+            actions: actions,
+            customActionPanelBuilder: customActionPanelBuilder,
+            firstPostLoader: firstPostLoader,
+            paneStack: paneStack,
+            morphAnimation: animation,
+            anchorRect: anchorRect,
+            anchorColor: anchorColor,
+            anchorRadius: anchorRadius,
+          );
+        },
+      );
+    }
 
     return showAppGeneralDialog(
       context: context,
@@ -117,12 +189,26 @@ class _TopicPreviewDialogState extends ConsumerState<TopicPreviewDialog> {
   bool _isLoading = true;
   bool _loadFailed = false;
 
+  // ── 一镜到底(morphAnimation 非空) ──
+  /// 内容柱(壳体 + 底部操作面板)的测量锚。注意框架禁止在 build 阶段
+  /// 读 Element.size,尺寸统一经 [_scheduleSizeSync] 在 postFrame /
+  /// 尺寸变化通知里写入 [_contentSize];写入前壳钳在锚点作蓄力起步
+  final GlobalKey _contentKey = GlobalKey();
+  Size? _contentSize;
+
+  /// 弹簧曲线缓存:curveFor 的解析解含二分/log 预热,不能逐帧重建
+  Curve? _spatialCurve;
+  Curve? _effectsCurve;
+  bool? _cachedM3e;
   Topic get topic => widget.topic;
 
   @override
   void initState() {
     super.initState();
     _loadFirstPost();
+    // 一镜到底:首帧布局后尽快测得内容柱尺寸,让动画尽早起步
+    // (路由插入帧 page 可能 offstage 不参与布局,故逐帧重试)
+    if (widget.morphAnimation != null) _scheduleSizeSync();
   }
 
   Future<void> _loadFirstPost() async {
@@ -144,6 +230,43 @@ class _TopicPreviewDialogState extends ConsumerState<TopicPreviewDialog> {
         _loadFailed = true;
       });
     }
+  }
+
+  void _ensureMorphCurves(bool m3e) {
+    if (_cachedM3e == m3e && _spatialCurve != null) return;
+    _cachedM3e = m3e;
+    // 空间属性(位置/尺寸/圆角):欠阻尼弹簧,带轻微过冲的落座感;
+    // 效果属性(颜色/阴影/透明度):临界阻尼,不过冲
+    const duration = Duration(milliseconds: 350);
+    _spatialCurve = m3e
+        ? M3eMotion.defaultSpatial.curveFor(duration)
+        : Curves.easeInOutCubic;
+    _effectsCurve = m3e
+        ? M3eMotion.defaultEffects.curveFor(duration)
+        : Curves.easeInOut;
+  }
+
+  /// 内容尺寸变化(正文加载完成等)时安排重测,壳 rect 下一帧跟上
+  bool _onContentSizeChanged(SizeChangedLayoutNotification notification) {
+    _scheduleSizeSync();
+    return true;
+  }
+
+  /// postFrame 里读 [_contentKey] 的布局尺寸写入 [_contentSize];
+  /// 未布局(首帧 offstage 等)则逐帧重试直到测得。壳 rect 的动画
+  /// 终点与收回起点都取自这里 —— 内容长高后壳自动跟随
+  void _scheduleSizeSync() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final render = _contentKey.currentContext?.findRenderObject();
+      if (render is RenderBox && render.hasSize) {
+        if (render.size != _contentSize) {
+          setState(() => _contentSize = render.size);
+        }
+      } else {
+        _scheduleSizeSync();
+      }
+    });
   }
 
   @override
@@ -173,86 +296,192 @@ class _TopicPreviewDialogState extends ConsumerState<TopicPreviewDialog> {
     final hasActions = widget.actions != null && widget.actions!.isNotEmpty;
     final hasCustomActionPanel = widget.customActionPanelBuilder != null;
 
+    final morphing = widget.morphAnimation != null;
+
+    // 壳体内容(两种模式共用):渐变条 + 自定义面板 + 滚动内容 + 底栏
+    final sheetBody = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          height: 4,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                theme.colorScheme.primaryContainer,
+                theme.colorScheme.tertiaryContainer,
+              ],
+            ),
+          ),
+        ),
+        if (hasCustomActionPanel)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+            child: widget.customActionPanelBuilder!(context),
+          ),
+        Flexible(
+          child: SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(
+              20,
+              hasCustomActionPanel ? 16 : 20,
+              20,
+              20,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildTitle(context, theme),
+                const SizedBox(height: 12),
+                _buildAuthorInfo(context, theme),
+                if (category != null || topic.tags.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  _buildCategoryAndTags(
+                    context,
+                    theme,
+                    category,
+                    faIcon,
+                    logoUrl,
+                  ),
+                ],
+                const SizedBox(height: 16),
+                _buildPostContent(context, theme),
+                const SizedBox(height: 16),
+                if (topic.posters.length > 1)
+                  _buildParticipants(context, theme),
+                _buildStats(context, theme),
+              ],
+            ),
+          ),
+        ),
+        _buildActions(context, theme),
+      ],
+    );
+
+    final contentColumn = Column(
+      key: const ValueKey('topic-preview-root'),
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Flexible(
+          // 一镜到底模式的底色/圆角/阴影/裁剪全由飞行壳提供,这里只留
+          // transparency Material 作 InkWell 载体,避免双层壳叠加
+          child: morphing
+              ? Material(type: MaterialType.transparency, child: sheetBody)
+              : Material(
+                  color: theme.colorScheme.surface,
+                  borderRadius: BorderRadius.circular(20),
+                  clipBehavior: Clip.antiAlias,
+                  elevation: 8,
+                  child: sheetBody,
+                ),
+        ),
+        if (hasActions) ...[
+          const SizedBox(height: 8),
+          _buildCustomActions(context, theme),
+        ],
+      ],
+    );
+
+    if (morphing) return _buildMorphingShell(context, contentColumn);
+
     return Center(
       child: ConstrainedBox(
         constraints: BoxConstraints(
           maxWidth: maxWidth.clamp(300, 500),
           maxHeight: maxHeight,
         ),
-        child: Column(
-          key: const ValueKey('topic-preview-root'),
-          mainAxisSize: MainAxisSize.min,
+        child: contentColumn,
+      ),
+    );
+  }
+
+  /// 一镜到底壳层:飞行壳(Material)从锚点 rect 连续变形到内容最终
+  /// rect;内容自始至终嵌在壳内(OverflowBox 按目标宽布局、顶部对齐),
+  /// 裁剪窗随壳从卡片大小展开 —— 内容全程随壳飞行,没有"空壳移动"段。
+  /// 内容尺寸由 SizeChangedLayoutNotifier 实时上报:正文加载完成壳
+  /// 自动跟随长高;反向收回时从内容当前实际尺寸飞回锚点。
+  Widget _buildMorphingShell(BuildContext context, Widget body) {
+    final theme = Theme.of(context);
+    final screen = MediaQuery.sizeOf(context);
+    final dialogWidth = (screen.width * 0.9).clamp(300.0, 500.0);
+    final animation = widget.morphAnimation!;
+    final anchor = widget.anchorRect!;
+    final anchorColor =
+        widget.anchorColor ??
+        theme.cardTheme.color ??
+        theme.colorScheme.surfaceContainerLow;
+    _ensureMorphCurves(M3eFlags.of(context).enabled);
+
+    return AnimatedBuilder(
+      animation: animation,
+      builder: (context, contentBody) {
+        final rawT = animation.value;
+        // 内容尺寸经 postFrame 测得前(至多前两帧)壳钳在锚点,作蓄力起步
+        final size = _contentSize;
+        final spatialT = size == null ? 0.0 : _spatialCurve!.transform(rawT);
+        final effectsT = _effectsCurve!.transform(rawT);
+        final dest = size == null
+            ? anchor
+            : Rect.fromLTWH(
+                (screen.width - size.width) / 2,
+                (screen.height - size.height) / 2,
+                size.width,
+                size.height,
+              );
+        final shellRect = Rect.lerp(anchor, dest, spatialT)!;
+        // 起步快速淡入:柔化"卡片小标题 → 弹窗大标题"的换皮;
+        // 收回沿同一曲线,末段内容渐隐、壳缩回卡片后无缝交还
+        final contentOpacity = const Interval(
+          0.0,
+          0.22,
+          curve: Curves.easeOut,
+        ).transform(rawT);
+
+        return Stack(
           children: [
-            Flexible(
+            Positioned.fromRect(
+              key: const ValueKey('morphing-shell'),
+              rect: shellRect,
               child: Material(
-                color: theme.colorScheme.surface,
-                borderRadius: BorderRadius.circular(20),
+                elevation: 8 * effectsT,
+                borderRadius: BorderRadius.circular(10 + (20 - 10) * spatialT),
                 clipBehavior: Clip.antiAlias,
-                elevation: 8,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      height: 4,
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            theme.colorScheme.primaryContainer,
-                            theme.colorScheme.tertiaryContainer,
-                          ],
-                        ),
-                      ),
+                color: Color.lerp(
+                  anchorColor,
+                  theme.colorScheme.surface,
+                  effectsT,
+                ),
+                child: OverflowBox(
+                  alignment: Alignment.topCenter,
+                  minWidth: dialogWidth,
+                  maxWidth: dialogWidth,
+                  // 必须显式给 0:null 会继承父级 tight 约束(壳高),
+                  // 内容被强制撑到壳高 → 测得的"内容高"失真自锁,
+                  // 落座后壳比内容高出一截(底部空白)
+                  minHeight: 0,
+                  maxHeight: screen.height,
+                  child: Opacity(
+                    opacity: contentOpacity,
+                    child: IgnorePointer(
+                      // 飞行期间不响应指针,落座后才开放交互
+                      ignoring: rawT < 1.0,
+                      child: contentBody!,
                     ),
-                    if (hasCustomActionPanel)
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                        child: widget.customActionPanelBuilder!(context),
-                      ),
-                    Flexible(
-                      child: SingleChildScrollView(
-                        padding: EdgeInsets.fromLTRB(
-                          20,
-                          hasCustomActionPanel ? 16 : 20,
-                          20,
-                          20,
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _buildTitle(context, theme),
-                            const SizedBox(height: 12),
-                            _buildAuthorInfo(context, theme),
-                            if (category != null || topic.tags.isNotEmpty) ...[
-                              const SizedBox(height: 12),
-                              _buildCategoryAndTags(
-                                context,
-                                theme,
-                                category,
-                                faIcon,
-                                logoUrl,
-                              ),
-                            ],
-                            const SizedBox(height: 16),
-                            _buildPostContent(context, theme),
-                            const SizedBox(height: 16),
-                            if (topic.posters.length > 1)
-                              _buildParticipants(context, theme),
-                            _buildStats(context, theme),
-                          ],
-                        ),
-                      ),
-                    ),
-                    _buildActions(context, theme),
-                  ],
+                  ),
                 ),
               ),
             ),
-            if (hasActions) ...[
-              const SizedBox(height: 8),
-              _buildCustomActions(context, theme),
-            ],
           ],
+        );
+      },
+      // 尺寸监听挂在 AnimatedBuilder 的常量 child 上,只建一次,
+      // 不随动画逐帧重建
+      child: NotificationListener<SizeChangedLayoutNotification>(
+        onNotification: _onContentSizeChanged,
+        child: SizeChangedLayoutNotifier(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: screen.height * 0.7),
+            child: KeyedSubtree(key: _contentKey, child: body),
+          ),
         ),
       ),
     );
@@ -287,7 +516,9 @@ class _TopicPreviewDialogState extends ConsumerState<TopicPreviewDialog> {
           final navigator = Navigator.of(context);
           navigator.pop();
           if (stack != null) {
-            container!.read(stack.notifier).push(
+            container!
+                .read(stack.notifier)
+                .push(
                   topicId: topicId,
                   initialTitle: topicSlug,
                   scrollToPostNumber: postNumber,
@@ -395,7 +626,11 @@ class _TopicPreviewDialogState extends ConsumerState<TopicPreviewDialog> {
               alignment: PlaceholderAlignment.middle,
               child: Padding(
                 padding: const EdgeInsets.only(right: 6),
-                child: Icon(Symbols.check_box_rounded, size: 20, color: Colors.green),
+                child: Icon(
+                  Symbols.check_box_rounded,
+                  size: 20,
+                  color: Colors.green,
+                ),
               ),
             ),
           ...EmojiText.buildEmojiSpans(

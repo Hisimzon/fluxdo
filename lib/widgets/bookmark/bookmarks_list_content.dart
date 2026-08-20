@@ -190,8 +190,8 @@ class BookmarksListContent extends ConsumerWidget {
       bandReminder: reminderAt == null
           ? null
           : (reminderExpired
-              ? context.l10n.bookmarks_expired
-              : ' ${TimeUtils.formatDetailTime(reminderAt)}'),
+                ? context.l10n.bookmarks_expired
+                : ' ${TimeUtils.formatDetailTime(reminderAt)}'),
       bandExpired: reminderExpired,
       statsAvailableWidth: statsAvailableWidth ?? 460,
       emojiUrlOf: topicCardEmojiUrlResolver,
@@ -263,16 +263,21 @@ class BookmarksListContent extends ConsumerWidget {
             categoryMap,
             statsAvailableWidth,
           );
-          Widget card = PaintedTopicCard(
-            key: ValueKey(bookmarkTopicIdentity(topic)),
-            layout: layout,
-            onTap: () => onTap(topic),
-            onMiddleClick: () => onMiddleClick(topic),
-            onLongPress: enableLongPress
-                ? () => TopicPreviewDialog.show(
+          // Builder 紧贴卡片:长按预览的一镜到底动画要卡片自身的
+          // 屏幕 rect 作起点(外层 context 在桌面端 Center 包装下是
+          // 满宽,不是卡身);bottomGap 8 裁掉外壳底部间距。
+          Widget card = Builder(
+            builder: (cardContext) => PaintedTopicCard(
+              key: ValueKey(bookmarkTopicIdentity(topic)),
+              layout: layout,
+              onTap: () => onTap(topic),
+              onMiddleClick: () => onMiddleClick(topic),
+              onLongPress: enableLongPress
+                  ? () => TopicPreviewDialog.show(
                       context,
                       topic: topic,
                       onOpen: () => onTap(topic),
+                      anchorRect: topicCardAnchorRect(cardContext),
                       // chat 书签无话题上下文:正文直接用书签 excerpt,
                       // 不按话题 id 拉详情(那个 id 是书签 id,必 404)
                       firstPostLoader: topic.isChatMessageBookmark
@@ -283,15 +288,16 @@ class BookmarksListContent extends ConsumerWidget {
                           : null,
                       customActionPanelBuilder: topic.bookmarkId != null
                           ? (_) => BookmarkPreviewQuickEditor(
-                                initialName: topic.bookmarkName,
-                                suggestions: bookmarkNameSuggestions,
-                                suggestionsLoader: bookmarkNameSuggestionsLoader,
-                                onSave: (value) =>
-                                    onQuickRenameBookmark(topic, value),
-                              )
+                              initialName: topic.bookmarkName,
+                              suggestions: bookmarkNameSuggestions,
+                              suggestionsLoader: bookmarkNameSuggestionsLoader,
+                              onSave: (value) =>
+                                  onQuickRenameBookmark(topic, value),
+                            )
                           : null,
                     )
-                : null,
+                  : null,
+            ),
           );
           if (!isMobile) {
             card = Center(
