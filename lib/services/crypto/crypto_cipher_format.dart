@@ -12,6 +12,7 @@ import 'dart:convert';
 
 import 'package:crypto/crypto.dart' as crypto;
 
+import 'algorithms/classic_algorithms.dart' show normalizeMorseGlyphs;
 import 'algorithms/symmetric_algorithms.dart';
 /// ENC1 前缀
 const String kEnc1Prefix = 'ENC1:';
@@ -129,6 +130,9 @@ enum SniffedCipherKind {
   /// 纯 Hex（算法未知）
   plainHex,
 
+  /// URL 百分号编码（%XX 模式）
+  urlEncoded,
+
   /// 摩斯电码
   morse,
 }
@@ -181,10 +185,15 @@ SniffedCipher? sniffCipher(String rawText) {
     return null;
   }
 
+  // URL 百分号编码：至少两段 %XX（单段 `%ab` 太容易是普通文本）
+  if (RegExp(r'(%[0-9A-Fa-f]{2}){2,}').hasMatch(text)) {
+    return const SniffedCipher(SniffedCipherKind.urlEncoded);
+  }
+
   // 纯 Hex
   if (text.length >= 16 &&
       text.length.isEven &&
-      RegExp(r'^[0-9a-fA-F]+$').hasMatch(text)) {
+      RegExp(r'^[0-9A-Fa-f]+$').hasMatch(text)) {
     return const SniffedCipher(SniffedCipherKind.plainHex);
   }
 
@@ -208,8 +217,14 @@ SniffedCipher? sniffCipher(String rawText) {
   return null;
 }
 
-/// 仅由 `.` `-` `·` `/` 空格组成且同时含点与划（摩斯电码特征）
-bool _looksLikeMorse(String text) =>
-    RegExp(r'^[.\-·/\s]+$').hasMatch(text) &&
-    text.contains('.') &&
-    text.contains('-');
+/// 判断是否为摩斯电码：先把 Unicode 横线/点变体规范化（`–—−`→`-`、
+/// `·•●`→`.`），再要求仅由 `.` `-` `/` 空白组成且同时含点与划。
+///
+/// 规范化后仍含其他字符（如 `…` 省略号）→ 不识别：宁缺毋滥，
+/// 不合法输入保持「无解密按钮」是预期行为。
+bool _looksLikeMorse(String text) {
+  final normalized = normalizeMorseGlyphs(text);
+  return RegExp(r'^[.\-/\s]+$').hasMatch(normalized) &&
+      normalized.contains('.') &&
+      normalized.contains('-');
+}

@@ -234,6 +234,8 @@ class CryptoToolbox {
         return const DecryptSuggestion('base64', SniffedCipherKind.plainBase64);
       case SniffedCipherKind.plainHex:
         return const DecryptSuggestion('hex', SniffedCipherKind.plainHex);
+      case SniffedCipherKind.urlEncoded:
+        return const DecryptSuggestion('url', SniffedCipherKind.urlEncoded);
       case SniffedCipherKind.morse:
         return const DecryptSuggestion('morse', SniffedCipherKind.morse);
     }

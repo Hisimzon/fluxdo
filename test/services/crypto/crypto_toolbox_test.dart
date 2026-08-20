@@ -375,6 +375,15 @@ void main() {
       expect(sniffCipher('48656c6c6f2c20776f726c64')?.kind,
           SniffedCipherKind.plainHex);
       expect(sniffCipher('.... -- ..')?.kind, SniffedCipherKind.morse);
+      // Unicode 变体（en dash / 间隔号）应识别
+      expect(sniffCipher('.... –– ··')?.kind, SniffedCipherKind.morse);
+      // 混入非法符号（… 省略号）不识别 —— 不合法输入宁缺毋滥
+      expect(sniffCipher('.–. .-.. . .- … .- -.'), isNull);
+      // URL 百分号编码
+      expect(sniffCipher('%E4%BD%A0%E5%A5%BD')?.kind,
+          SniffedCipherKind.urlEncoded);
+      expect(CryptoToolbox.suggestDecrypt('%E4%BD%A0%E5%A5%BD').algorithmId,
+          'url');
       // 普通文本不误报
       expect(sniffCipher('这是一段普通的中文文本'), isNull);
       expect(sniffCipher('The quick brown fox'), isNull);
@@ -505,6 +514,25 @@ void main() {
         CryptoToolbox.decrypt(
             ciphertext: ct, algorithmId: 'vigenere', params: params),
         'ATTACKATDAWN',
+      );
+    });
+
+    test('摩斯 Unicode 变体解码（en dash / 间隔号 / 项目符号）', () {
+      const params = CryptoParams();
+      // 标准编码输出
+      final standard = CryptoToolbox.encrypt(
+          plaintext: 'SOS', algorithmId: 'morse', params: params);
+      expect(standard, '... --- ...');
+      // 变体输入解码等价
+      expect(
+        CryptoToolbox.decrypt(
+            ciphertext: '... ——— ...', algorithmId: 'morse', params: params),
+        'SOS',
+      );
+      expect(
+        CryptoToolbox.decrypt(
+            ciphertext: '··· −−− ···', algorithmId: 'morse', params: params),
+        'SOS',
       );
     });
 

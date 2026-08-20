@@ -163,6 +163,15 @@ class RailFenceAlgorithm extends CryptoAlgorithm {
   }
 }
 
+/// 摩斯字形规范化：把常见 Unicode 横线/点变体统一到 `.` `-`。
+///
+/// 从网页/IM 复制的摩斯电码常带排版变体：en dash `–`、em dash `—`、
+/// 一字线 `―`、减号 `−`、连接符 `‐` → `-`；间隔号 `·`、项目符号 `•`、
+/// 黑点 `●`、点号 `․` → `.`。
+String normalizeMorseGlyphs(String text) => text
+    .replaceAll(RegExp(r'[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]'), '-')
+    .replaceAll(RegExp(r'[\u00b7\u2022\u25cf\u2024\u2027]'), '.');
+
 /// 摩斯电码：26 字母 + 数字 + 常用标点。
 ///
 /// 编码：字母间单空格、词间 ` / `；解码容忍多空格与 `-`/`–` 混用。
@@ -214,10 +223,7 @@ class MorseAlgorithm extends CryptoAlgorithm {
   @override
   String decrypt(String ciphertext, CryptoParams params) {
     final sb = StringBuffer();
-    final tokens = ciphertext
-        .replaceAll('\u2014', '-') // em dash
-        .replaceAll('\u2013', '-') // en dash
-        .replaceAll('\u00b7', '.') // ·
+    final tokens = normalizeMorseGlyphs(ciphertext)
         .split(RegExp(r'\s+'))
         .where((t) => t.isNotEmpty)
         .toList();
