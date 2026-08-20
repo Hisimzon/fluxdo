@@ -10,7 +10,6 @@ import '../../models/topic.dart';
 import '../../models/topic_card_style.dart';
 import '../../pages/bookmarks/bookmarks_models.dart';
 import '../../providers/bookmark_sync_controller.dart';
-import '../../providers/category_provider.dart';
 import '../../providers/preferences_provider.dart';
 import '../topic/topic_card_layout.dart';
 import '../topic/topic_card_prewarmer.dart';
@@ -26,6 +25,8 @@ import '../desktop_refresh_indicator.dart';
 import '../../utils/responsive.dart';
 import '../topic/topic_list_skeleton.dart';
 import '../topic/topic_item_builder.dart';
+import '../../providers/discourse_providers.dart';
+import '../../services/topic_preview_preloader.dart';
 import '../topic/topic_preview_dialog.dart';
 
 class BookmarksListContent extends ConsumerWidget {
@@ -295,6 +296,17 @@ class BookmarksListContent extends ConsumerWidget {
                                   onQuickRenameBookmark(topic, value),
                             )
                           : null,
+                    )
+                  : null,
+              // 长按意图预加载:chat 书签无话题上下文(那个 id 是书签
+              // id,预取必 404),不参与
+              onPreviewIntent: enableLongPress && !topic.isChatMessageBookmark
+                  ? () => TopicPreviewPreloader.preload(
+                      ProviderScope.containerOf(
+                        context,
+                        listen: false,
+                      ).read(discourseServiceProvider),
+                      topic.id,
                     )
                   : null,
             ),

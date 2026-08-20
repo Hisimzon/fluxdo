@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import '../../models/category.dart';
 import '../../models/topic.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../providers/discourse_providers.dart';
+import '../../services/topic_preview_preloader.dart';
 import '../../utils/responsive.dart';
 import 'painted_topic_card.dart';
 import 'topic_card.dart';
@@ -99,6 +102,19 @@ Widget buildTopicItem({
         )
       : null;
 
+  // 长按意图预加载(正文):移动端按住不动 250ms / 桌面右键按下即触发,
+  // 弹窗打开时正文多已在路上。chat 类场景没有话题 id 的不适用(调用
+  // 方会自带 firstPostLoader,不受预加载影响)
+  final previewIntent = enableLongPress
+      ? () => TopicPreviewPreloader.preload(
+          ProviderScope.containerOf(
+            context,
+            listen: false,
+          ).read(discourseServiceProvider),
+          topic.id,
+        )
+      : null;
+
   // 自绘路径的排版在 Builder 外先取好:入参(context/theme/宽度)与
   // Builder 内一致,避免逐分支重复。
   final usePainted =
@@ -124,6 +140,7 @@ Widget buildTopicItem({
           onTap: onTap,
           onMiddleClick: onMiddleClick,
           onLongPress: longPressFor(cardContext),
+          onPreviewIntent: previewIntent,
           isSelected: isSelected,
           highlightColor: highlightColor,
           categoryMap: categoryMap,
@@ -135,6 +152,7 @@ Widget buildTopicItem({
           onTap: onTap,
           onMiddleClick: onMiddleClick,
           onLongPress: longPressFor(cardContext),
+          onPreviewIntent: previewIntent,
           isSelected: isSelected,
           highlightColor: highlightColor,
         );
@@ -144,6 +162,7 @@ Widget buildTopicItem({
         onTap: onTap,
         onMiddleClick: onMiddleClick,
         onLongPress: longPressFor(cardContext),
+        onPreviewIntent: previewIntent,
         isSelected: isSelected,
         highlightColor: highlightColor,
         topWidget: topWidget,
