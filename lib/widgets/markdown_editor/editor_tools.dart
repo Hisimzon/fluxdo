@@ -199,6 +199,12 @@ final List<EditorTool> editorTools = [
     action: (t) => t.insertSpoiler(),
   ),
   EditorTool(
+    id: 'encrypt',
+    icon: const FaIcon(FontAwesomeIcons.key),
+    label: (s) => s.crypto_encrypt,
+    action: (t) => t.insertEncryptedBlock(),
+  ),
+  EditorTool(
     id: 'poll',
     icon: const FaIcon(FontAwesomeIcons.squarePollVertical),
     label: (s) => '投票',

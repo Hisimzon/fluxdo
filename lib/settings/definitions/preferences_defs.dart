@@ -9,6 +9,8 @@ import '../../l10n/s.dart';
 import '../../providers/ai_post_review_provider.dart';
 import '../../providers/ai_translation_provider.dart';
 import '../../providers/preferences_provider.dart';
+import '../../providers/secret_store_provider.dart';
+import '../../services/crypto/crypto_key_store.dart';
 import '../../services/toast_service.dart';
 import '../../utils/dialog_utils.dart';
 import '../../utils/blocked_user_filter.dart';
@@ -300,6 +302,52 @@ List<SettingsGroup> buildPreferencesGroups(BuildContext context) {
           ),
         ],
       ),
+
+    SettingsGroup(
+      title: l10n.crypto_settingsGroup,
+      icon: Symbols.key_rounded,
+      items: [
+        SwitchModel(
+          id: 'cryptoRememberPassword',
+          title: l10n.crypto_settingsRememberPassword,
+          subtitle: l10n.crypto_settingsRememberPasswordDesc,
+          icon: Symbols.password_rounded,
+          getValue: (ref) =>
+              ref.watch(preferencesProvider).cryptoRememberPassword,
+          onChanged: (ref, v) => ref
+              .read(preferencesProvider.notifier)
+              .setCryptoRememberPassword(v),
+        ),
+        ActionModel(
+          id: 'cryptoClearRememberedPasswords',
+          title: l10n.crypto_settingsClearPasswords,
+          icon: Symbols.delete_rounded,
+          getDynamicSubtitle: (ref) => l10n.crypto_secureStorageNote,
+          onTap: (context, ref) async {
+            final confirmed = await showDialog<bool>(
+              context: context,
+              builder: (dialogContext) => AlertDialog(
+                title: Text(l10n.crypto_settingsClearPasswords),
+                content: Text(l10n.crypto_settingsClearPasswordsConfirm),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(dialogContext, false),
+                    child: Text(l10n.common_cancel),
+                  ),
+                  FilledButton(
+                    onPressed: () => Navigator.pop(dialogContext, true),
+                    child: Text(l10n.common_confirm),
+                  ),
+                ],
+              ),
+            );
+            if (confirmed != true) return;
+            await CryptoKeyStore.clear(ref.read(secretStoreProvider));
+            ToastService.showSuccess(l10n.crypto_settingsClearPasswordsDone);
+          },
+        ),
+      ],
+    ),
   ];
 }
 

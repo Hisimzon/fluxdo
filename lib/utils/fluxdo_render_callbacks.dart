@@ -159,6 +159,8 @@ class FluxdoRenderCallbacks {
     QuoteRequestCallback? onQuoteRequest,
     QuoteRequestCallback? onCopyQuoteRequest,
     CopyToastCallback? onCopyToast,
+    DecryptRequestCallback? onDecryptRequest,
+    DecryptTextDetector? decryptTextDetector,
   }) {
     return FluxdoRender(
       key: key,
@@ -178,6 +180,8 @@ class FluxdoRenderCallbacks {
       onQuoteRequest: onQuoteRequest,
       onCopyQuoteRequest: onCopyQuoteRequest,
       onCopyToast: onCopyToast,
+      onDecryptRequest: onDecryptRequest,
+      decryptTextDetector: decryptTextDetector,
       linkHandler: linkHandler,
       emojiImageBuilder: emojiImageBuilder,
       mentionTapHandler: mentionTapHandler,

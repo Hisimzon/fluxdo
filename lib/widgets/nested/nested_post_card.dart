@@ -15,6 +15,8 @@ import '../../utils/fluxdo_render_callbacks.dart';
 import '../../utils/responsive.dart';
 import '../../utils/time_utils.dart';
 import '../post/post_item/quote_selection_helper.dart';
+import '../crypto/crypto_decrypt_sheet.dart';
+import '../../services/crypto/crypto_cipher_format.dart';
 import '../post/post_item/widgets/post_footer_section/post_footer_section.dart';
 import '../post/post_item/widgets/post_stamp_painter.dart';
 import '../post/post_signature_block.dart';
@@ -643,6 +645,15 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
                     onCopyToast: () => ToastService.showSuccess(
                       context.l10n.common_copiedToClipboard,
                     ),
+                    onDecryptRequest: (plainText) => showCryptoDecryptSheet(
+                      context: context,
+                      initialCiphertext: plainText,
+                      onQuoteReply: widget.onQuoteSelection == null
+                          ? null
+                          : (plaintext) =>
+                              widget.onQuoteSelection!(plaintext, post),
+                    ),
+                    decryptTextDetector: (text) => sniffCipher(text) != null,
                   ),
             ),
             // 用户签名

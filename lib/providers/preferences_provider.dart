@@ -190,6 +190,12 @@ class AppPreferences {
   /// 对话框背景高斯模糊
   final bool dialogBlur;
 
+  /// 加解密工具箱：记住最近使用的加密密码（存系统安全存储）
+  final bool cryptoRememberPassword;
+
+  /// 加解密工具箱：最近使用的算法 id 列表（最近在前，最多 6 条）
+  final List<String> cryptoRecentAlgorithms;
+
   /// 显示用户签名。默认关闭:签名在网页本就是 opt-in 功能
   /// (signatures_visible_by_default 默认 false,需用户主动开启),
   /// 且第三方签名图成本高、良莠不齐,默认关对齐网页更稳妥。
@@ -299,6 +305,8 @@ class AppPreferences {
     this.aiTranslationModelKey,
     this.hcaptchaCreateEndpoint,
     required this.dialogBlur,
+    required this.cryptoRememberPassword,
+    required this.cryptoRecentAlgorithms,
     this.showSignatures = false,
     this.adaptiveSignatureFrameRate = true,
     this.boostDanmaku = false,
@@ -358,6 +366,8 @@ class AppPreferences {
     Object? aiTranslationModelKey = _unset,
     Object? hcaptchaCreateEndpoint = _unset,
     bool? dialogBlur,
+    bool? cryptoRememberPassword,
+    List<String>? cryptoRecentAlgorithms,
     bool? showSignatures,
     bool? adaptiveSignatureFrameRate,
     bool? boostDanmaku,
@@ -429,6 +439,8 @@ class AppPreferences {
           ? this.hcaptchaCreateEndpoint
           : hcaptchaCreateEndpoint as String?,
       dialogBlur: dialogBlur ?? this.dialogBlur,
+      cryptoRememberPassword: cryptoRememberPassword ?? this.cryptoRememberPassword,
+      cryptoRecentAlgorithms: cryptoRecentAlgorithms ?? this.cryptoRecentAlgorithms,
       showSignatures: showSignatures ?? this.showSignatures,
       adaptiveSignatureFrameRate:
           adaptiveSignatureFrameRate ?? this.adaptiveSignatureFrameRate,
@@ -507,6 +519,8 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
   static const String _hcaptchaCreateEndpointKey =
       'pref_hcaptcha_create_endpoint';
   static const String _dialogBlurKey = 'pref_dialog_blur';
+  static const String _cryptoRememberPasswordKey = 'pref_crypto_remember_password';
+  static const String _cryptoRecentAlgorithmsKey = 'pref_crypto_recent_algorithms';
   static const String _showSignaturesKey = 'pref_show_signatures';
   static const String _adaptiveSignatureFrameRateKey =
       'pref_adaptive_signature_frame_rate';
@@ -592,6 +606,9 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
           aiTranslationModelKey: _prefs.getString(_aiTranslationModelPrefKey),
           hcaptchaCreateEndpoint: _prefs.getString(_hcaptchaCreateEndpointKey),
           dialogBlur: _prefs.getBool(_dialogBlurKey) ?? true,
+          cryptoRememberPassword: _prefs.getBool(_cryptoRememberPasswordKey) ?? false,
+          cryptoRecentAlgorithms:
+              _prefs.getStringList(_cryptoRecentAlgorithmsKey) ?? const [],
           showSignatures: _prefs.getBool(_showSignaturesKey) ?? false,
           adaptiveSignatureFrameRate:
               _prefs.getBool(_adaptiveSignatureFrameRateKey) ?? true,
@@ -860,6 +877,23 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
   Future<void> setDialogBlur(bool enabled) async {
     state = state.copyWith(dialogBlur: enabled);
     await _prefs.setBool(_dialogBlurKey, enabled);
+  }
+
+  Future<void> setCryptoRememberPassword(bool enabled) async {
+    state = state.copyWith(cryptoRememberPassword: enabled);
+    await _prefs.setBool(_cryptoRememberPasswordKey, enabled);
+  }
+
+  /// 记录一次算法使用：去重置顶、超出 6 条裁掉最旧。
+  Future<void> recordCryptoAlgorithmUsage(String algorithmId) async {
+    final current = state.cryptoRecentAlgorithms;
+    if (current.isNotEmpty && current.first == algorithmId) return;
+    final next = <String>[
+      algorithmId,
+      ...current.where((id) => id != algorithmId),
+    ].take(6).toList();
+    state = state.copyWith(cryptoRecentAlgorithms: next);
+    await _prefs.setStringList(_cryptoRecentAlgorithmsKey, next);
   }
 
   Future<void> setTopicCardStyle(TopicCardStyle style) async {
