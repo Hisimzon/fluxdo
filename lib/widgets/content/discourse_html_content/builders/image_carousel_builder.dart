@@ -317,6 +317,7 @@ class _CarouselSlideState extends State<_CarouselSlide>
   @override
   bool get wantKeepAlive => true;
 
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
@@ -348,46 +349,95 @@ class _CarouselSlideState extends State<_CarouselSlide>
     // 登记解码参数:查看器缩略图占位同参重建 → 同 key 命中缓存
     ImageDecodeSpecMemo.remember(url, cacheWidth, cacheHeight);
 
+    final aspect = _imageAspect;
+
     return GestureDetector(
       onTap: () => widget.onTap(context, widget.index, url),
-      child: Hero(
-        tag: heroTag,
-        // Android 预测返回是 user gesture 转场,须显式开启才有飞行
-        transitionOnUserGestures: true,
-        child: Image(
-          image: ResizeImage(
-            discourseImageProvider(url),
-            width: cacheWidth,
-            height: cacheHeight,
-            policy: ResizeImagePolicy.fit,
-          ),
-          fit: BoxFit.contain,
-          width: double.infinity,
-          height: widget.carouselHeight,
-          loadingBuilder: (context, child, loadingProgress) {
-            if (loadingProgress == null) return child;
-            final total = loadingProgress.expectedTotalBytes;
-            // 无总长 = 不定态用 LoadingSpinner;有进度走 wavy 圆环
-            return Center(
-              child: total != null
-                  ? M3eCircularProgress(
-                      value: loadingProgress.cumulativeBytesLoaded / total,
-                      size: 24,
-                      strokeWidth: 2,
-                    )
-                  : const LoadingSpinner(size: 24),
-            );
-          },
-          errorBuilder: (context, error, stackTrace) {
-            return Center(
-              child: Icon(
-                Symbols.broken_image_rounded,
-                color: widget.theme.colorScheme.outline,
-              ),
-            );
-          },
+      // Hero 只包住**画面本身**,不包整条槽位。
+      //
+      // 原先是 `Hero > Image(fit: contain, width: infinity)`,Hero 盒子 =
+      // 整条槽位,而画面只占其中一块(实测 768x300 槽位里画面仅 300x300)。
+      // Hero 飞行几何取布局盒子,于是尾帧图片铺满整条槽位,Hero 撤走后才由
+      // Image 的 contain 缩成小图 —— 两段突变。曾试过用 createRectTween
+      // 把落点算成画面矩形,算式本身对(与真机 paintedRect 逐位一致),但那
+      // 是拿算式去追结构,治标;且改 begin 那版还引入了新的落点偏移。
+      //
+      // 这里改结构:用 AspectRatio 把 Hero 盒子收到图片真实比例,居中放进
+      // 槽位。于是 Hero 盒子 ≡ 画面,飞行两端天然像素级对齐,不再需要任何
+      // 落点修正。原始宽高缺失时退回旧结构(无从得知比例),但**仍要有
+      // Hero** —— 否则那些没带宽高的图会彻底失去飞行(测试已拦住这个坑)。
+      child: Center(
+        child: Hero(
+          tag: heroTag,
+          // Android 预测返回是 user gesture 转场,须显式开启才有飞行
+          transitionOnUserGestures: true,
+          child: aspect == null
+              ? _buildImage(url, cacheWidth, cacheHeight, fillSlot: true)
+              : AspectRatio(
+                  aspectRatio: aspect,
+                  child: _buildImage(
+                    url,
+                    cacheWidth,
+                    cacheHeight,
+                    fillSlot: false,
+                  ),
+                ),
         ),
       ),
+    );
+  }
+
+  /// 图片原始宽高比;宽高缺失或非法时返回 null(退回旧结构)
+  double? get _imageAspect {
+    final w = widget.imageData.width;
+    final h = widget.imageData.height;
+    if (w == null || h == null || w <= 0 || h <= 0) return null;
+    return w / h;
+  }
+
+
+  Widget _buildImage(
+    String url,
+    int cacheWidth,
+    int cacheHeight, {
+    required bool fillSlot,
+  }) {
+    return Image(
+      image: ResizeImage(
+        discourseImageProvider(url),
+        width: cacheWidth,
+        height: cacheHeight,
+        policy: ResizeImagePolicy.fit,
+      ),
+      // 盒子已由 AspectRatio 收成图片比例,此时 contain 与 fill 等效。
+      // 但**必须用 contain**:AspectRatio 用的是 <img> 声明的宽高,而
+      // Discourse 那个值偶尔与实际文件不符 —— 用 fill 会拉伸变形,
+      // contain 顶多留一点白。宁可留白也不要变形。
+      fit: BoxFit.contain,
+      width: fillSlot ? double.infinity : null,
+      height: fillSlot ? widget.carouselHeight : null,
+      loadingBuilder: (context, child, loadingProgress) {
+        if (loadingProgress == null) return child;
+        final total = loadingProgress.expectedTotalBytes;
+        // 无总长 = 不定态用 LoadingSpinner;有进度走 wavy 圆环
+        return Center(
+          child: total != null
+              ? M3eCircularProgress(
+                  value: loadingProgress.cumulativeBytesLoaded / total,
+                  size: 24,
+                  strokeWidth: 2,
+                )
+              : const LoadingSpinner(size: 24),
+        );
+      },
+      errorBuilder: (context, error, stackTrace) {
+        return Center(
+          child: Icon(
+            Symbols.broken_image_rounded,
+            color: widget.theme.colorScheme.outline,
+          ),
+        );
+      },
     );
   }
 }

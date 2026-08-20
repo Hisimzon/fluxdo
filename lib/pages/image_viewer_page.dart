@@ -112,6 +112,12 @@ class ImageViewerPage extends ConsumerStatefulWidget {
     required Widget child,
   }) => _RouteFade(animation: animation, child: child);
 
+  /// 仅供测试:退场飞行起点的发布判据(见 [_ImageViewerPageState.
+  /// _publishExitFlightRect])。读真实现,不复刻判据。
+  @visibleForTesting
+  static bool debugIsDisplacedFromBaseline(Rect? rect, Rect? baseline) =>
+      _ImageViewerPageState._isDisplacedFromBaseline(rect, baseline);
+
   /// 使用透明路由打开图片查看器。返回的 Future 在查看器关闭时完成
   /// (调用方可借此恢复被隐藏的浮层等)。
   static Future<void> open(
@@ -325,9 +331,18 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
 
   /// 构建查看器侧 Hero(单图/画廊共用)。
   ///
-  /// 源缩略图为 cover 裁剪展示(heroSourceFit == cover,目前只有网格
-  /// 瓦片)时,飞行体为 [CoverContainFlightImage] 单层裁切插值(裁切
-  /// 窗口与飞行缩放绑同一 progress,两端与真实内容像素级对齐)。
+  /// 飞行体一律用 [CoverContainFlightImage](自绘 drawImageRect,画的是干净
+  /// 的缩略图位图),**不用查看器的 child**。child 是 `GestureImageView` 的
+  /// 绘制层,带画布级变换(缩放/平移),塞进逐帧收缩的飞行盒子里不会重新
+  /// 适配,于是画面被裁切 —— 用户所见「轮播尾帧尺寸对了,但图是裁切的」。
+  ///
+  /// 两种来源的插值口径:
+  /// - cover 源(网格瓦片/圆形头像):裁切窗口随 progress 从 cover 张到
+  ///   contain,两端与真实内容像素级对齐;
+  /// - contain 源(轮播/正文单图):两端都是 contain,只有盒子比例在变,故把
+  ///   t 钉在 1(`kAlwaysCompleteAnimation`)—— 恒取全图、按真实比例 contain
+  ///   进当前飞行盒子。缩放由 Hero 盒子逐帧收缩承担,故观感是「完整大图随
+  ///   Hero 动画连续变小」,不是先跳一下再播。
   ///
   /// push 方向本 shuttle 生效(toHero=查看器优先);pop 方向源端
   /// HeroImage 的 shuttle 生效(带同款裁切插值),双向一致。
@@ -337,21 +352,25 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     required Widget child,
   }) {
     final bool coverSource =
-        (widget.heroSourceFit == BoxFit.cover || widget.heroSourceCircular) &&
-        thumbUrl != null;
+        widget.heroSourceFit == BoxFit.cover || widget.heroSourceCircular;
+    // 自绘飞行体需要一个位图源;没有缩略图只能退回 child
+    final bool useFlightImage = thumbUrl != null;
     return Hero(
       tag: tag,
       // 预测返回是 user gesture 转场,不开这个标记 Hero 不飞
       // (与所有源端 Hero 配对开启,见 hero_image/discourse_image 等)
       transitionOnUserGestures: true,
-      flightShuttleBuilder: !coverSource
+      flightShuttleBuilder: !useFlightImage
           ? (_, _, _, _, _) => child
           : (flightContext, animation, direction, fromContext, toContext) {
-              // animation 为路由原始动画:push 0→1、pop 1→0,值语义
-              // 恒为「0=贴源,1=在查看器」,单套插值覆盖双向
+              // cover 源:animation 为路由原始动画,值语义恒为「0=贴源,
+              // 1=在查看器」,单套插值覆盖双向。
+              // contain 源:钉在 1 = 全程完整图 contain 进飞行盒子。
               return CoverContainFlightImage(
                 image: _thumbnailProvider(thumbUrl),
-                animation: animation,
+                animation: coverSource
+                    ? animation
+                    : kAlwaysCompleteAnimation,
                 radius: widget.heroSourceRadius,
                 circular: widget.heroSourceCircular,
                 fallback: child,
@@ -496,15 +515,41 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
   ///
   /// destinationRect 是画布级变换后的目标矩形(含缩放与平移),坐标系为
   /// 查看器绘制层的局部坐标;查看器是全屏路由,局部原点即屏幕原点,可
-  /// 直接当全局矩形用。未放大(scale<=1)时发布 null —— 走 Hero 默认的
-  /// 布局盒子几何,与旧行为一致。
+  /// 直接当全局矩形用。
+  ///
+  /// **判据必须是「矩形是否偏离 contain 基线」,不能用 totalScale > 1**。
+  /// totalScale 的 1.0 不代表"贴合屏幕":双击缩放的智能档位会把小图算出
+  /// >1 的比例(`_calculateSmartScale`:正方形图在 1212x758 屏上得
+  /// 1212/758 ≈ 1.6),之后即使视觉上看着没放大,totalScale 仍停在 1.6。
+  /// 真机实测:500x500 的图、用户没主动放大,却发布了 1212x1212 的矩形
+  /// (contain 基线本应是 758x758,且它上下各溢出屏幕 191px)—— 拿它当
+  /// 飞行起点,观感就是「大图先跳成另一个尺寸,再从那儿播动画」。
+  ///
+  /// rawDestinationRect 是缩放前的 contain 基线(见 extended_image_lite
+  /// 的 `calculateFinalDestinationRect`),两者近似相等即视为未偏离,
+  /// 发布 null 走 Hero 默认的布局盒子几何。
   void _publishExitFlightRect() {
     final details = _gestureControllers[currentIndex]?.details;
-    final scale = details?.totalScale ?? 1.0;
     final rect = details?.destinationRect;
+    final baseline = details?.rawDestinationRect;
     HeroVisibilityController.instance.setExitFlightRect(
-      (scale <= 1.0 || rect == null || rect.isEmpty) ? null : rect,
+      _isDisplacedFromBaseline(rect, baseline) ? rect : null,
     );
+  }
+
+  /// 可见矩形是否已偏离 contain 基线(= 用户真的缩放/平移过)。
+  /// 容差 1px:浮点与像素对齐带来的微差不算偏离。
+  static bool _isDisplacedFromBaseline(Rect? rect, Rect? baseline) {
+    if (rect == null || rect.isEmpty || !rect.isFinite) return false;
+    // 拿不到基线时保守处理:不发布,退回框架默认几何(旧行为)
+    if (baseline == null || baseline.isEmpty || !baseline.isFinite) {
+      return false;
+    }
+    const tolerance = 1.0;
+    return (rect.left - baseline.left).abs() > tolerance ||
+        (rect.top - baseline.top).abs() > tolerance ||
+        (rect.width - baseline.width).abs() > tolerance ||
+        (rect.height - baseline.height).abs() > tolerance;
   }
 
   @override
