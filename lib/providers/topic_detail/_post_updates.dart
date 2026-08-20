@@ -195,6 +195,32 @@ extension PostUpdateMethods on TopicDetailNotifier {
     );
   }
 
+  /// 更新帖子的 policy 接受/撤销状态(discourse-policy 插件)。
+  ///
+  /// accept/revoke API 响应无数据,由 widget 按官方规则本地结算后落地。
+  /// 计数为 null = 无 stats 权限,保留原值不伪造(copyWith null 语义)。
+  void updatePostPolicy(
+    int postId, {
+    required bool accepted,
+    required bool revoked,
+    required bool canAccept,
+    required bool canRevoke,
+    int? acceptedByCount,
+    int? notAcceptedByCount,
+  }) {
+    _updatePostById(
+      postId,
+      (post) => post.copyWith(
+        policyAccepted: accepted,
+        policyRevoked: revoked,
+        policyCanAccept: canAccept,
+        policyCanRevoke: canRevoke,
+        policyAcceptedByCount: acceptedByCount,
+        policyNotAcceptedByCount: notAcceptedByCount,
+      ),
+    );
+  }
+
   /// 更新帖子的解决方案状态
   ///
   /// 单解决方案模式(`solved_allow_multiple_solutions=false`):接受新答案时清空其他;

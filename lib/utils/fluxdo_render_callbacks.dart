@@ -986,6 +986,7 @@ class FluxdoRenderCallbacks {
           theme: Theme.of(ctx),
           element: el,
           post: post,
+          topicId: topicId,
           htmlBuilder: (html, textStyle) => _footnoteFreeNested(
             html: html,
             textStyle: textStyle,
