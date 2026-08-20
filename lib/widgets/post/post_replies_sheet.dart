@@ -524,7 +524,7 @@ class _PostRepliesSheetContentState
                       ? (plaintext) => _handleQuoteSelection(plaintext, post)
                       : null,
                 ),
-                decryptTextDetector: (text) => sniffCipher(text) != null,
+                decryptTextDetector: isDecryptableText,
               ),
         ),
         PostFooterSection(

@@ -361,7 +361,7 @@ class _PostItemState extends ConsumerState<PostItem> {
                                   : (plaintext) => widget
                                       .onQuoteSelection!(plaintext, post),
                             ),
-                            decryptTextDetector: (text) => sniffCipher(text) != null,
+                            decryptTextDetector: isDecryptableText,
                           );
                         },
                       ),

@@ -131,6 +131,73 @@ class UrlEncodeAlgorithm extends CryptoAlgorithm {
   }
 }
 
+/// Base32（RFC 4648 大写字母表 + `=` padding；解码容忍小写/空白/缺 padding）
+class Base32Algorithm extends CryptoAlgorithm {
+  const Base32Algorithm();
+
+  static const String _alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+
+  @override
+  String get id => 'base32';
+
+  @override
+  CryptoAlgorithmCategory get category => CryptoAlgorithmCategory.encoding;
+
+  @override
+  String encrypt(String plaintext, CryptoParams params) {
+    final bytes = utf8.encode(plaintext);
+    final sb = StringBuffer();
+    var buffer = 0;
+    var bits = 0;
+    for (final b in bytes) {
+      buffer = (buffer << 8) | b;
+      bits += 8;
+      while (bits >= 5) {
+        bits -= 5;
+        sb.write(_alphabet[(buffer >> bits) & 0x1f]);
+      }
+      buffer &= (1 << bits) - 1;
+    }
+    if (bits > 0) {
+      sb.write(_alphabet[(buffer << (5 - bits)) & 0x1f]);
+    }
+    while (sb.length % 8 != 0) {
+      sb.write('=');
+    }
+    return sb.toString();
+  }
+
+  @override
+  String decrypt(String ciphertext, CryptoParams params) {
+    final clean = ciphertext
+        .toUpperCase()
+        .replaceAll(RegExp(r'[\s=]'), '');
+    if (clean.isEmpty) return '';
+    var buffer = 0;
+    var bits = 0;
+    final out = <int>[];
+    for (final unit in clean.codeUnits) {
+      final v = _alphabet.indexOf(String.fromCharCode(unit));
+      if (v < 0) {
+        throw CryptoException(
+            '无效的 Base32 字符: ${String.fromCharCode(unit)}');
+      }
+      buffer = (buffer << 5) | v;
+      bits += 5;
+      if (bits >= 8) {
+        bits -= 8;
+        out.add((buffer >> bits) & 0xff);
+      }
+      buffer &= (1 << bits) - 1;
+    }
+    try {
+      return utf8.decode(out);
+    } catch (_) {
+      throw const CryptoException('Base32 解码失败：内容不是有效的 UTF-8 文本');
+    }
+  }
+}
+
 /// ROT13（字母旋转 13 位，自逆）
 class Rot13Algorithm extends CryptoAlgorithm {
   const Rot13Algorithm();
@@ -219,6 +286,7 @@ class Sm3HashAlgorithm extends CryptoAlgorithm {
 
 const List<CryptoAlgorithm> encodingAlgorithms = [
   Base64Algorithm(),
+  Base32Algorithm(),
   HexAlgorithm(),
   UrlEncodeAlgorithm(),
   Rot13Algorithm(),

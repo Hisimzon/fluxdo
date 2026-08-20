@@ -653,7 +653,7 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
                           : (plaintext) =>
                               widget.onQuoteSelection!(plaintext, post),
                     ),
-                    decryptTextDetector: (text) => sniffCipher(text) != null,
+                    decryptTextDetector: isDecryptableText,
                   ),
             ),
             // 用户签名

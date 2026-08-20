@@ -231,14 +231,71 @@ class CryptoToolbox {
           SniffedCipherKind.opensslSalted,
         );
       case SniffedCipherKind.plainBase64:
+        // 内容探测：解码后是 UTF-8 可读文本 → 真是 base64 编码；
+        // 二进制 → 更像加密密文裸 payload（对称算法自解析 salt|iv|ct）
+        final bytes = _tryDecodeBase64(ciphertext);
+        if (bytes != null && !_looksLikeUtf8Text(bytes)) {
+          return const DecryptSuggestion(
+              defaultAlgorithmId, SniffedCipherKind.plainBase64);
+        }
         return const DecryptSuggestion('base64', SniffedCipherKind.plainBase64);
       case SniffedCipherKind.plainHex:
+        final bytes = _tryDecodeHex(ciphertext);
+        if (bytes != null && !_looksLikeUtf8Text(bytes)) {
+          return const DecryptSuggestion(
+              defaultAlgorithmId, SniffedCipherKind.plainHex);
+        }
         return const DecryptSuggestion('hex', SniffedCipherKind.plainHex);
+      case SniffedCipherKind.plainBase32:
+        return const DecryptSuggestion('base32', SniffedCipherKind.plainBase32);
       case SniffedCipherKind.urlEncoded:
         return const DecryptSuggestion('url', SniffedCipherKind.urlEncoded);
       case SniffedCipherKind.morse:
         return const DecryptSuggestion('morse', SniffedCipherKind.morse);
     }
+  }
+
+  static Uint8List? _tryDecodeBase64(String text) {
+    try {
+      final bytes =
+          base64.decode(normalizeBase64Input(text.replaceAll(RegExp(r'\s'), '')));
+      return bytes.isEmpty ? null : bytes;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Uint8List? _tryDecodeHex(String text) {
+    final clean = text.replaceAll(RegExp(r'[\s:,-]'), '');
+    if (clean.isEmpty || clean.length.isOdd) return null;
+    try {
+      final out = Uint8List(clean.length ~/ 2);
+      for (var i = 0; i < out.length; i++) {
+        out[i] = int.parse(clean.substring(i * 2, i * 2 + 2), radix: 16);
+      }
+      return out;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 解码内容是否像 UTF-8 可读文本（无明显控制字符/替换符）
+  static bool _looksLikeUtf8Text(Uint8List bytes) {
+    final String decoded;
+    try {
+      decoded = utf8.decode(bytes); // 严格模式：坏序列直接失败
+    } catch (_) {
+      return false;
+    }
+    var control = 0;
+    for (final unit in decoded.codeUnits) {
+      // C0 控制字符（排除 \t\n\r）与 U+FFFD 替换符计入「不像文本」
+      if ((unit < 0x20 && unit != 0x09 && unit != 0x0a && unit != 0x0d) ||
+          unit == 0xfffd) {
+        control++;
+      }
+    }
+    return control == 0;
   }
 }
 

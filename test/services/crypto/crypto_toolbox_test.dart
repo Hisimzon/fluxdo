@@ -9,6 +9,8 @@
 /// - 错误路径（错密码/坏密文/缺参数）
 library;
 
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/services/crypto/algorithms/rsa_algorithm.dart';
 import 'package:fluxdo/services/crypto/crypto_algorithm.dart';
@@ -303,6 +305,28 @@ void main() {
           _openSslVectors['aes-256-cbc']!);
       expect(suggestion.algorithmId, 'aes-256-cbc');
     });
+
+    test('纯 base64 内容探测：UTF-8 文本建议 base64、二进制建议对称算法', () {
+      // UTF-8 可读 → base64 编码
+      expect(
+          CryptoToolbox.suggestDecrypt(
+                  base64.encode(utf8.encode('你好，世界')).toString())
+              .algorithmId,
+          'base64');
+      // ENC1 裸 payload（剥前缀，二进制）→ 建议对称默认算法
+      final enc1 = CryptoToolbox.encrypt(
+        plaintext: '秘密内容',
+        algorithmId: 'aes-256-cbc',
+        params: const CryptoParams(password: 'pw'),
+      );
+      final naked = enc1.substring('ENC1:aes-256-cbc:'.length);
+      expect(sniffCipher(naked)?.kind, SniffedCipherKind.plainBase64);
+      expect(CryptoToolbox.suggestDecrypt(naked).algorithmId,
+          CryptoToolbox.defaultAlgorithmId);
+      // Hex 同理
+      expect(
+          CryptoToolbox.suggestDecrypt('e4bda0e5a5bde4bda0e5a5bd').algorithmId, 'hex');
+    });
   });
 
   group('RSA PEM 解析与互操作', () {
@@ -384,6 +408,31 @@ void main() {
           SniffedCipherKind.urlEncoded);
       expect(CryptoToolbox.suggestDecrypt('%E4%BD%A0%E5%A5%BD').algorithmId,
           'url');
+      // MIME 折行 Base64（多行纯 base64）
+      expect(
+          sniffCipher('TG9yZW0gaXBzdW0gZG9sb3Igc2l0IGFtZXQ=\n'
+                  'Y29uc2VjdGV0dXIgYWRpcGlzY2luZw==')
+              ?.kind,
+          SniffedCipherKind.plainBase64);
+      // 分隔 Hex（MAC/指纹风格）
+      expect(sniffCipher('48:65:6c:6c:6f:20:77:6f')?.kind,
+          SniffedCipherKind.plainHex);
+      expect(sniffCipher('48-65-6c-6c-6f-20-77-6f')?.kind,
+          SniffedCipherKind.plainHex);
+      // Base32（大写 + 2-7 数字 + 8 倍数长度）
+      expect(sniffCipher('NBSWY3DPEB3W64TMMQQGM33PEBRGC4Q=')?.kind,
+          SniffedCipherKind.plainBase32);
+      // 含 2-7 数字的大写长串按 base32 认（纯字母则落入 base64 分支）
+      expect(sniffCipher('HELLOWORLDHELLOWORLDHELLOWORLD23')?.kind,
+          SniffedCipherKind.plainBase32);
+      // 纯大写英文词（无数字）被 base64 规则接住（不误报 base32）
+      expect(sniffCipher('HELLOWORLDHELLOWORLDABCDEFGH')?.kind,
+          SniffedCipherKind.plainBase64);
+
+      // ```enc 代码块语言信号：内容无特征也显示（只选中密文片段场景）
+      expect(isDecryptableText('任意片段', codeLanguage: 'enc'), isTrue);
+      expect(isDecryptableText('任意片段', codeLanguage: 'dart'), isFalse);
+      expect(isDecryptableText('ENC1:aes-256-cbc:QUJDRA=='), isTrue);
       // 普通文本不误报
       expect(sniffCipher('这是一段普通的中文文本'), isNull);
       expect(sniffCipher('The quick brown fox'), isNull);
@@ -579,6 +628,33 @@ void main() {
             algorithmId: 'hex',
             params: const CryptoParams()),
         'hi',
+      );
+    });
+
+    test('base32（RFC 4648 向量）', () {
+      const params = CryptoParams();
+      expect(
+        CryptoToolbox.encrypt(
+            plaintext: 'foo', algorithmId: 'base32', params: params),
+        'MZXW6===',
+      );
+      expect(
+        CryptoToolbox.encrypt(
+            plaintext: 'foobar', algorithmId: 'base32', params: params),
+        'MZXW6YTBOI======',
+      );
+      // 解码容忍小写与缺 padding
+      expect(
+        CryptoToolbox.decrypt(
+            ciphertext: 'mzxw6ytboi', algorithmId: 'base32', params: params),
+        'foobar',
+      );
+      expect(
+        CryptoToolbox.decrypt(
+            ciphertext: 'MZXW6YTBOI======',
+            algorithmId: 'base32',
+            params: params),
+        'foobar',
       );
     });
 

@@ -133,6 +133,9 @@ enum SniffedCipherKind {
   /// URL 百分号编码（%XX 模式）
   urlEncoded,
 
+  /// Base32（A-Z2-7 字母表）
+  plainBase32,
+
   /// 摩斯电码
   morse,
 }
@@ -178,6 +181,16 @@ SniffedCipher? sniffCipher(String rawText) {
   // 字符）绝不能误报。
   final hasWhitespace = RegExp(r'\s').hasMatch(text);
   if (hasWhitespace) {
+    // MIME 折行 Base64（PEM/邮件风格）：逐行校验，每行都是纯 base64
+    // 字母表且 ≥16 字符、至少 2 行 —— 普通多行英文几乎不可能满足
+    final lines =
+        text.split(RegExp(r'\s+')).where((l) => l.isNotEmpty).toList();
+    if (lines.length >= 2 &&
+        lines.every((l) =>
+            l.length >= 16 &&
+            RegExp(r'^[A-Za-z0-9+/]+={0,2}$').hasMatch(l))) {
+      return const SniffedCipher(SniffedCipherKind.plainBase64);
+    }
     // 含空白的仍可能是摩斯电码（仅由 . - · / 空格组成）
     if (_looksLikeMorse(text)) {
       return const SniffedCipher(SniffedCipherKind.morse);
@@ -190,11 +203,27 @@ SniffedCipher? sniffCipher(String rawText) {
     return const SniffedCipher(SniffedCipherKind.urlEncoded);
   }
 
+  // 分隔 Hex（`48:65:6c` / `48-65-6c`，MAC 地址/证书指纹风格，≥8 字节）
+  if (RegExp(r'^([0-9A-Fa-f]{2}[:-]){7,}[0-9A-Fa-f]{2}$').hasMatch(text)) {
+    return const SniffedCipher(SniffedCipherKind.plainHex);
+  }
+
   // 纯 Hex
   if (text.length >= 16 &&
       text.length.isEven &&
       RegExp(r'^[0-9A-Fa-f]+$').hasMatch(text)) {
     return const SniffedCipher(SniffedCipherKind.plainHex);
+  }
+
+  // Base32（先于纯 Base64 判定：base32 字符集 ⊂ base64，后判会被吞）。
+  // 规则：A-Z2-7、长度 ≥16 且为 8 的倍数、含至少一个 2-7 数字——
+  // 全大写+数字+padding 形态是 base32 的概率远高于恰好全大写的 base64；
+  // 「纯大写英文单词」被数字要求挡住。
+  if (text.length >= 16 &&
+      text.length % 8 == 0 &&
+      RegExp(r'^[A-Z2-7]+={0,6}$').hasMatch(text) &&
+      RegExp(r'[2-7]').hasMatch(text)) {
+    return const SniffedCipher(SniffedCipherKind.plainBase32);
   }
 
   // 纯 Base64（标准或 URL-safe 字母表）
@@ -227,4 +256,15 @@ bool _looksLikeMorse(String text) {
   return RegExp(r'^[.\-/\s]+$').hasMatch(normalized) &&
       normalized.contains('.') &&
       normalized.contains('-');
+}
+
+/// 划词「解密」按钮的统一判定（主项目注入 fluxdo_render 的 detector）。
+///
+/// - [codeLanguage] 为选中内容所在代码块的 fence 语言标记：编辑器加密
+///   输出的 ```enc 块是最强信号，命中即显示（即使只选中了密文的一部分，
+///   内容特征识别不出来也应有入口）。
+/// - 其余走 [sniffCipher] 内容特征嗅探。
+bool isDecryptableText(String plainText, {String? codeLanguage}) {
+  if (codeLanguage == 'enc') return true;
+  return sniffCipher(plainText) != null;
 }
