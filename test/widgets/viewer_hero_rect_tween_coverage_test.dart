@@ -76,4 +76,48 @@ void main() {
       );
     }
   });
+
+  test('cover 裁切展示的源端必须传 heroSourceFit + thumbnailUrl', () {
+    // 源端若以 BoxFit.cover 裁切展示,查看器侧必须知道(heroSourceFit),
+    // 才会走 CoverContainFlightImage 的裁切插值飞行体;还必须给
+    // thumbnailUrl 作位图源,否则自绘飞行体无图可画、退回 child。
+    //
+    // 漏传的后果(真机实测):聊天图片预测返回到最后停在**裁切后的画面**,
+    // 而不是完整图 —— 因为飞行体没做 cover→contain 的窗口张开。
+    // 网格瓦片一直传着这两个参数,聊天此前漏了。
+    final offenders = <String>[];
+    final checked = <String>[];
+
+    for (final entity in Directory('lib').listSync(recursive: true)) {
+      if (entity is! File || !entity.path.endsWith('.dart')) continue;
+      final src = entity.readAsStringSync();
+
+      // 只看「自己开查看器」且「以 cover 展示缩略图」的文件
+      final opensViewer = src.contains('ImageViewerPage.open(') ||
+          src.contains('DiscourseImageUtils.openViewer(');
+      if (!opensViewer) continue;
+      if (!src.contains('fit: BoxFit.cover')) continue;
+      // openBytes(内存图)没有 Hero 飞行,不在契约内
+      if (!src.contains('heroTag')) continue;
+
+      checked.add(entity.path);
+      final ok = src.contains('heroSourceFit') || src.contains('heroSourceCircular');
+      if (!ok || !src.contains('thumbnailUrl')) offenders.add(entity.path);
+    }
+
+    expect(
+      checked.length,
+      greaterThanOrEqualTo(2),
+      reason: '只扫到 ${checked.length} 个 cover 源端,判据可能失效;扫到=$checked',
+    );
+    expect(
+      offenders,
+      isEmpty,
+      reason:
+          '以下文件以 cover 裁切展示却没告知查看器 ⇒ 返回尾帧会停在裁切态:\n'
+          '  ${offenders.join("\n  ")}\n'
+          '修法:开查看器时传 heroSourceFit: BoxFit.cover(圆形头像用'
+          ' heroSourceCircular)+ thumbnailUrl',
+    );
+  });
 }

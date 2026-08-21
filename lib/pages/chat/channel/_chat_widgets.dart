@@ -449,6 +449,14 @@ class _MessageUploads extends StatelessWidget {
         ],
         initialIndex: i,
         filenames: [for (final u in images) u.originalFilename],
+        // 气泡缩略图是 cover 裁切 + 圆角展示,必须告知查看器 —— 否则飞行体
+        // 不走裁切插值,尾帧停在「裁切后的画面」而不是完整图(真机实测:
+        // 聊天图片预测返回到最后是裁切的)。网格瓦片同为 cover,一直传着
+        // 这两个参数;聊天此前漏了。
+        thumbnailUrl: url,
+        thumbnailUrls: [for (final u in images) u.resolvedUrl ?? ''],
+        heroSourceFit: BoxFit.cover,
+        heroSourceRadius: 10,
       ),
       // transitionOnUserGestures:预测返回(user gesture)时也要飞回
       child: Hero(
