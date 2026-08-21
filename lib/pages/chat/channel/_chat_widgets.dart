@@ -407,6 +407,10 @@ class _MessageUploads extends StatelessWidget {
     );
   }
 
+  /// 气泡缩略图的展示方式:cover 裁切 + 圆角 10(与下方 ClipRRect 同值)。
+  /// 一处给出,同时约束源端与 openViewer 两侧参数(见 ViewerSourceStyle)。
+  static const _bubbleStyle = ViewerSourceStyle.cover(radius: 10);
+
   Widget _buildImage(BuildContext context, List<ChatUpload> images, int i) {
     final upload = images[i];
     final url = upload.resolvedUrl;
@@ -438,7 +442,12 @@ class _MessageUploads extends StatelessWidget {
       ),
     );
     if (!interactive) return image;
-    return GestureDetector(
+    // HeroImage 统一件:源端隐藏/占位/飞行起点/裁切插值都由它保证;
+    // _bubbleStyle 同时约束 openViewer 侧参数(见 ViewerSourceStyle)
+    return HeroImage(
+      heroTag: heroTag,
+      style: _bubbleStyle,
+      flightImage: discourseImageProvider(url),
       onTap: () => ImageViewerPage.open(
         context,
         url,
@@ -455,17 +464,12 @@ class _MessageUploads extends StatelessWidget {
         // 这两个参数;聊天此前漏了。
         thumbnailUrl: url,
         thumbnailUrls: [for (final u in images) u.resolvedUrl ?? ''],
-        heroSourceFit: BoxFit.cover,
-        heroSourceRadius: 10,
+        // 与源端同源:_bubbleStyle 一处给出,两侧不可能不一致
+        heroSourceFit: _bubbleStyle.openViewerArgs.fit,
+        heroSourceRadius: _bubbleStyle.openViewerArgs.radius,
+        heroSourceCircular: _bubbleStyle.openViewerArgs.circular,
       ),
-      // transitionOnUserGestures:预测返回(user gesture)时也要飞回
-      child: Hero(
-        tag: heroTag,
-        transitionOnUserGestures: true,
-        // 放大态返回的飞行起点(共享口径,见 viewerHeroRectTween)
-        createRectTween: viewerHeroRectTween,
-        child: image,
-      ),
+      child: image,
     );
   }
 }

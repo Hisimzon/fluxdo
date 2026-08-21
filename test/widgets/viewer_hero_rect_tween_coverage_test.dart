@@ -14,7 +14,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 判据:文件里出现 `Hero(` 且该文件与图片查看器有关(引用 ImageViewerPage /
 /// openViewer / heroTag),就必须出现 viewerHeroRectTween。
 void main() {
-  test('指向查看器的源端 Hero 都挂了 viewerHeroRectTween', () {
+  test('指向查看器的源端都用 HeroImage(或至少挂了飞行起点)', () {
     // 已知豁免:这些文件有 Hero 但不指向图片查看器
     const exempt = <String, String>{
       'lib/pages/topics_page.dart': '搜索胶囊 Hero(飞向搜索页,非图片查看器)',
@@ -31,7 +31,9 @@ void main() {
       if (exempt.containsKey(path)) continue;
 
       final src = entity.readAsStringSync();
-      if (!src.contains('Hero(')) continue;
+      // 裸 Hero( 或统一件 HeroImage( 都算「源端」。注意 'HeroImage(' 本身
+      // 不含 'Hero(' 之后的 '(',故两者要分别判。
+      if (!src.contains('Hero(') && !src.contains('HeroImage(')) continue;
 
       // 与图片查看器相关?
       final viewerRelated = src.contains('ImageViewerPage') ||
@@ -40,13 +42,19 @@ void main() {
       if (!viewerRelated) continue;
 
       checked.add(path);
-      if (!src.contains('viewerHeroRectTween')) offenders.add(path);
+      // 两种合格形态:
+      //  * 用 HeroImage 统一件(**首选** —— 它连带保证源端隐藏/占位/裁切
+      //    插值,而不只是飞行起点);
+      //  * 裸 Hero 但显式挂了 viewerHeroRectTween(迁移完成前的过渡形态)。
+      final ok = src.contains('HeroImage(') ||
+          src.contains('viewerHeroRectTween');
+      if (!ok) offenders.add(path);
     }
 
     // 前提校验:扫描确实覆盖到了已知的源端,否则这个测试是空转
     expect(
       checked.length,
-      greaterThanOrEqualTo(5),
+      greaterThanOrEqualTo(4),
       reason: '只扫到 ${checked.length} 个源端,判据可能失效(文件被重命名?)'
           '扫到的=$checked',
     );
@@ -55,9 +63,11 @@ void main() {
       offenders,
       isEmpty,
       reason:
-          '以下文件有指向查看器的 Hero 但没挂 viewerHeroRectTween ⇒ 放大后返回'
-          '会是「大图瞬间变小再播动画」:\n  ${offenders.join("\n  ")}\n'
-          '修法:给那个 Hero 加 createRectTween: viewerHeroRectTween',
+          '以下文件有指向查看器的 Hero,但既没用 HeroImage 也没挂'
+          ' viewerHeroRectTween ⇒ 放大后返回会是「大图瞬间变小再播动画」:\n'
+          '  ${offenders.join("\n  ")}\n'
+          '修法:改用 HeroImage(heroTag:, style:, flightImage:, onTap:) ——'
+          '它一并保证源端隐藏、飞行占位、裁切插值与飞行起点',
     );
   });
 
@@ -118,6 +128,64 @@ void main() {
           '  ${offenders.join("\n  ")}\n'
           '修法:开查看器时传 heroSourceFit: BoxFit.cover(圆形头像用'
           ' heroSourceCircular)+ thumbnailUrl',
+    );
+  });
+
+  test('六处源端已全部迁到 HeroImage(不再裸用 Hero)', () {
+    // 迁移完成后的强约束:裸 Hero + 手挂 viewerHeroRectTween 只是过渡形态,
+    // 它只保证飞行起点,不保证源端隐藏/飞行占位/裁切插值/圆角同步。
+    // 这些文件必须用统一件。
+    const migrated = <String>[
+      'lib/pages/chat/channel/_chat_widgets.dart',
+      'lib/pages/user_profile_page.dart',
+      'lib/widgets/content/discourse_image.dart',
+      'lib/widgets/content/discourse_html_content/builders/image_grid_builder.dart',
+      'lib/widgets/content/discourse_html_content/builders/image_carousel_builder.dart',
+      'lib/widgets/content/discourse_html_content/lazy_image.dart',
+    ];
+
+    for (final path in migrated) {
+      final file = File(path);
+      expect(file.existsSync(), isTrue, reason: '$path 不存在了 —— 更新清单');
+      final src = file.readAsStringSync();
+      expect(
+        src.contains('HeroImage('),
+        isTrue,
+        reason: '$path 应用 HeroImage 统一件',
+      );
+      // 不得回退成裸 Hero(注意 'HeroImage(' 不含 'Hero(')
+      expect(
+        src.contains('Hero('),
+        isFalse,
+        reason: '$path 又出现裸 Hero( —— 应改用 HeroImage,否则源端隐藏/'
+            '飞行占位/裁切插值/圆角同步都要各自重写一遍',
+      );
+    }
+  });
+
+  test('cover/圆形源端的两侧参数由 ViewerSourceStyle 派生,不写死', () {
+    // 收口的目的:openViewer 的 heroSource* 不该再出现手写字面量,
+    // 否则又会与源端不同步(头像曾源端 12 / 查看器 8)。
+    const shouldDerive = <String>[
+      'lib/pages/chat/channel/_chat_widgets.dart',
+      'lib/pages/user_profile_page.dart',
+      'lib/widgets/content/discourse_image.dart',
+      'lib/widgets/content/discourse_html_content/builders/image_grid_builder.dart',
+      'lib/widgets/content/discourse_html_content/builders/image_carousel_builder.dart',
+    ];
+
+    final offenders = <String>[];
+    for (final path in shouldDerive) {
+      final src = File(path).readAsStringSync();
+      if (!src.contains('heroSourceFit')) continue;
+      // 合格:走 openViewerArgs;不合格:直接写 BoxFit.cover / 数字
+      if (!src.contains('openViewerArgs')) offenders.add(path);
+    }
+    expect(
+      offenders,
+      isEmpty,
+      reason: '以下文件的 heroSource* 没走 style.openViewerArgs,'
+          '会与源端脱同步:\n  ${offenders.join("\n  ")}',
     );
   });
 }

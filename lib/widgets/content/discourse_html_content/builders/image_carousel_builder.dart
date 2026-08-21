@@ -7,9 +7,13 @@ import 'package:app_icons/app_icons.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 import '../../../../services/discourse_cache_manager.dart';
 import '../../../../services/image_decode_spec_memo.dart';
-import '../../../../utils/hero_visibility_controller.dart';
+import '../../../common/hero_image.dart';
 import '../image_utils.dart';
 import 'image_grid_builder.dart';
+
+/// 轮播单页的展示方式:contain 完整展示(圆角属于轨道 ClipRRect,不是单图)。
+/// 一处给出,同时约束源端与 openViewer 两侧参数(见 ViewerSourceStyle)。
+const _slideStyle = ViewerSourceStyle.contain();
 
 /// 构建 Discourse 图片轮播 (d-image-grid mode=carousel)
 Widget buildImageCarousel({
@@ -182,6 +186,11 @@ class _ImageCarouselState extends State<_ImageCarousel> {
       heroTags: heroTags,
       initialIndex: globalIndex >= 0 ? globalIndex : 0,
       filenames: widget.galleryInfo.filenames,
+      // 与源端同源:contain 源的 fit 为 null(传了会让飞行体做多余的
+      // cover→contain 窗口插值),圆角/圆形也一并由 style 给出
+      heroSourceFit: _slideStyle.openViewerArgs.fit,
+      heroSourceRadius: _slideStyle.openViewerArgs.radius,
+      heroSourceCircular: _slideStyle.openViewerArgs.circular,
     );
   }
 
@@ -352,41 +361,24 @@ class _CarouselSlideState extends State<_CarouselSlide>
 
     final aspect = _imageAspect;
 
-    return GestureDetector(
+    // HeroImage 统一件:盒子收拢、飞行起点、源端隐藏/占位都由它保证;
+    // _slideStyle 同时约束 openViewer 侧参数(见 ViewerSourceStyle)。
+    //
+    // aspectRatio 是关键:轮播的 Image 原本 width:infinity,Hero 盒子会等于
+    // 整条槽位(实测 768x300 槽位里画面仅 300x300),于是尾帧铺满槽位、
+    // Hero 撤走才缩成小图 —— 两段突变。按图片真实比例收拢后盒子 ≡ 画面。
+    // 宽高缺失时 aspect 为 null,退回铺满槽位(无从得知比例)。
+    return HeroImage(
+      heroTag: heroTag,
+      style: _slideStyle,
+      aspectRatio: aspect,
+      flightImage: discourseImageProvider(url),
       onTap: () => widget.onTap(context, widget.index, url),
-      // Hero 只包住**画面本身**,不包整条槽位。
-      //
-      // 原先是 `Hero > Image(fit: contain, width: infinity)`,Hero 盒子 =
-      // 整条槽位,而画面只占其中一块(实测 768x300 槽位里画面仅 300x300)。
-      // Hero 飞行几何取布局盒子,于是尾帧图片铺满整条槽位,Hero 撤走后才由
-      // Image 的 contain 缩成小图 —— 两段突变。曾试过用 createRectTween
-      // 把落点算成画面矩形,算式本身对(与真机 paintedRect 逐位一致),但那
-      // 是拿算式去追结构,治标;且改 begin 那版还引入了新的落点偏移。
-      //
-      // 这里改结构:用 AspectRatio 把 Hero 盒子收到图片真实比例,居中放进
-      // 槽位。于是 Hero 盒子 ≡ 画面,**未放大态**飞行两端天然像素级对齐,
-      // 不需要落点修正。原始宽高缺失时退回旧结构(无从得知比例),但
-      // **仍要有 Hero** —— 否则那些没带宽高的图会彻底失去飞行。
-      child: Center(
-        child: Hero(
-          tag: heroTag,
-          // Android 预测返回是 user gesture 转场,须显式开启才有飞行
-          transitionOnUserGestures: true,
-          // 放大态返回的飞行起点(共享口径,见 viewerHeroRectTween)。
-          // 未放大时它返回框架默认几何,即上面 AspectRatio 保证的天然对齐。
-          createRectTween: viewerHeroRectTween,
-          child: aspect == null
-              ? _buildImage(url, cacheWidth, cacheHeight, fillSlot: true)
-              : AspectRatio(
-                  aspectRatio: aspect,
-                  child: _buildImage(
-                    url,
-                    cacheWidth,
-                    cacheHeight,
-                    fillSlot: false,
-                  ),
-                ),
-        ),
+      child: _buildImage(
+        url,
+        cacheWidth,
+        cacheHeight,
+        fillSlot: aspect == null,
       ),
     );
   }

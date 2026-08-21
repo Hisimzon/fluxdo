@@ -57,9 +57,18 @@ import 'chat/channel/chat_channel_page.dart';
 import 'package:common_ui/common_ui.dart';
 import '../l10n/s.dart';
 import '../utils/dialog_utils.dart';
-import '../utils/hero_visibility_controller.dart';
+import '../widgets/common/hero_image.dart';
 
 /// 用户个人页
+/// 头像的展示方式:方形账号是 cover 裁切 + 圆角,圆形账号走 circular。
+///
+/// 一处给出,同时约束源端与 openViewer 两侧参数(见 ViewerSourceStyle)——
+/// 此前两处不同步:源端 borderRadius 12 而 openViewer 传 heroSourceRadius 8。
+ViewerSourceStyle _avatarStyle({required bool isSquare, required double radius}) =>
+    isSquare
+        ? ViewerSourceStyle.cover(radius: radius)
+        : const ViewerSourceStyle.circular();
+
 class UserProfilePage extends ConsumerStatefulWidget {
   final String username;
 
@@ -1724,18 +1733,22 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
       onTap: () {
         if (_user?.getAvatarUrl() != null) {
           final fullUrl = _user!.getAvatarUrl(size: 360);
-          // 与页面头像同参(144)的缩略图作飞行纹理,命中已解码缓存;
-          // 圆形头像飞行中圆↔直角连续插值(方形化账号走圆角 8 插值)
+          // 与页面头像同参(144)的缩略图作飞行纹理,命中已解码缓存
           final thumbUrl = _user!.getAvatarUrl(size: 144);
-          final sq = isSquareAvatarUrl(thumbUrl);
+          // 与源端同源:同一个 _avatarStyle(isSquare, radius: 12)。
+          // 此前这里写死 radius 8 而源端 borderRadius 12,两处不同步。
+          final args = _avatarStyle(
+            isSquare: isSquareAvatarUrl(thumbUrl),
+            radius: 12,
+          ).openViewerArgs;
           ImageViewerPage.open(
             context,
             fullUrl,
             heroTag: 'user_avatar_${_user!.username}',
             thumbnailUrl: thumbUrl,
-            heroSourceCircular: !sq,
-            heroSourceRadius: sq ? 8 : 0,
-            heroSourceFit: sq ? BoxFit.cover : null,
+            heroSourceFit: args.fit,
+            heroSourceRadius: args.radius,
+            heroSourceCircular: args.circular,
           );
         }
       },
@@ -1753,11 +1766,14 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
           flairName: _user?.flairName,
           flairBgColor: _user?.flairBgColor,
           flairColor: _user?.flairColor,
-          avatar: Hero(
-            tag: 'user_avatar_${_user?.username ?? ''}',
-            transitionOnUserGestures: true,
-            // 放大态返回的飞行起点(共享口径,见 viewerHeroRectTween)
-            createRectTween: viewerHeroRectTween,
+          // HeroImage 统一件:飞行起点、源端隐藏/占位、圆角(或圆形)插值
+          // 都由它保证;style 同时约束 openViewer 侧参数
+          avatar: HeroImage(
+            heroTag: 'user_avatar_${_user?.username ?? ''}',
+            style: _avatarStyle(isSquare: isSquare, radius: 12),
+            flightImage: avatarUrl == null
+                ? null
+                : discourseImageProvider(avatarUrl),
             child: SmartAvatar(
               imageUrl: avatarUrl,
               radius: radius,
@@ -2190,19 +2206,21 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                   final avatarUrl = _user!.getAvatarUrl(
                     size: 360,
                   );
-                  // 与页面头像同参(144)的缩略图作飞行纹理,
-                  // 命中已解码缓存;圆形头像飞行中圆↔直角
-                  // 连续插值(方形化账号走圆角 8 插值)
+                  // 与页面头像同参(144)的缩略图作飞行纹理,命中已解码缓存
                   final thumbUrl = _user!.getAvatarUrl(size: 144);
-                  final isSquare = isSquareAvatarUrl(thumbUrl);
+                  // 与源端同源(同竖版口径,见 _avatarStyle)
+                  final args = _avatarStyle(
+                    isSquare: isSquareAvatarUrl(thumbUrl),
+                    radius: 12,
+                  ).openViewerArgs;
                   ImageViewerPage.open(
                     context,
                     avatarUrl,
                     heroTag: 'user_avatar_${_user!.username}',
                     thumbnailUrl: thumbUrl,
-                    heroSourceCircular: !isSquare,
-                    heroSourceRadius: isSquare ? 8 : 0,
-                    heroSourceFit: isSquare ? BoxFit.cover : null,
+                    heroSourceFit: args.fit,
+                    heroSourceRadius: args.radius,
+                    heroSourceCircular: args.circular,
                   );
                 }
               },
@@ -2234,13 +2252,13 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                       flairName: _user?.flairName,
                       flairBgColor: _user?.flairBgColor,
                       flairColor: _user?.flairColor,
-                      avatar: Hero(
-                        tag: 'user_avatar_${_user?.username ?? ''}',
-                        // 预测返回是 user gesture 转场,
-                        // 不开此标记头像不飞(查看器侧已开)
-                        transitionOnUserGestures: true,
-                        // 放大态返回的飞行起点(见 viewerHeroRectTween)
-                        createRectTween: viewerHeroRectTween,
+                      // HeroImage 统一件(同竖版口径)
+                      avatar: HeroImage(
+                        heroTag: 'user_avatar_${_user?.username ?? ''}',
+                        style: _avatarStyle(isSquare: isSquare, radius: 12),
+                        flightImage: avatarUrl == null
+                            ? null
+                            : discourseImageProvider(avatarUrl),
                         child: SmartAvatar(
                           imageUrl: avatarUrl,
                           radius: 36,
