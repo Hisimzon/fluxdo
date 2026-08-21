@@ -12,8 +12,8 @@ import '../../providers/selected_topic_provider.dart';
 import '../../utils/color_utils.dart';
 import '../../utils/share_utils.dart';
 import '../../pages/topic_detail_page/topic_detail_page.dart';
-import 'package:m3e_ui/m3e_ui.dart';
 import '../common/relative_time_text.dart';
+import '../common/morphing_dialog_shell.dart';
 import '../common/skeleton.dart';
 import '../../utils/dialog_utils.dart';
 import '../../utils/number_utils.dart';
@@ -187,26 +187,12 @@ class _TopicPreviewDialogState extends ConsumerState<TopicPreviewDialog> {
   bool _isLoading = true;
   bool _loadFailed = false;
 
-  // ── 一镜到底(morphAnimation 非空) ──
-  /// 内容柱(壳体 + 底部操作面板)的测量锚。注意框架禁止在 build 阶段
-  /// 读 Element.size,尺寸统一经 [_scheduleSizeSync] 在 postFrame /
-  /// 尺寸变化通知里写入 [_contentSize];写入前壳钳在锚点作蓄力起步
-  final GlobalKey _contentKey = GlobalKey();
-  Size? _contentSize;
-
-  /// 弹簧曲线缓存:curveFor 的解析解含二分/log 预热,不能逐帧重建
-  Curve? _spatialCurve;
-  Curve? _effectsCurve;
-  bool? _cachedM3e;
   Topic get topic => widget.topic;
 
   @override
   void initState() {
     super.initState();
     _loadFirstPost();
-    // 一镜到底:首帧布局后尽快测得内容柱尺寸,让动画尽早起步
-    // (路由插入帧 page 可能 offstage 不参与布局,故逐帧重试)
-    if (widget.morphAnimation != null) _scheduleSizeSync();
   }
 
   Future<void> _loadFirstPost() async {
@@ -231,43 +217,6 @@ class _TopicPreviewDialogState extends ConsumerState<TopicPreviewDialog> {
         _loadFailed = true;
       });
     }
-  }
-
-  void _ensureMorphCurves(bool m3e) {
-    if (_cachedM3e == m3e && _spatialCurve != null) return;
-    _cachedM3e = m3e;
-    // 空间属性(位置/尺寸/圆角):欠阻尼弹簧,带轻微过冲的落座感;
-    // 效果属性(颜色/阴影/透明度):临界阻尼,不过冲
-    const duration = Duration(milliseconds: 350);
-    _spatialCurve = m3e
-        ? M3eMotion.defaultSpatial.curveFor(duration)
-        : Curves.easeInOutCubic;
-    _effectsCurve = m3e
-        ? M3eMotion.defaultEffects.curveFor(duration)
-        : Curves.easeInOut;
-  }
-
-  /// 内容尺寸变化(正文加载完成等)时安排重测,壳 rect 下一帧跟上
-  bool _onContentSizeChanged(SizeChangedLayoutNotification notification) {
-    _scheduleSizeSync();
-    return true;
-  }
-
-  /// postFrame 里读 [_contentKey] 的布局尺寸写入 [_contentSize];
-  /// 未布局(首帧 offstage 等)则逐帧重试直到测得。壳 rect 的动画
-  /// 终点与收回起点都取自这里 —— 内容长高后壳自动跟随
-  void _scheduleSizeSync() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final render = _contentKey.currentContext?.findRenderObject();
-      if (render is RenderBox && render.hasSize) {
-        if (render.size != _contentSize) {
-          setState(() => _contentSize = render.size);
-        }
-      } else {
-        _scheduleSizeSync();
-      }
-    });
   }
 
   @override
@@ -351,7 +300,15 @@ class _TopicPreviewDialogState extends ConsumerState<TopicPreviewDialog> {
       ],
     );
 
-    if (morphing) return _buildMorphingShell(context, contentColumn);
+    if (morphing) {
+      return MorphingDialogShell(
+        animation: widget.morphAnimation!,
+        anchorRect: widget.anchorRect!,
+        anchorColor: widget.anchorColor,
+        anchorRadius: widget.anchorRadius,
+        child: contentColumn,
+      );
+    }
 
     return Center(
       child: ConstrainedBox(
@@ -360,103 +317,6 @@ class _TopicPreviewDialogState extends ConsumerState<TopicPreviewDialog> {
           maxHeight: maxHeight,
         ),
         child: contentColumn,
-      ),
-    );
-  }
-
-  /// 一镜到底壳层:飞行壳(Material)从锚点 rect 连续变形到内容最终
-  /// rect;内容自始至终嵌在壳内(OverflowBox 按目标宽布局、顶部对齐),
-  /// 裁剪窗随壳从卡片大小展开 —— 内容全程随壳飞行,没有"空壳移动"段。
-  /// 内容尺寸由 SizeChangedLayoutNotifier 实时上报:正文加载完成壳
-  /// 自动跟随长高;反向收回时从内容当前实际尺寸飞回锚点。
-  Widget _buildMorphingShell(BuildContext context, Widget body) {
-    final theme = Theme.of(context);
-    final screen = MediaQuery.sizeOf(context);
-    final dialogWidth = (screen.width * 0.9).clamp(300.0, 500.0);
-    final animation = widget.morphAnimation!;
-    final anchor = widget.anchorRect!;
-    final anchorColor =
-        widget.anchorColor ??
-        theme.cardTheme.color ??
-        theme.colorScheme.surfaceContainerLow;
-    _ensureMorphCurves(M3eFlags.of(context).enabled);
-
-    return AnimatedBuilder(
-      animation: animation,
-      builder: (context, contentBody) {
-        final rawT = animation.value;
-        // 内容尺寸经 postFrame 测得前(至多前两帧)壳钳在锚点,作蓄力起步
-        final size = _contentSize;
-        final spatialT = size == null ? 0.0 : _spatialCurve!.transform(rawT);
-        final effectsT = _effectsCurve!.transform(rawT);
-        final dest = size == null
-            ? anchor
-            : Rect.fromLTWH(
-                (screen.width - size.width) / 2,
-                (screen.height - size.height) / 2,
-                size.width,
-                size.height,
-              );
-        final shellRect = Rect.lerp(anchor, dest, spatialT)!;
-        // 起步快速淡入:柔化"卡片小标题 → 弹窗大标题"的换皮;
-        // 收回沿同一曲线,末段内容渐隐、壳缩回卡片后无缝交还
-        final contentOpacity = const Interval(
-          0.0,
-          0.22,
-          curve: Curves.easeOut,
-        ).transform(rawT);
-
-        return Stack(
-          children: [
-            Positioned.fromRect(
-              key: const ValueKey('morphing-shell'),
-              rect: shellRect,
-              child: Material(
-                elevation: 8 * effectsT,
-                // 圆角/颜色/阴影走 effects 曲线(临界阻尼,前半程收敛):
-                // M3 容器变形规范"形状变化先于到达" —— 若跟 rect 同走
-                // spatial 弹簧,圆角要到后段收敛+过冲才定形,视觉上就是
-                // "弹窗到位了圆角还在放大"
-                borderRadius: BorderRadius.circular(10 + (20 - 10) * effectsT),
-                clipBehavior: Clip.antiAlias,
-                color: Color.lerp(
-                  anchorColor,
-                  theme.colorScheme.surface,
-                  effectsT,
-                ),
-                child: OverflowBox(
-                  alignment: Alignment.topCenter,
-                  minWidth: dialogWidth,
-                  maxWidth: dialogWidth,
-                  // 必须显式给 0:null 会继承父级 tight 约束(壳高),
-                  // 内容被强制撑到壳高 → 测得的"内容高"失真自锁,
-                  // 落座后壳比内容高出一截(底部空白)
-                  minHeight: 0,
-                  maxHeight: screen.height,
-                  child: Opacity(
-                    opacity: contentOpacity,
-                    child: IgnorePointer(
-                      // 飞行期间不响应指针,落座后才开放交互
-                      ignoring: rawT < 1.0,
-                      child: contentBody!,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        );
-      },
-      // 尺寸监听挂在 AnimatedBuilder 的常量 child 上,只建一次,
-      // 不随动画逐帧重建
-      child: NotificationListener<SizeChangedLayoutNotification>(
-        onNotification: _onContentSizeChanged,
-        child: SizeChangedLayoutNotifier(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(maxHeight: screen.height * 0.7),
-            child: KeyedSubtree(key: _contentKey, child: body),
-          ),
-        ),
       ),
     );
   }
