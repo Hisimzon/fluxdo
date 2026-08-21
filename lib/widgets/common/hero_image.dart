@@ -234,6 +234,77 @@ class _CoverContainPainter extends CustomPainter {
       animation != oldDelegate.animation;
 }
 
+/// **源端展示方式的单一描述**:一次给出,同时产出 Hero 飞行体参数与
+/// `openViewer` 的 `heroSource*` 参数 —— 两侧不可能不一致。
+///
+/// 为什么需要它:这套契约有五项(盒子几何 / 圆角插值 / 飞行起点 / 缩略图源 /
+/// cover 告知),原先分散在**源端 widget** 与 **openViewer 调用**两处,还要求
+/// 两边手工对齐。于是每加一个源端都要重想一遍,必然漏 —— 真机先后暴露过:
+/// 轮播漏 createRectTween、聊天漏 heroSourceFit、用户头像源端圆角 12 而
+/// openViewer 传 8(两处不同步)。
+///
+/// 用法:源端构建时用 [flightRadius]/[isCover] 配 [HeroImage],开查看器时把
+/// [openViewerArgs] 展开传入。
+@immutable
+class ViewerSourceStyle {
+  /// 源端以 `BoxFit.cover` 裁切展示(网格瓦片/聊天气泡/方形头像)
+  const ViewerSourceStyle.cover({required double radius})
+      : _fit = BoxFit.cover,
+        _radius = radius,
+        _circular = false;
+
+  /// 源端以 `BoxFit.contain` 完整展示(轮播/正文单图)
+  const ViewerSourceStyle.contain({double radius = 0})
+      : _fit = BoxFit.contain,
+        _radius = radius,
+        _circular = false;
+
+  /// 源端是圆形裁切(圆形头像):飞行中圆↔直角连续插值
+  const ViewerSourceStyle.circular()
+      : _fit = BoxFit.cover,
+        _radius = 0,
+        _circular = true;
+
+  final BoxFit _fit;
+  final double _radius;
+  final bool _circular;
+
+  /// 源端展示用的 fit —— 直接给 `Image(fit: ...)`,保证与飞行体口径一致
+  BoxFit get fit => _fit;
+
+  /// 源端圆角(圆形来源返回 0,圆角由 [isCircular] 表达)
+  double get radius => _radius;
+
+  bool get isCover => _fit == BoxFit.cover || _circular;
+  bool get isCircular => _circular;
+
+  /// 展开到 `openViewer` / `ImageViewerPage.open` 的 `heroSource*` 参数。
+  ///
+  /// contain 来源**不传 heroSourceFit**(留 null):传了会让查看器侧
+  /// `coverSource` 为真、飞行体去做 cover→contain 的窗口插值,而 contain
+  /// 来源两端本就都是完整图,那段插值是多余动画。
+  ({BoxFit? fit, double radius, bool circular}) get openViewerArgs => (
+        fit: isCover ? BoxFit.cover : null,
+        radius: _radius,
+        circular: _circular,
+      );
+
+  @override
+  bool operator ==(Object other) =>
+      other is ViewerSourceStyle &&
+      other._fit == _fit &&
+      other._radius == _radius &&
+      other._circular == _circular;
+
+  @override
+  int get hashCode => Object.hash(_fit, _radius, _circular);
+
+  @override
+  String toString() => _circular
+      ? 'ViewerSourceStyle.circular()'
+      : 'ViewerSourceStyle.${isCover ? "cover" : "contain"}(radius: $_radius)';
+}
+
 /// 封装 Hero 动画及可见性控制的图片 Widget
 ///
 /// 提供：
@@ -261,15 +332,39 @@ class HeroImage extends StatefulWidget {
   /// 右键回调（桌面端）
   final GestureTapUpCallback? onSecondaryTapUp;
 
+  /// 源端展示方式(单一真相)。给了它就不必再传 [coverFlight]/[flightRadius]
+  /// —— 两者由它派生,且与 `openViewer` 的参数同源,见 [ViewerSourceStyle]。
+  final ViewerSourceStyle? style;
+
   /// 源为 cover 裁切展示(网格瓦片)时传入:飞行体换成
-  /// [CoverContainFlightImage] 裁切插值(需与 [flightImage] 同传)
+  /// [CoverContainFlightImage] 裁切插值(需与 [flightImage] 同传)。
+  ///
+  /// 新代码用 [style] —— 它同时约束 `openViewer` 侧参数,不会两处不一致。
   final bool coverFlight;
 
   /// 飞行体绘制用的图片 provider(通常=缩略图,已解码命中缓存)
   final ImageProvider? flightImage;
 
-  /// 源瓦片圆角(飞行中插值到 0)
+  /// 源瓦片圆角(飞行中插值到 0)。新代码用 [style]。
   final double flightRadius;
+
+  /// 源为圆形裁切(头像):飞行中圆↔直角连续插值。新代码用 [style]。
+  final bool flightCircular;
+
+  /// 可选:把 Hero 盒子按此比例收到「画面本身」。
+  ///
+  /// contain 展示的源端(轮播/正文)若盒子大于画面,Hero 飞行几何取的是盒子,
+  /// 尾帧就会铺满盒子而非贴合画面。给了它内部套 [AspectRatio] 保证盒子 ≡ 画面。
+  final double? aspectRatio;
+
+  /// 实际生效的 cover 判据(优先 [style])
+  bool get effectiveCover => style?.isCover ?? coverFlight;
+
+  /// 实际生效的圆角(优先 [style])
+  double get effectiveRadius => style?.radius ?? flightRadius;
+
+  /// 实际生效的圆形判据(优先 [style])
+  bool get effectiveCircular => style?.isCircular ?? flightCircular;
 
   const HeroImage({
     super.key,
@@ -278,9 +373,12 @@ class HeroImage extends StatefulWidget {
     this.onTap,
     this.onLongPress,
     this.onSecondaryTapUp,
+    this.style,
     this.coverFlight = false,
     this.flightImage,
     this.flightRadius = 0,
+    this.flightCircular = false,
+    this.aspectRatio,
   });
 
   @override
@@ -333,9 +431,7 @@ class _HeroImageState extends State<HeroImage> {
         // pop 期间不隐藏任何图片（让 child 可见），其他时候根据 hiddenTag 判断
         final shouldHide = !isPopping && hiddenTag == heroTag;
 
-        return Opacity(
-          opacity: shouldHide ? 0.0 : 1.0,
-          child: Hero(
+        final Widget hero = Hero(
             tag: heroTag,
             // Android 预测返回是 user gesture 转场,须显式开启才有飞行
             transitionOnUserGestures: true,
@@ -350,12 +446,17 @@ class _HeroImageState extends State<HeroImage> {
             // 源端 Opacity 锁死在 0 ⇒ 空洞黑闪。宣告退场已改由查看器在
             // 路由转 reverse / 手势置位时直接做,与 shuttle 无关。
             flightShuttleBuilder: (flightContext, animation, direction, fromContext, toContext) {
-              if (widget.coverFlight && widget.flightImage != null) {
+              // 自绘飞行体需要位图源;有它就用,以便 cover 窗口/圆角随飞行
+              // 插值。判据走 effective* —— style 给了就以它为准。
+              if (widget.flightImage != null &&
+                  (widget.effectiveCover || widget.effectiveCircular)) {
                 return CoverContainFlightImage(
                   image: widget.flightImage!,
                   animation: animation,
-                  radius: widget.flightRadius,
-                  // 走到这个分支就是 coverFlight=true(源端 cover 裁切展示)
+                  radius: widget.effectiveRadius,
+                  circular: widget.effectiveCircular,
+                  // 贴源端窗口要与源端 Image(fit:cover) 的可见区域对齐,
+                  // 否则落地瞬间「裁切一块」突变成完整图
                   coverSource: true,
                   fallback: child,
                 );
@@ -390,7 +491,17 @@ class _HeroImageState extends State<HeroImage> {
               onSecondaryTapUp: widget.onSecondaryTapUp,
               child: child,
             ),
-          ),
+        );
+
+        // aspectRatio 套在 Hero **外面**:它约束的是 Hero 的盒子,让盒子 ≡
+        // 画面。contain 展示的源端(轮播/正文)若盒子大于画面,Hero 飞行几何
+        // 取的是盒子,尾帧就会铺满盒子而非贴合画面。
+        final double? ratio = widget.aspectRatio;
+        return Opacity(
+          opacity: shouldHide ? 0.0 : 1.0,
+          child: ratio == null
+              ? hero
+              : Center(child: AspectRatio(aspectRatio: ratio, child: hero)),
         );
       },
     );
