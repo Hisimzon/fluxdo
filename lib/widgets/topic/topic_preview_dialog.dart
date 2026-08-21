@@ -14,6 +14,7 @@ import '../../utils/share_utils.dart';
 import '../../pages/topic_detail_page/topic_detail_page.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 import '../common/relative_time_text.dart';
+import '../common/skeleton.dart';
 import '../../utils/dialog_utils.dart';
 import '../../utils/number_utils.dart';
 import '../common/emoji_text.dart';
@@ -412,7 +413,11 @@ class _TopicPreviewDialogState extends ConsumerState<TopicPreviewDialog> {
               rect: shellRect,
               child: Material(
                 elevation: 8 * effectsT,
-                borderRadius: BorderRadius.circular(10 + (20 - 10) * spatialT),
+                // 圆角/颜色/阴影走 effects 曲线(临界阻尼,前半程收敛):
+                // M3 容器变形规范"形状变化先于到达" —— 若跟 rect 同走
+                // spatial 弹簧,圆角要到后段收敛+过冲才定形,视觉上就是
+                // "弹窗到位了圆角还在放大"
+                borderRadius: BorderRadius.circular(10 + (20 - 10) * effectsT),
                 clipBehavior: Clip.antiAlias,
                 color: Color.lerp(
                   anchorColor,
@@ -457,14 +462,7 @@ class _TopicPreviewDialogState extends ConsumerState<TopicPreviewDialog> {
   }
 
   Widget _buildPostContent(BuildContext context, ThemeData theme) {
-    if (_isLoading) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.symmetric(vertical: 20),
-          child: LoadingSpinner(size: 24),
-        ),
-      );
-    }
+    if (_isLoading) return _buildBodySkeleton();
 
     if (_firstPostCooked != null &&
         _firstPostCooked!.isNotEmpty &&
@@ -522,6 +520,26 @@ class _TopicPreviewDialogState extends ConsumerState<TopicPreviewDialog> {
     }
 
     return const SizedBox.shrink();
+  }
+
+  /// 正文加载骨架:三段段落条(shimmer 呼吸),高度与真实正文首屏
+  /// 同量级 —— 加载完成前后壳高度变化更平缓,一镜到底更顺
+  Widget _buildBodySkeleton() {
+    return const Skeleton(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SkeletonBox(height: 12, width: double.infinity),
+          SizedBox(height: 10),
+          SkeletonBox(height: 12, width: double.infinity),
+          SizedBox(height: 10),
+          FractionallySizedBox(
+            widthFactor: 0.72,
+            child: SkeletonBox(height: 12),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildExcerptFallback(ThemeData theme) {
