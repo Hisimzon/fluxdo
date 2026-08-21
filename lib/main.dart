@@ -109,7 +109,6 @@ import 'widgets/layout/master_detail_layout.dart';
 import 'widgets/layout/pane_projection_back_scope.dart';
 import 'widgets/notification/notification_quick_panel.dart';
 import 'widgets/topic/category_drawer.dart' show CategoryDrawerHost;
-import 'widgets/render_signet/render_signet_layer.dart';
 import 'widgets/read_later/read_later_bubble.dart';
 import 'navigation/nav_action_bus.dart';
 import 'navigation/nav_entry.dart';
@@ -857,8 +856,6 @@ class MainApp extends ConsumerWidget {
                         ),
                       child!,
                       const ReadLaterBubble(),
-                      // 渲染帧标识印记:置于最顶层保证捕获帧必含点阵
-                      const RenderSignetLayer(),
                     ],
                   ),
                 );
