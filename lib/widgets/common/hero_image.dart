@@ -20,6 +20,7 @@ class CoverContainFlightImage extends StatefulWidget {
     required this.animation,
     this.radius = 0,
     this.circular = false,
+    this.coverSource = false,
     this.fallback,
   });
 
@@ -31,6 +32,15 @@ class CoverContainFlightImage extends StatefulWidget {
 
   /// 源为圆形裁切(头像):t=0 端圆角 = 短边一半,随飞行插值到 0
   final bool circular;
+
+  /// 源端是否以 cover **裁切**展示(网格瓦片/聊天气泡/头像)。
+  ///
+  /// 决定贴源端(t=0)的 src 窗口:
+  /// - true:按画布比例从全图中心裁出窗口 —— 与源端 `Image(fit: cover)` 的
+  ///   可见区域同一算式,故两端像素级对齐(聊天气泡因 clamp 夹高只显示纵向
+  ///   84% 时,这里算出的正是那 84%);
+  /// - false(contain 展示,如轮播/正文单图):贴源端就是完整图。
+  final bool coverSource;
 
   /// 纹理未就绪时的退化显示(通常传 Hero child,= 无插值的旧行为;
   /// 飞行纹理走缓存几乎必然同步命中,此为极端情况兜底,防空白飞行)
@@ -94,6 +104,7 @@ class _CoverContainFlightImageState extends State<CoverContainFlightImage> {
         animation: widget.animation,
         radius: widget.radius,
         circular: widget.circular,
+        coverSource: widget.coverSource || widget.circular,
         // 飞行期这个值恒定(退场前一次性发布),故 build 时取一次即可;
         // 作显式参数传入而非在 painter 里读全局单例 —— 后者是隐式依赖,
         // 也让 shouldRepaint 无法参与判断。
@@ -110,6 +121,7 @@ class _CoverContainPainter extends CustomPainter {
     required this.animation,
     required this.radius,
     required this.circular,
+    required this.coverSource,
     this.zoomFraction,
   }) : super(repaint: animation);
 
@@ -117,6 +129,9 @@ class _CoverContainPainter extends CustomPainter {
   final Animation<double> animation;
   final double radius;
   final bool circular;
+
+  /// 源端是否 cover 裁切展示(见 [CoverContainFlightImage.coverSource])
+  final bool coverSource;
 
   /// 放大态下「此刻看得见的那部分图」,全图归一化坐标;null = 未裁切。
   /// 见 [HeroVisibilityController.exitVisibleFraction]。
@@ -131,26 +146,25 @@ class _CoverContainPainter extends CustomPainter {
 
     // src 的两端窗口。t 语义恒为「0=贴源,1=在查看器」。
     //
-    // cover 源:贴源端是「按画布比例中心裁出的窗口」,查看器端是完整图。
-    // 注意 coverSrc 由画布**比例**决定、与盒子绝对尺寸无关,所以 cover 源
-    // 本来就不受放大态影响。
+    // **两端各按自己的依据算,互不影响**:
+    // - 贴源端(t=0)由**源端展示方式**决定:cover 裁切展示(网格瓦片/聊天
+    //   气泡/头像)时是「按画布比例中心裁出的窗口」。这个窗口与源端
+    //   `Image(fit: cover)` 的可见区域是同一个算式,故两端像素级对齐 ——
+    //   聊天气泡因 clamp 夹高而纵向只显示 84% 时,这里算出的也正是那 84%。
+    // - 查看器端(t=1)由**放大态**决定:未放大是完整图;放大后是
+    //   exitVisibleFraction(用户此刻看得见的那块)。
     //
-    // **放大态**:查看器端不再是完整图,而是 exitVisibleFraction —— 用户在
-    // 查看器里此刻看得见的那块。贴源端仍是完整缩略图。于是飞行(pop 时 t
-    // 从 1 走到 0)就是取景框从局部张回完整图的过程。
+    // 于是 pop(t 从 1 → 0)= 取景框从「查看器里看到的」连续变成「气泡里
+    // 看到的」,两端都与真实所见一致,没有突变。
     //
-    // 不吃它的话,painter 只把 src 按比例铺满画布 —— 而放大态的 Hero 盒子
-    // 远超屏幕,完整图被撑到同样大,用户只看到中间一块,且随盒子缩小才逐渐
-    // 露全、落地忽然完整(实测放大 3x:起飞只露 53%,t=0.25 才 100%)。
+    // 曾经写错过:放大态时把贴源端也置成完整图,结果落地瞬间画面从「裁切
+    // 一条」突变为「完整长图」—— 因为气泡本就是裁切展示的。
     final Rect? zoomFraction = this.zoomFraction;
     final Rect fullSrc = Rect.fromLTWH(0, 0, imgW, imgH);
 
-    // 贴源端(t=0)
+    // 贴源端(t=0):cover 展示 ⇒ 按画布比例裁窗口;contain 展示 ⇒ 完整图
     final Rect atSource;
-    if (zoomFraction != null) {
-      // 放大态下贴源端就是完整缩略图(源端展示的是整张缩略图)
-      atSource = fullSrc;
-    } else {
+    if (coverSource) {
       final double coverScale = math.max(
         size.width / imgW,
         size.height / imgH,
@@ -160,6 +174,8 @@ class _CoverContainPainter extends CustomPainter {
         width: size.width / coverScale,
         height: size.height / coverScale,
       );
+    } else {
+      atSource = fullSrc;
     }
     // 查看器端(t=1):放大态是可见窗口,否则是完整图
     final Rect atViewer = zoomFraction == null
@@ -173,7 +189,6 @@ class _CoverContainPainter extends CustomPainter {
 
     final Rect src = Rect.lerp(atSource, atViewer, t)!;
     CoverContainFlightImage.debugLastSrc = src;
-
     // 目标矩形:保持 src 宽高比 contain 进画布(t=0 时 src 比例=画布
     // 比例,恰好铺满=瓦片;t=1 时即查看器的 contain 布局)
     final double dstScale = math.min(
@@ -214,6 +229,7 @@ class _CoverContainPainter extends CustomPainter {
       image != oldDelegate.image ||
       radius != oldDelegate.radius ||
       circular != oldDelegate.circular ||
+      coverSource != oldDelegate.coverSource ||
       zoomFraction != oldDelegate.zoomFraction ||
       animation != oldDelegate.animation;
 }
@@ -339,6 +355,8 @@ class _HeroImageState extends State<HeroImage> {
                   image: widget.flightImage!,
                   animation: animation,
                   radius: widget.flightRadius,
+                  // 走到这个分支就是 coverFlight=true(源端 cover 裁切展示)
+                  coverSource: true,
                   fallback: child,
                 );
               }

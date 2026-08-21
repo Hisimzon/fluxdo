@@ -114,6 +114,7 @@ void main() {
       required double t,
       required Rect? zoomFraction,
       Size box = const Size(400, 400),
+      bool coverSource = true,
     }) async {
       HeroVisibilityController.instance.setExitVisibleFraction(zoomFraction);
       final ctrl = AnimationController(
@@ -132,6 +133,7 @@ void main() {
               child: CoverContainFlightImage(
                 image: _Solid(img),
                 animation: ctrl,
+                coverSource: coverSource,
               ),
             ),
           ),
@@ -153,11 +155,77 @@ void main() {
       expect(src.height, closeTo(500 * 0.33, 4));
     });
 
-    testWidgets('放大态 t=0(贴源):src = 全图', (tester) async {
+    testWidgets('contain 源 + 放大态 t=0(贴源):src = 全图', (tester) async {
       const frac = Rect.fromLTRB(0.25, 0.335, 0.75, 0.665);
-      final src = await srcAt(tester, t: 0.0, zoomFraction: frac);
-      expect(src.width, closeTo(500, 1), reason: '落地端必须是完整图');
+      final src = await srcAt(
+        tester,
+        t: 0.0,
+        zoomFraction: frac,
+        coverSource: false, // 轮播/正文:源端 contain 展示
+      );
+      expect(src.width, closeTo(500, 1), reason: 'contain 源落地端是完整图');
       expect(src.height, closeTo(500, 1));
+    });
+
+    testWidgets('cover 源 + 放大态 t=0(贴源):src = 裁切窗口,不是全图', (
+      tester,
+    ) async {
+      // 这条守的是真机报的:聊天气泡本就纵向裁切(clamp 夹高 ⇒ cover 只显示
+      // 中段),若贴源端算成完整图,落地瞬间画面会从「裁切一条」突变为完整
+      // 长图。两端必须都与真实所见一致。
+      const frac = Rect.fromLTRB(0.25, 0.335, 0.75, 0.665);
+      // 画布 240x320(气泡形态)、图 500x500 ⇒ cover 纵向要裁
+      final src = await srcAt(
+        tester,
+        t: 0.0,
+        zoomFraction: frac,
+        box: const Size(240, 320),
+        coverSource: true,
+      );
+      // cover: scale=max(240/500, 320/500)=0.64 ⇒ src=375x500(横向被裁)
+      expect(
+        src.width,
+        lessThan(500),
+        reason: 'cover 源贴源端必须是裁切窗口 —— 算成完整图会让落地瞬间突变',
+      );
+      expect(src.width, closeTo(240 / 0.64, 2));
+      expect(src.height, closeTo(500, 2), reason: '纵向已铺满,不该再裁');
+    });
+
+    testWidgets('cover 源纵向裁切(气泡夹高形态):贴源端窗口纵向收窄', (
+      tester,
+    ) async {
+      // 竖长图放进被夹高的气泡:cover 会裁掉上下
+      // 画布 240x320、图 500x1000 ⇒ scale=max(0.48, 0.32)=0.48
+      //   ⇒ src = 500 x 666(纵向从 1000 裁到 666,即 67%)
+      HeroVisibilityController.instance.setExitVisibleFraction(null);
+      final ctrl = AnimationController(
+        duration: const Duration(milliseconds: 300),
+        vsync: tester,
+      );
+      addTearDown(ctrl.dispose);
+      ctrl.value = 0.0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Center(
+            child: SizedBox(
+              width: 240,
+              height: 320,
+              child: CoverContainFlightImage(
+                image: _Solid(const ui.Size(500, 1000)),
+                animation: ctrl,
+                coverSource: true,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump(const Duration(seconds: 1));
+      final src = CoverContainFlightImage.debugLastSrc!;
+      expect(src.width, closeTo(500, 2), reason: '横向铺满');
+      expect(src.height, closeTo(320 / 0.48, 4),
+          reason: '纵向应收窄到约 67%,与气泡里 cover 的实际可见区域一致');
+      expect(src.height, lessThan(1000));
     });
 
     testWidgets('放大态整段退场:src 单调张开到全图', (tester) async {

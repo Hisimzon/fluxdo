@@ -405,6 +405,10 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                     needsProgress ? animation : kAlwaysCompleteAnimation,
                 radius: widget.heroSourceRadius,
                 circular: widget.heroSourceCircular,
+                // 贴源端窗口按源端展示方式算:cover 裁切展示时要与源端
+                // Image(fit:cover) 的可见区域对齐,否则落地瞬间「裁切一条」
+                // 突变成完整图(聊天气泡因 clamp 夹高最明显)
+                coverSource: coverSource,
                 fallback: child,
               );
             },
