@@ -118,6 +118,21 @@ class ImageViewerPage extends ConsumerStatefulWidget {
   static bool debugIsDisplacedFromBaseline(Rect? rect, Rect? baseline) =>
       _ImageViewerPageState._isDisplacedFromBaseline(rect, baseline);
 
+  /// 仅供测试:放大态可见窗口的归一化算式(读真实现)。
+  @visibleForTesting
+  static Rect? visibleFractionOf(Rect imageRect, Size viewport) =>
+      _ImageViewerPageState.visibleFractionOf(imageRect, viewport);
+
+  /// 仅供测试:飞行体该用真实进度还是钉在 1。
+  ///
+  /// 放大态必须用真实进度,否则取景框永不张开 —— contain 源(轮播/正文)
+  /// 一直走的就是钉住分支,所以放大后返回全程停在局部视图。
+  @visibleForTesting
+  static bool debugFlightNeedsProgress({
+    required bool coverSource,
+    required bool zoomed,
+  }) => coverSource || zoomed;
+
   /// 使用透明路由打开图片查看器。返回的 Future 在查看器关闭时完成
   /// (调用方可借此恢复被隐藏的浮层等)。
   static Future<void> open(
@@ -363,14 +378,31 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
       flightShuttleBuilder: !useFlightImage
           ? (_, _, _, _, _) => child
           : (flightContext, animation, direction, fromContext, toContext) {
-              // cover 源:animation 为路由原始动画,值语义恒为「0=贴源,
-              // 1=在查看器」,单套插值覆盖双向。
-              // contain 源:钉在 1 = 全程完整图 contain 进飞行盒子。
+              // animation 为路由原始动画,值语义恒为「0=贴源,1=在查看器」。
+              //
+              // 何时需要 src 窗口随飞行插值:
+              // - cover 源(网格瓦片/圆形头像):源端是裁切展示,窗口要从
+              //   cover 张到 contain;
+              // - **放大态**(任何源):取景框要从「此刻看得见的那块」张回
+              //   完整图。这里若钉在 1,窗口永不张开 ⇒ 飞行全程都是放大态的
+              //   局部视图、落地才忽然完整(用户报的症状,contain 源尤其明显
+              //   因为它一直走的就是钉住分支)。
+              //
+              // 其余(contain 源且未放大)钉在 1:两端都是完整图,只有盒子
+              // 比例在变,插值反而引入不必要的窗口动画。
+              final zoomed = HeroVisibilityController
+                      .instance.exitVisibleFraction !=
+                  null;
+              // 判据抽成 ImageViewerPage.debugFlightNeedsProgress —— 产品
+              // 代码与测试读**同一个**实现,避免测试复刻逻辑变成自洽装置。
+              final needsProgress = ImageViewerPage.debugFlightNeedsProgress(
+                coverSource: coverSource,
+                zoomed: zoomed,
+              );
               return CoverContainFlightImage(
                 image: _thumbnailProvider(thumbUrl),
-                animation: coverSource
-                    ? animation
-                    : kAlwaysCompleteAnimation,
+                animation:
+                    needsProgress ? animation : kAlwaysCompleteAnimation,
                 radius: widget.heroSourceRadius,
                 circular: widget.heroSourceCircular,
                 fallback: child,
@@ -532,9 +564,44 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     final details = _gestureControllers[currentIndex]?.details;
     final rect = details?.destinationRect;
     final baseline = details?.rawDestinationRect;
-    HeroVisibilityController.instance.setExitFlightRect(
-      _isDisplacedFromBaseline(rect, baseline) ? rect : null,
+    final displaced = _isDisplacedFromBaseline(rect, baseline);
+    final ctrl = HeroVisibilityController.instance;
+    ctrl.setExitFlightRect(displaced ? rect : null);
+    // 一并发布「此刻看得见的那部分图」:只喂盒子不够,飞行体还要靠它把
+    // 取景框张回完整图。详见 HeroVisibilityController.exitVisibleFraction。
+    ctrl.setExitVisibleFraction(
+      displaced ? visibleFractionOf(rect!, MediaQuery.sizeOf(context)) : null,
     );
+  }
+
+  /// 把「整张图在屏上占据的矩形」与视口求交,换算成**相对全图的归一化窗口**。
+  ///
+  /// [imageRect] 放大后通常大于屏幕、原点为负;与视口的交集即用户此刻真正
+  /// 看得见的那块;再除以 imageRect 自身尺寸得 0~1 比例 —— 飞行体拿它当 src
+  /// 窗口起点,无需知道任何像素尺寸或缩放倍率。
+  ///
+  /// 画面完全落在视口内(未被裁切)时返回 null:此时可见即完整图,飞行体
+  /// 维持原有口径。
+  @visibleForTesting
+  static Rect? visibleFractionOf(Rect imageRect, Size viewport) {
+    if (imageRect.isEmpty || !imageRect.isFinite) return null;
+    final visible = imageRect.intersect(Offset.zero & viewport);
+    if (visible.isEmpty || !visible.isFinite) return null;
+    final f = Rect.fromLTRB(
+      (visible.left - imageRect.left) / imageRect.width,
+      (visible.top - imageRect.top) / imageRect.height,
+      (visible.right - imageRect.left) / imageRect.width,
+      (visible.bottom - imageRect.top) / imageRect.height,
+    );
+    // 几乎就是完整图 ⇒ 没被裁切,不必插值
+    const eps = 0.01;
+    if (f.left <= eps &&
+        f.top <= eps &&
+        f.right >= 1 - eps &&
+        f.bottom >= 1 - eps) {
+      return null;
+    }
+    return f;
   }
 
   /// 可见矩形是否已偏离 contain 基线(= 用户真的缩放/平移过)。

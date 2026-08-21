@@ -28,6 +28,31 @@ class HeroVisibilityController extends ChangeNotifier {
   Rect? get exitFlightRect => _exitFlightRect;
   void setExitFlightRect(Rect? rect) => _exitFlightRect = rect;
 
+  /// 退场时**画面里实际看得见的那部分图**,用全图归一化坐标表示
+  /// (`0,0,1,1` = 完整图;放大后是其中一个子矩形)。
+  ///
+  /// 为什么需要它:[exitFlightRect] 只喂 Hero 的**盒子几何**,而飞行体
+  /// ([CoverContainFlightImage] 的 painter)对放大态是零感知的 —— 它只拿
+  /// image/animation/radius/circular,永远把 src 按比例 contain 铺满画布。
+  /// 于是放大态下盒子是个远超屏幕的大矩形,完整图被撑到同样大,用户只看到
+  /// 中间一块;且这块随盒子缩小才逐渐露全,落地才忽然完整。
+  ///
+  /// 实测(1212x758 屏、500x500 图、contain 基线 758、放大 3x):
+  /// ```
+  ///   t=1.00  盒子 2274px  屏幕只露 53%   ← 起飞就在裁切
+  ///   t=0.50  盒子 1327px         露 91%
+  ///   t=0.25  盒子  854px         露 100%  ← "落地才变完整"
+  /// ```
+  ///
+  /// 有了它,飞行体就能把 src 从「此刻看得见的那块」张回「完整图」,
+  /// 飞行过程本身即取景框张开的过程。
+  ///
+  /// null = 未放大 / 画面未被裁切(可见即完整图),飞行体走原有口径。
+  Rect? _exitVisibleFraction;
+  Rect? get exitVisibleFraction => _exitVisibleFraction;
+  void setExitVisibleFraction(Rect? fraction) =>
+      _exitVisibleFraction = fraction;
+
   /// 源页注册的"按 heroTag 滚到附近"能力(段级粗滚,滚后源缩略图
   /// 构建并注册,再由 [ensureSourceVisible] 二次精确化)。
   Future<void> Function(String heroTag)? sourceScrollResolver;
@@ -129,6 +154,7 @@ class HeroVisibilityController extends ChangeNotifier {
     _hiddenHeroTag = null;
     _isPopping = false;
     _exitFlightRect = null;
+    _exitVisibleFraction = null;
     _safeNotify();
   }
 

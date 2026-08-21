@@ -36,6 +36,12 @@ class CoverContainFlightImage extends StatefulWidget {
   /// 飞行纹理走缓存几乎必然同步命中,此为极端情况兜底,防空白飞行)
   final Widget? fallback;
 
+  /// 仅供测试:最近一次绘制实际用的 src 窗口(全图像素坐标)。
+  /// 让测试读**真实绘制结果**,而不是复刻 painter 的算式(复刻等于自洽装置,
+  /// 产品逻辑改坏了照样过)。
+  @visibleForTesting
+  static Rect? debugLastSrc;
+
   @override
   State<CoverContainFlightImage> createState() =>
       _CoverContainFlightImageState();
@@ -88,6 +94,10 @@ class _CoverContainFlightImageState extends State<CoverContainFlightImage> {
         animation: widget.animation,
         radius: widget.radius,
         circular: widget.circular,
+        // 飞行期这个值恒定(退场前一次性发布),故 build 时取一次即可;
+        // 作显式参数传入而非在 painter 里读全局单例 —— 后者是隐式依赖,
+        // 也让 shouldRepaint 无法参与判断。
+        zoomFraction: HeroVisibilityController.instance.exitVisibleFraction,
       ),
       size: Size.infinite,
     );
@@ -100,12 +110,17 @@ class _CoverContainPainter extends CustomPainter {
     required this.animation,
     required this.radius,
     required this.circular,
+    this.zoomFraction,
   }) : super(repaint: animation);
 
   final ui.Image image;
   final Animation<double> animation;
   final double radius;
   final bool circular;
+
+  /// 放大态下「此刻看得见的那部分图」,全图归一化坐标;null = 未裁切。
+  /// 见 [HeroVisibilityController.exitVisibleFraction]。
+  final Rect? zoomFraction;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -114,16 +129,50 @@ class _CoverContainPainter extends CustomPainter {
     final double imgW = image.width.toDouble();
     final double imgH = image.height.toDouble();
 
-    // cover 源矩形:按目标宽高比从全图中心裁出可见窗口
-    final double coverScale = math.max(size.width / imgW, size.height / imgH);
-    final Rect coverSrc = Rect.fromCenter(
-      center: Offset(imgW / 2, imgH / 2),
-      width: size.width / coverScale,
-      height: size.height / coverScale,
-    );
-    // contain 源矩形 = 全图;飞行进度插值:t=0 cover 窗口 → t=1 全图
-    final Rect containSrc = Rect.fromLTWH(0, 0, imgW, imgH);
-    final Rect src = Rect.lerp(coverSrc, containSrc, t)!;
+    // src 的两端窗口。t 语义恒为「0=贴源,1=在查看器」。
+    //
+    // cover 源:贴源端是「按画布比例中心裁出的窗口」,查看器端是完整图。
+    // 注意 coverSrc 由画布**比例**决定、与盒子绝对尺寸无关,所以 cover 源
+    // 本来就不受放大态影响。
+    //
+    // **放大态**:查看器端不再是完整图,而是 exitVisibleFraction —— 用户在
+    // 查看器里此刻看得见的那块。贴源端仍是完整缩略图。于是飞行(pop 时 t
+    // 从 1 走到 0)就是取景框从局部张回完整图的过程。
+    //
+    // 不吃它的话,painter 只把 src 按比例铺满画布 —— 而放大态的 Hero 盒子
+    // 远超屏幕,完整图被撑到同样大,用户只看到中间一块,且随盒子缩小才逐渐
+    // 露全、落地忽然完整(实测放大 3x:起飞只露 53%,t=0.25 才 100%)。
+    final Rect? zoomFraction = this.zoomFraction;
+    final Rect fullSrc = Rect.fromLTWH(0, 0, imgW, imgH);
+
+    // 贴源端(t=0)
+    final Rect atSource;
+    if (zoomFraction != null) {
+      // 放大态下贴源端就是完整缩略图(源端展示的是整张缩略图)
+      atSource = fullSrc;
+    } else {
+      final double coverScale = math.max(
+        size.width / imgW,
+        size.height / imgH,
+      );
+      atSource = Rect.fromCenter(
+        center: Offset(imgW / 2, imgH / 2),
+        width: size.width / coverScale,
+        height: size.height / coverScale,
+      );
+    }
+    // 查看器端(t=1):放大态是可见窗口,否则是完整图
+    final Rect atViewer = zoomFraction == null
+        ? fullSrc
+        : Rect.fromLTRB(
+            zoomFraction.left * imgW,
+            zoomFraction.top * imgH,
+            zoomFraction.right * imgW,
+            zoomFraction.bottom * imgH,
+          );
+
+    final Rect src = Rect.lerp(atSource, atViewer, t)!;
+    CoverContainFlightImage.debugLastSrc = src;
 
     // 目标矩形:保持 src 宽高比 contain 进画布(t=0 时 src 比例=画布
     // 比例,恰好铺满=瓦片;t=1 时即查看器的 contain 布局)
@@ -165,6 +214,7 @@ class _CoverContainPainter extends CustomPainter {
       image != oldDelegate.image ||
       radius != oldDelegate.radius ||
       circular != oldDelegate.circular ||
+      zoomFraction != oldDelegate.zoomFraction ||
       animation != oldDelegate.animation;
 }
 
