@@ -900,6 +900,32 @@ class MainApp extends ConsumerWidget {
                   );
                 }
 
+                // 修复小米 HyperOS 小窗(freeform)页面空白只剩底栏:
+                // 引擎(API 35+)把 viewPaddingTop 抬到 WindowInsets captionBar
+                // boundingRect.bottom(flutter/engine#54294),HyperOS 小窗上报的
+                // rect 坐标系错误,padding.top 可达 600+(flutter/flutter#161086),
+                // SafeArea/AppBar 内容被整体推出可视区。top padding 超过窗口
+                // 高度 30% 必为异常值(真实状态栏 <100dp),钳回合理值。
+                if (Platform.isAndroid) {
+                  final mq = MediaQuery.of(context);
+                  final threshold = mq.size.height * 0.3;
+                  final padTop = mq.padding.top;
+                  final viewTop = mq.viewPadding.top;
+                  if (padTop > threshold || viewTop > threshold) {
+                    result = MediaQuery(
+                      data: mq.copyWith(
+                        padding: mq.padding.copyWith(
+                          top: padTop > threshold ? 20.0 : padTop,
+                        ),
+                        viewPadding: mq.viewPadding.copyWith(
+                          top: viewTop > threshold ? 20.0 : viewTop,
+                        ),
+                      ),
+                      child: result,
+                    );
+                  }
+                }
+
                 return result;
               },
               home: const OnboardingGate(child: PreheatGate(child: MainPage())),
