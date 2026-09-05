@@ -49,6 +49,13 @@ git log --oneline --decorate -5
 
 确认工作区干净，并确认当前分支仍从 `main` 派生。不要覆盖用户已有未提交改动。
 
+本仓库为单目录检出，日常开发在 `feature/app-topic-created-at` 分支上进行；`main` 只作为上游代码的中转分支。同步上游时不切换分支，直接：
+
+```powershell
+git fetch origin main:main
+git merge main
+```
+
 ### 识别冲突文件
 
 ```powershell
@@ -75,6 +82,15 @@ git diff --check
 ```
 
 如果首页仍显示“刚刚/几分钟前”，优先检查 `kUsePaintedTopicCard` 和 `TopicCardLayout`，不要只检查 `topic_card.dart`。
+
+## 防误判规则（AI 合并验证硬约束）
+
+历史上已发生一次事故：AI 把 diff 方向看反，误判"合并删除了本分支保护文件"，随后进行近一小时的无效恢复。执行本文件流程时必须遵守：
+
+1. **文件存在性只用 git 索引验证**：`git ls-tree -r HEAD --name-only`（或 `git ls-files`）。不要用文件系统工具（ls / Read / Glob）的"找不到"作为删除结论的依据。
+2. **看这次合并给分支带来了什么**：`git show <merge提交>`（merge 提交默认对比第一父提交）。**看本分支比上游多什么**：`git diff main...HEAD`（必须用三点语法）。
+3. **禁止**用 `git diff HEAD main` 或 `git diff <merge提交> main` 评估合并影响：该方向显示的是“从本分支走到 main 的差异”，本分支独有文件必然显示为删除；按此判断“文件被合并删掉”属于方向误读。
+4. 宣称“上游删除了保护文件”前必须举证：`git log <merge-base>..main -- <文件>` 存在上游提交触碰该文件，且 `git diff <merge-base>..main --name-status -- <文件>` 为 `D`。上游从未有过的文件（本分支独有）不可能被合并删除——三方合并只应用对方相对共同祖先的改动，碰不到本分支独有文件。
 
 ## GitHub 自动构建
 
