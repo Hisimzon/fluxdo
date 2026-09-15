@@ -40,14 +40,50 @@ typedef MessageBusCallback = void Function(MessageBusMessage message);
 
 class _ChannelSubscription {
   final String channel;
-  int lastMessageId;
+  int _lastMessageId;
   final List<MessageBusCallback> callbacks;
+  Completer<int>? _readyCompleter;
 
   _ChannelSubscription({
     required this.channel,
-    this.lastMessageId = -1,
+    int lastMessageId = -1,
     List<MessageBusCallback>? callbacks,
-  }) : callbacks = callbacks ?? [];
+  }) : _lastMessageId = lastMessageId,
+       callbacks = callbacks ?? [];
+
+  int get lastMessageId => _lastMessageId;
+
+  set lastMessageId(int value) {
+    _lastMessageId = value;
+    if (value >= 0) {
+      final completer = _readyCompleter;
+      _readyCompleter = null;
+      completer?.complete(value);
+    }
+  }
+
+  Future<int> waitUntilReady(Duration timeout) async {
+    if (lastMessageId >= 0) return lastMessageId;
+
+    final completer = _readyCompleter ??= Completer<int>();
+    await completer.future.timeout(
+      timeout,
+      onTimeout: () => throw TimeoutException(
+        'Timed out waiting for MessageBus subscription: $channel',
+        timeout,
+      ),
+    );
+    // 同一批响应可能紧跟旧消息，基线需要包含已接收但尚未投递的帧。
+    return lastMessageId;
+  }
+
+  void cancelPendingReady() {
+    final completer = _readyCompleter;
+    _readyCompleter = null;
+    completer?.completeError(
+      StateError('MessageBus subscription cancelled: $channel'),
+    );
+  }
 }
 
 /// Discourse MessageBus 客户端
@@ -101,6 +137,11 @@ class MessageBusService {
   MessageBusService._internal()
       : _clientId = ClientIdGenerator.generate(),
         _dio = _createPollingDio();
+
+  @visibleForTesting
+  MessageBusService.forTesting({required Dio dio})
+      : _clientId = ClientIdGenerator.generate(),
+        _dio = dio;
 
   /// 当前前台/后台轮询间隔(从 PreloadedDataService 读取站点设置)
   Duration get _callbackInterval {
@@ -207,17 +248,35 @@ class MessageBusService {
     }
   }
 
+  /// 等待频道获得服务端游标，返回当前消息序号。
+  /// 初次以 -1 轮询会跳过历史消息，触发流式任务前必须先完成这一步。
+  Future<int> waitForSubscription(
+    String channel, {
+    Duration timeout = const Duration(seconds: 30),
+  }) {
+    final subscription = _subscriptions[channel];
+    if (subscription == null) {
+      return Future.error(
+        StateError('MessageBus channel is not subscribed: $channel'),
+      );
+    }
+    return subscription.waitUntilReady(timeout);
+  }
+
   /// 取消订阅
   void unsubscribe(String channel, [MessageBusCallback? callback]) {
-    if (!_subscriptions.containsKey(channel)) return;
+    final subscription = _subscriptions[channel];
+    if (subscription == null) return;
 
     if (callback != null) {
-      _subscriptions[channel]!.callbacks.remove(callback);
-      if (_subscriptions[channel]!.callbacks.isEmpty) {
+      subscription.callbacks.remove(callback);
+      if (subscription.callbacks.isEmpty) {
         _subscriptions.remove(channel);
+        subscription.cancelPendingReady();
       }
     } else {
       _subscriptions.remove(channel);
+      subscription.cancelPendingReady();
     }
 
     if (_subscriptions.isEmpty) {
@@ -745,12 +804,15 @@ class MessageBusService {
   /// 停止轮询并清除所有订阅(登出时直接调用,不依赖 provider 链)
   void stopAll() {
     _stopPolling();
+    for (final subscription in _subscriptions.values) {
+      subscription.cancelPendingReady();
+    }
     _subscriptions.clear();
   }
 
   /// 释放资源
   void dispose() {
-    _stopPolling();
+    stopAll();
     _restartPollTimer?.cancel();
     _deferredDrainTimer?.cancel();
     _deferredMessages.clear();

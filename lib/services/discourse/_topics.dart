@@ -508,10 +508,16 @@ mixin _TopicsMixin on _DiscourseServiceBase {
     final messageBus = MessageBusService();
     final channel = '/discourse-ai/summaries/topic/$topicId';
     final updates = StreamController<Map<String, dynamic>>();
+    int? lastMessageId;
 
     void onMessage(MessageBusMessage message) {
+      // 过滤订阅确认前的旧帧，包括滚动期间延迟投递的上一轮结束消息。
+      final previousId = lastMessageId;
+      if (previousId == null || message.messageId <= previousId) return;
+
       final data = message.data;
       if (!updates.isClosed && data is Map) {
+        lastMessageId = message.messageId;
         updates.add(Map<String, dynamic>.from(data));
       }
     }
@@ -519,6 +525,10 @@ mixin _TopicsMixin on _DiscourseServiceBase {
     messageBus.subscribe(channel, onMessage);
 
     try {
+      // subscribe 只更新本地集合；先等 /__status 建立游标，避免快速生成的
+      // 内容和 done 帧被首次 lastMessageId=-1 的轮询当作历史消息跳过。
+      lastMessageId = await messageBus.waitForSubscription(channel);
+
       final requestData = <String, dynamic>{'stream': 'true'};
       if (skipAgeCheck) {
         requestData['skip_age_check'] = 'true';
@@ -586,7 +596,8 @@ mixin _TopicsMixin on _DiscourseServiceBase {
       rethrow;
     } finally {
       messageBus.unsubscribe(channel, onMessage);
-      await updates.close();
+      // 缓存命中或请求失败时还没有流监听者，等待 close 会使清理永久挂起。
+      unawaited(updates.close());
     }
   }
 
