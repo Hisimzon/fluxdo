@@ -511,24 +511,21 @@ mixin _TopicsMixin on _DiscourseServiceBase {
     int? lastMessageId;
 
     void onMessage(MessageBusMessage message) {
-      // 过滤订阅确认前的旧帧，包括滚动期间延迟投递的上一轮结束消息。
-      final previousId = lastMessageId;
-      if (previousId == null || message.messageId <= previousId) return;
-
+      // 基线未建立时照常投递：MessageBus 已在 /__status 确认后按基线
+      // 过滤并重放暂存帧，到这里只需防止延迟投递造成的乱序。
       final data = message.data;
       if (!updates.isClosed && data is Map) {
-        lastMessageId = message.messageId;
-        updates.add(Map<String, dynamic>.from(data));
+        final id = message.messageId;
+        if (lastMessageId == null || id > lastMessageId!) {
+          lastMessageId = id;
+          updates.add(Map<String, dynamic>.from(data));
+        }
       }
     }
 
     messageBus.subscribe(channel, onMessage);
 
     try {
-      // subscribe 只更新本地集合；先等 /__status 建立游标，避免快速生成的
-      // 内容和 done 帧被首次 lastMessageId=-1 的轮询当作历史消息跳过。
-      lastMessageId = await messageBus.waitForSubscription(channel);
-
       final requestData = <String, dynamic>{'stream': 'true'};
       if (skipAgeCheck) {
         requestData['skip_age_check'] = 'true';
@@ -556,11 +553,28 @@ mixin _TopicsMixin on _DiscourseServiceBase {
 
       final responseData = response.data;
       if (responseData is Map && responseData['ai_topic_summary'] is Map) {
+        // 缓存命中：订阅尚未就绪就已拿到完整摘要，直接返回终态。
         yield TopicSummary.fromJson(
           Map<String, dynamic>.from(responseData['ai_topic_summary'] as Map),
         );
         return;
       }
+
+      // 以 -1 订阅时服务端首轮只回 /__status 建立游标，期间到达的实际
+      // 消息由 MessageBus 暂存，建立后按基线重放 —— POST 无需等待游标。
+      // 仍取一次基线用于 onMessage 的乱序兜底，但超时继续，不阻塞摘要。
+      unawaited(
+        messageBus
+            .waitForSubscription(channel)
+            .then((baseline) {
+              if (lastMessageId == null) {
+                lastMessageId = baseline;
+              }
+            })
+            .catchError((Object _) {
+              // 订阅被取消（页面退出/登出）或超时降级，基线兜底放弃即可。
+            }),
+      );
 
       Map<String, dynamic>? latestSummaryJson;
 
@@ -587,6 +601,11 @@ mixin _TopicsMixin on _DiscourseServiceBase {
           return;
         }
       }
+    } on StateError {
+      // 订阅被取消（页面退出/登出）导致游标等待失败，属于正常清理，
+      // 不当作摘要生成失败。
+      yield null;
+      return;
     } on DioException catch (e) {
       if (e.response?.statusCode == 404 || e.response?.statusCode == 403) {
         yield null;

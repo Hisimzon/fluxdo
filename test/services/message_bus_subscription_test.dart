@@ -132,13 +132,14 @@ void main() {
       expect(await cursor, 8);
     });
 
-    test('订阅超时明确报错，不将未确认的频道视为就绪', () async {
+    test('订阅超时降级为当前游标，不阻塞摘要生成', () async {
       bus.subscribe(channel, (_) {});
       await adapter.firstRequest.future;
 
-      await expectLater(
-        bus.waitForSubscription(channel, timeout: Duration.zero),
-        throwsA(isA<TimeoutException>()),
+      // 超时不再视为错误：摘要请求继续发出，消息由 MessageBus 暂存。
+      expect(
+        await bus.waitForSubscription(channel, timeout: Duration.zero),
+        -1,
       );
     });
 

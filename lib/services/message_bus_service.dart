@@ -44,14 +44,24 @@ class _ChannelSubscription {
   final List<MessageBusCallback> callbacks;
   Completer<int>? _readyCompleter;
 
+  /// 以 -1 订阅时，服务端首轮只回 /__status 建立游标，不会回放已有
+  /// 消息。游标建立前到达的实际消息先暂存，建立后按基线重放，否则
+  /// 会被下一轮"以游标为基线"的请求当作历史消息永久跳过。
+  final bool _hasExplicitCursor;
+  List<MessageBusMessage>? _pendingBeforeCursor;
+
   _ChannelSubscription({
     required this.channel,
     int lastMessageId = -1,
     List<MessageBusCallback>? callbacks,
   }) : _lastMessageId = lastMessageId,
+       _hasExplicitCursor = lastMessageId >= 0,
        callbacks = callbacks ?? [];
 
   int get lastMessageId => _lastMessageId;
+
+  /// 游标是否已建立：以明确 messageId 订阅，或已收到 /__status 确认。
+  bool get cursorEstablished => _hasExplicitCursor || _lastMessageId >= 0;
 
   set lastMessageId(int value) {
     _lastMessageId = value;
@@ -62,18 +72,31 @@ class _ChannelSubscription {
     }
   }
 
+  /// 暂存游标建立前的消息，等待 [establishCursor] 后重放
+  void bufferBeforeCursor(MessageBusMessage message) {
+    (_pendingBeforeCursor ??= []).add(message);
+  }
+
+  /// 建立游标基线并交出暂存消息（调用方负责按基线过滤后投递）
+  List<MessageBusMessage> establishCursor(int baseline) {
+    final pending = _pendingBeforeCursor;
+    _pendingBeforeCursor = null;
+    return pending ?? const [];
+  }
+
+  /// 供 waitForSubscription 使用：游标未建立时等待，已建立直接返回。
+  /// 超时不再当作错误 —— 摘要等业务不依赖此返回值做时序，继续即可。
   Future<int> waitUntilReady(Duration timeout) async {
     if (lastMessageId >= 0) return lastMessageId;
 
     final completer = _readyCompleter ??= Completer<int>();
-    await completer.future.timeout(
-      timeout,
-      onTimeout: () => throw TimeoutException(
-        'Timed out waiting for MessageBus subscription: $channel',
-        timeout,
-      ),
-    );
-    // 同一批响应可能紧跟旧消息，基线需要包含已接收但尚未投递的帧。
+    try {
+      await completer.future.timeout(timeout);
+    } on TimeoutException {
+      // 超时降级：返回当前游标（-1 表示仍未确认），调用方继续后续流程，
+      // 消息会暂存到游标建立后重放，不会丢失。
+      return lastMessageId;
+    }
     return lastMessageId;
   }
 
@@ -703,8 +726,19 @@ class MessageBusService {
         for (final entry in data.entries) {
           final channelName = entry.key;
           final lastId = entry.value;
-          if (_subscriptions.containsKey(channelName) && lastId is int) {
-            _subscriptions[channelName]!.lastMessageId = lastId;
+          final sub = _subscriptions[channelName];
+          if (sub != null && lastId is int) {
+            sub.lastMessageId = lastId;
+            // 游标就绪：把等待期间暂存的消息按基线重放出去。
+            // 早于基线的帧是快照前的历史内容，丢弃。
+            for (final buffered in sub.establishCursor(lastId)) {
+              if (buffered.messageId > lastId) {
+                // 重放帧也要推进游标，否则下一轮会以旧基线重拉这些帧，
+                // 造成全局消息流重复投递。
+                sub.lastMessageId = buffered.messageId;
+                _deliverMessage(buffered);
+              }
+            }
             debugPrint('[MessageBus] 更新频道 $channelName 的 lastMessageId: $lastId');
           }
         }
@@ -714,8 +748,16 @@ class MessageBusService {
 
     // 协议层立即推进:轮询序号不受投递延迟影响,不会重拉已收消息
     final sub = _subscriptions[message.channel];
-    if (sub != null && message.messageId > sub.lastMessageId) {
-      sub.lastMessageId = message.messageId;
+    if (sub != null) {
+      if (!sub.cursorEstablished) {
+        // 游标还没建立，消息先暂存，避免被下一轮以游标为基线的
+        // 请求当作历史消息跳过；由 /__status 处理统一重放。
+        sub.bufferBeforeCursor(message);
+        return;
+      }
+      if (message.messageId > sub.lastMessageId) {
+        sub.lastMessageId = message.messageId;
+      }
     }
 
     // 滚动期延迟投递:订阅回调的下游是解析 + 状态更新 + 页面级 rebuild
