@@ -331,7 +331,6 @@ mixin _AuthMixin on _DiscourseServiceBase {
     String? triggerInfo,
     RequestOptions? signalRequestOptions,
   }) async {
-    final strikeSnapshot = _authStrikeCount;
     final requestGeneration =
         signalRequestOptions?.extra['_sessionGeneration'] as int?;
     if (requestGeneration != null &&
@@ -522,8 +521,9 @@ mixin _AuthMixin on _DiscourseServiceBase {
       return false;
     } on DioException catch (e) {
       final status = e.response?.statusCode;
-      // 404 = 无用户（session_controller.rb:676）
-      if (status == 404) {
+      // 404 只有在 Discourse JSON 响应里确认没有 current_user 时才算失效。
+      // CF/网关/HTML 错误页也可能返回 404，不能据此清掉仍存在的会话。
+      if (status == 404 && _isDiscourseSessionFailureResponse(e.response)) {
         final recoveredByPrevious = await _recoverPreviousSessionBeforeLogout(
           source: source,
           triggerInfo: triggerInfo,
@@ -603,24 +603,8 @@ mixin _AuthMixin on _DiscourseServiceBase {
         'errorType': e.type.toString(),
         ..._sentTDiagnostics(e.response?.requestOptions ?? e.requestOptions),
       });
-      // 如果累积 strike 较多，升级为登出
-      if (strikeSnapshot >= 2) {
-        LogWriter.instance.write({
-          'timestamp': DateTime.now().toIso8601String(),
-          'level': 'warning',
-          'type': 'auth',
-          'event': 'auth_inconclusive_escalated',
-          'message': 'probe 不确定但 strike 已累积 $strikeSnapshot 次，升级为登出',
-          'source': source,
-          if (triggerInfo != null) 'trigger': triggerInfo,
-        });
-        await _handleAuthInvalid(
-          S.current.auth_loginExpiredRelogin,
-          source: 'probe_escalated',
-          triggerInfo: triggerInfo,
-        );
-        return false;
-      }
+      // strike 只表示“需要 probe”，不代表 probe 失败。取消、CF、5xx 等
+      // 不确定结果必须保留登录态，否则瞬时网络抖动会放大成被动登出。
       _lastInconclusiveAt = DateTime.now();
       return null;
     } catch (e) {
@@ -1505,76 +1489,23 @@ mixin _AuthMixin on _DiscourseServiceBase {
     final username = await _storage.read(key: DiscourseService._usernameKey);
     if (username == null || username.isEmpty) return false;
 
-    // 服务端验证
-    try {
-      final response = await _dio.get(
-        '/session/current.json',
-        queryParameters: {'_': DateTime.now().millisecondsSinceEpoch},
-        options: Options(
-          extra: const {'skipAuthCheck': true, 'skipCsrf': true},
-        ),
-      );
-      final data = response.data;
-      if (data is Map<String, dynamic> && data['current_user'] is Map) {
-        _tToken = tToken;
-        final liveUsername = (data['current_user'] as Map)['username']
-            ?.toString();
-        _username = (liveUsername != null && liveUsername.isNotEmpty)
-            ? liveUsername
-            : username;
-        _resetStrikes();
-        return true;
-      }
-      // 200 但无 current_user
-      LogWriter.instance.write({
-        'timestamp': DateTime.now().toIso8601String(),
-        'level': 'warning',
-        'type': 'auth',
-        'event': 'auth_session_check_failed',
-        'message': '登录态检查返回 200 但无 current_user，执行登出',
-        'statusCode': response.statusCode,
-        'memHasToken': _tToken != null && _tToken!.isNotEmpty,
-        'memTLen': _tokenLength(_tToken),
-        'memTHash': _safeTokenHash(_tToken),
-        'jarHasToken': tToken.isNotEmpty,
-        'jarTLen': _tokenLength(tToken),
-        'jarTHash': _safeTokenHash(tToken),
-        ..._sentTDiagnostics(response.requestOptions),
-      });
-      await logout(callApi: false, refreshPreload: false);
-      return false;
-    } on DioException catch (e) {
-      final status = e.response?.statusCode;
-      // 404 = 无用户 / 401/403 = 明确拒绝
-      if (status == 404 || status == 401 || status == 403) {
-        LogWriter.instance.write({
-          'timestamp': DateTime.now().toIso8601String(),
-          'level': 'warning',
-          'type': 'auth',
-          'event': 'auth_session_check_failed',
-          'message': '登录态检查被服务端拒绝，执行登出',
-          'statusCode': status,
-          'errorType': e.type.toString(),
-          'memHasToken': _tToken != null && _tToken!.isNotEmpty,
-          'memTLen': _tokenLength(_tToken),
-          'memTHash': _safeTokenHash(_tToken),
-          'jarHasToken': tToken.isNotEmpty,
-          'jarTLen': _tokenLength(tToken),
-          'jarTHash': _safeTokenHash(tToken),
-          ..._sentTDiagnostics(e.response?.requestOptions ?? e.requestOptions),
-        });
-        await logout(callApi: false, refreshPreload: false);
-        return false;
-      }
-      // 网络异常/CF 验证等 → 保守保留本地状态
-      _tToken = tToken;
-      _username = username;
-      return true;
-    } catch (_) {
-      _tToken = tToken;
-      _username = username;
-      return true;
-    }
+    // 统一走 probe：它包含 WebView/上一枚 token/API Key 自愈，并且只在
+    // 服务端 JSON 明确确认会话失效时才登出。这里不能对 404/401/403 直接
+    // 登出，否则 CF 挑战、网关错误和并发取消都会被误判成登录失效。
+    final result = await _probeSession(
+      source: 'startup_check',
+      triggerInfo: 'isLoggedIn',
+    );
+    if (result != null) return result;
+
+    _tToken = tToken;
+    _username = username;
+    return true;
+  }
+
+  bool _isDiscourseSessionFailureResponse(Response<dynamic>? response) {
+    final data = response?.data;
+    return data is Map<String, dynamic> && data['current_user'] == null;
   }
 
   /// 仅设置 token，不触发状态广播（登录流程中先设置 token，等数据就绪后再广播）

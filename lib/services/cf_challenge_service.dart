@@ -458,10 +458,17 @@ class CfChallengeService {
   /// 检测页面 HTML 中是否有活跃的 CF 验证盾
   /// 用于判断已加载的页面是否仍在展示验证挑战
   static bool hasActiveCfChallenge(String html) {
-    return html.contains('cf-turnstile') ||
+    final lower = html.toLowerCase();
+    return lower.contains('cf-turnstile') ||
         html.contains('challenge-running') ||
         html.contains('challenge-stage') ||
-        html.contains('cf_chl_opt');
+        html.contains('cf_chl_opt') ||
+        lower.contains('cf_chl') ||
+        lower.contains('challenge-platform') ||
+        lower.contains('turnstile') ||
+        lower.contains('cf-please-wait') ||
+        lower.contains('checking your browser') ||
+        lower.contains('attention required');
   }
 
   /// 检测页面 HTML 是否是源站返回的 404 / 非挑战内容
