@@ -25,11 +25,13 @@ class SessionBootstrapResult {
   const SessionBootstrapResult.success()
     : ok = true,
       cfBlocked = false,
+      authInvalid = false,
       status = null,
       phase = null;
 
   const SessionBootstrapResult.failure({
     this.cfBlocked = false,
+    this.authInvalid = false,
     this.status,
     this.phase,
   }) : ok = false;
@@ -40,6 +42,9 @@ class SessionBootstrapResult {
   /// 失败是否由 CF 挑战(403/429)导致。
   final bool cfBlocked;
 
+  /// 失败是否由 Discourse 明确的 not_logged_in 导致。
+  final bool authInvalid;
+
   /// 触发失败的 HTTP 状态码(如有)。
   final int? status;
 
@@ -49,7 +54,7 @@ class SessionBootstrapResult {
   @override
   String toString() =>
       'SessionBootstrapResult(ok: $ok, cfBlocked: $cfBlocked, '
-      'status: $status, phase: $phase)';
+      'authInvalid: $authInvalid, status: $status, phase: $phase)';
 }
 
 /// 让 WebView 浏览器会话与 native CookieJar 保持一致。
@@ -576,6 +581,7 @@ class WebViewSessionCookieRefreshService {
             ]);
       final ok = result['ok'] == true;
       final cfBlocked = result['cfBlocked'] == true;
+      final authInvalid = result['authInvalid'] == true;
       final endpoint = result['endpoint']?.toString();
       final status = (result['status'] as num?)?.toInt();
       final phase = result['phase']?.toString();
@@ -589,6 +595,7 @@ class WebViewSessionCookieRefreshService {
       }
       debugPrint(
         '[WebViewSessionSync] bootstrap result: ok=$ok cfBlocked=$cfBlocked '
+        'authInvalid=$authInvalid '
         'reason=$reason phase=$phase '
         'plugin=${result['plugin']} endpoint=$endpoint status=$status '
         'fresh=$freshPlugin error=${result['error']}',
@@ -602,6 +609,7 @@ class WebViewSessionCookieRefreshService {
         'reason': reason,
         'ok': ok,
         if (cfBlocked) 'cfBlocked': true,
+        if (authInvalid) 'authInvalid': true,
         if (freshPlugin) 'freshPlugin': true,
         'phase': phase,
         'plugin': result['plugin']?.toString(),
@@ -613,6 +621,7 @@ class WebViewSessionCookieRefreshService {
           ? const SessionBootstrapResult.success()
           : SessionBootstrapResult.failure(
               cfBlocked: cfBlocked,
+              authInvalid: authInvalid,
               status: status,
               phase: phase,
             );
@@ -858,10 +867,20 @@ document.close();
   } catch (e) {
     var msg = String(e && e.message ? e.message : e);
     // home fetch / postForm 失败时 throw 的 message 形如 "... -> 403: ...",
-    // 从中解析出 HTTP status,把 403/429 标记为 CF 拦截,供 dart 侧统一处理。
+    // 从中解析出 HTTP status。Discourse 的 not_logged_in 是源站认证失败,
+    // 不能混入 cfBlocked,否则会误触发 Cloudflare 恢复链路。
     var statusMatch = msg.match(/->\\s*(\\d{3})/);
     var st = statusMatch ? parseInt(statusMatch[1], 10) : null;
-    return done({ ok: false, phase: 'exception', error: msg, status: st, cfBlocked: st === 403 || st === 429 });
+    var authInvalid =
+        st === 403 && msg.includes('"error_type":"not_logged_in"');
+    return done({
+      ok: false,
+      phase: 'exception',
+      error: msg,
+      status: st,
+      cfBlocked: !authInvalid && (st === 403 || st === 429),
+      authInvalid: authInvalid
+    });
   }
 })();
 ''';

@@ -374,6 +374,19 @@ class BrowserTrustCoordinator {
     );
     var bootstrap = await WebViewSessionCookieRefreshService.instance
         .ensureSynced(reason: reason, force: forceSessionSync);
+    if (bootstrap.authInvalid) {
+      _log(
+        'bootstrap rejected by Discourse auth status=${bootstrap.status}; '
+        'skip CF recovery reason=$reason',
+        level: 'warning',
+      );
+      AppLogger.warning(
+        'WebView bootstrap 明确未登录(status=${bootstrap.status}),'
+        '跳过 CF 恢复 reason=$reason',
+        tag: 'BrowserTrust',
+      );
+      return bootstrap;
+    }
     // bootstrap 被 CF(403/429)挡下:作废本地假阳性信任,复用/发起 CF 验证拿到
     // 新 cf_clearance 后 force 重跑一次,避免与 Dio 侧的 CF 自愈各自为政。
     if (bootstrap.cfBlocked) {

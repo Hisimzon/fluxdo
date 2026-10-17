@@ -523,7 +523,12 @@ mixin _AuthMixin on _DiscourseServiceBase {
       final status = e.response?.statusCode;
       // 404 只有在 Discourse JSON 响应里确认没有 current_user 时才算失效。
       // CF/网关/HTML 错误页也可能返回 404，不能据此清掉仍存在的会话。
-      if (status == 404 && _isDiscourseSessionFailureResponse(e.response)) {
+      // 403 携带 not_logged_in 是源站的明确认证结果，可与 404 同样确认失效。
+      final hasNotLoggedInError = _isNotLoggedInResponse(e.response);
+      final isConfirmedAuthFailure =
+          (status == 404 && _isDiscourseSessionFailureResponse(e.response)) ||
+          hasNotLoggedInError;
+      if (isConfirmedAuthFailure) {
         final recoveredByPrevious = await _recoverPreviousSessionBeforeLogout(
           source: source,
           triggerInfo: triggerInfo,
@@ -578,7 +583,9 @@ mixin _AuthMixin on _DiscourseServiceBase {
           'level': 'warning',
           'type': 'auth',
           'event': 'auth_probe_failed',
-          'message': 'session probe 返回 404，确认会话失效',
+          'message': hasNotLoggedInError
+              ? 'session probe 返回 403，确认 not_logged_in'
+              : 'session probe 返回 404，确认会话失效',
           'source': source,
           if (triggerInfo != null) 'trigger': triggerInfo,
           ..._sentTDiagnostics(e.response?.requestOptions ?? e.requestOptions),
@@ -1505,7 +1512,12 @@ mixin _AuthMixin on _DiscourseServiceBase {
 
   bool _isDiscourseSessionFailureResponse(Response<dynamic>? response) {
     final data = response?.data;
-    return data is Map<String, dynamic> && data['current_user'] == null;
+    return data is Map && data['current_user'] == null;
+  }
+
+  bool _isNotLoggedInResponse(Response<dynamic>? response) {
+    final data = response?.data;
+    return data is Map && data['error_type'] == 'not_logged_in';
   }
 
   /// 仅设置 token，不触发状态广播（登录流程中先设置 token，等数据就绪后再广播）

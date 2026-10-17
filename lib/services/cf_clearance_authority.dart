@@ -105,6 +105,13 @@ class CfClearanceAuthority {
     return value;
   }
 
+  static bool isSameValue(String? a, String? b) {
+    final left = _normalize(a ?? '');
+    final right = _normalize(b ?? '');
+    if (left.isEmpty || right.isEmpty) return false;
+    return left == right;
+  }
+
   static final RegExp _clearancePattern = RegExp(
     r'(?:^|;\s*)cf_clearance=([^;]*)',
   );

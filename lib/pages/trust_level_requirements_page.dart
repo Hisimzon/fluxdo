@@ -70,6 +70,9 @@ class _TrustLevelRequirementsPageState
 
       final cardDiv = document.querySelector('div.card');
       if (cardDiv == null) {
+        if (_isLoginResponse(document)) {
+          throw Exception(S.current.auth_loginExpiredRelogin);
+        }
         throw Exception(S.current.trustLevel_parseNotFound);
       }
 
@@ -215,6 +218,32 @@ class _TrustLevelRequirementsPageState
         _isLoading = false;
       });
     }
+  }
+
+  bool _isLoginResponse(html_dom.Document document) {
+    final title = document.querySelector('title')?.text.trim().toLowerCase() ??
+        '';
+    if (RegExp(
+      r'login|log in|sign in|登录|登入|登錄|登陸',
+    ).hasMatch(title)) {
+      return true;
+    }
+
+    if (document.querySelector(
+      'a[href*="/login"], form[action*="/login"], a[href*="/session"], form[action*="/session"]',
+    ) != null) {
+      return true;
+    }
+
+    final buttonTexts = document
+        .querySelectorAll('button, a')
+        .map((el) => el.text.trim().toLowerCase())
+        .where((text) => text.isNotEmpty);
+    return buttonTexts.any(
+      (text) => RegExp(
+        r'^(log ?in|sign ?in|登录|登入|登錄|登陸)$',
+      ).hasMatch(text),
+    );
   }
 
   Future<TrustLevelData?> _parseEmptyState(html_dom.Element cardDiv) async {

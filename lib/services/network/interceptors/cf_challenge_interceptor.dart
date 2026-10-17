@@ -151,15 +151,70 @@ class CfChallengeInterceptor extends Interceptor {
         url: requestUrl,
         statusCode: statusCode!,
       );
+
+      final carriedClearance = CfClearanceAuthority.extractFromCookieHeader(
+        err.requestOptions.headers['Cookie']?.toString() ??
+            err.requestOptions.headers['cookie']?.toString(),
+      );
+      final currentClearance = await cookieJarService.getCfClearance();
+      final carriedIsStale =
+          currentClearance != null &&
+          currentClearance.isNotEmpty &&
+          !CfClearanceAuthority.isSameValue(carriedClearance, currentClearance);
+      if (carriedIsStale) {
+        final replayOptions = err.requestOptions.copyWith();
+        replayOptions.extra[FluxRequestKeys.skipCfChallenge] = true;
+        replayOptions.extra[FluxRequestKeys.skipCfBlock] = true;
+        await _refreshCookieHeader(replayOptions);
+        CfChallengeLogger.log(
+          '[INTERCEPTOR] Carried cf_clearance is stale '
+          '(carried=${carriedClearance?.length ?? 0} chars, '
+          'current=${currentClearance?.length ?? 0} chars), replaying with current: '
+          '$requestMethod $requestUrl',
+        );
+        try {
+          final response = await dio.fetch(replayOptions);
+          CfChallengeLogger.logInterceptorRetry(
+            url: requestUrl,
+            success: true,
+            statusCode: response.statusCode,
+          );
+          return handler.resolve(response);
+        } catch (e) {
+          final replayError = e is DioException ? e : null;
+          final replayStillChallenged =
+              replayError != null &&
+              CfChallengeService.isCfChallengeResponse(replayError.response);
+          if (!replayStillChallenged) {
+            CfChallengeLogger.logInterceptorRetry(
+              url: requestUrl,
+              success: false,
+              error: e.toString(),
+            );
+            if (replayError != null) return handler.reject(replayError);
+            return handler.reject(
+              DioException(
+                requestOptions: replayOptions,
+                error: e,
+                type: DioExceptionType.unknown,
+              ),
+            );
+          }
+          CfChallengeLogger.log(
+            '[INTERCEPTOR] Replay with current cf_clearance still '
+            'challenged (${replayError.response?.statusCode}), '
+            'falling back to verify',
+          );
+        }
+      }
+
       // 记录在位值被撞：本次请求携带的 cf_clearance 已被 CF 挑战（= 已死），
+      // 若 stale replay 已确认 jar 当前值也被拦，则这里登记的是 current。
       // 打开换届窗口——之后 sync 可以替换它（过盾新值继位，或 Turnstile
       // 最新铸值无缝补位）。这里不做任何候选值判定、不分 403/429：
       // 撞了就过盾，语义见 CfClearanceAuthority。
       CfClearanceAuthority.instance.noteIncumbentChallenged(
-        CfClearanceAuthority.extractFromCookieHeader(
-          err.requestOptions.headers['Cookie']?.toString() ??
-              err.requestOptions.headers['cookie']?.toString(),
-        ),
+        carriedIsStale ? currentClearance : carriedClearance,
       );
       final cfService = CfChallengeService();
       final isSilent = err.requestOptions.spec.isSilent;
