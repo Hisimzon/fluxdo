@@ -385,7 +385,7 @@ class BrowserTrustCoordinator {
         '跳过 CF 恢复 reason=$reason',
         tag: 'BrowserTrust',
       );
-      return bootstrap;
+      return false;
     }
     // bootstrap 被 CF(403/429)挡下:作废本地假阳性信任,复用/发起 CF 验证拿到
     // 新 cf_clearance 后 force 重跑一次,避免与 Dio 侧的 CF 自愈各自为政。
