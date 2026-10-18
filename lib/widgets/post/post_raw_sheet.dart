@@ -12,7 +12,7 @@ Future<void> showPostRawSheet(BuildContext context, Post post) {
   return AppBottomSheet.show<void>(
     context: context,
     title: '${S.current.composerView_source} #${post.postNumber}',
-    child: _PostRawSheetBody(postId: post.id),
+    builder: (_) => _PostRawSheetBody(postId: post.id),
   );
 }
 
