@@ -36,7 +36,6 @@ class _PostRawSheetBodyState extends State<_PostRawSheetBody> {
   }
 
   Future<void> _load() async {
-    setState(() => _loading = true);
     final raw = await DiscourseService().getPostRaw(widget.postId);
     if (!mounted) return;
     setState(() {
@@ -49,15 +48,21 @@ class _PostRawSheetBodyState extends State<_PostRawSheetBody> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     if (_loading) {
-      return const Center(child: CircularProgressIndicator());
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 48),
+        child: Center(child: CircularProgressIndicator()),
+      );
     }
     final raw = _raw;
     if (raw == null || raw.isEmpty) {
-      return Center(
-        child: Text(
-          S.current.common_loadFailed,
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 48),
+        child: Center(
+          child: Text(
+            S.current.common_loadFailed,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
         ),
       );

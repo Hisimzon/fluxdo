@@ -298,11 +298,15 @@ class SeekingNotifier extends StateNotifier<SeekingState>
   /// 用户卡片等入口的开关式操作：已在名单则移除，否则走常规添加校验。
   Future<String?> toggleUser(String username) async {
     final name = username.trim();
-    final exists = state.users.any(
-      (user) => user.toLowerCase() == name.toLowerCase(),
-    );
-    if (exists) {
-      await removeUser(name);
+    String? existing;
+    for (final candidate in state.users) {
+      if (candidate.toLowerCase() == name.toLowerCase()) {
+        existing = candidate;
+        break;
+      }
+    }
+    if (existing != null) {
+      await removeUser(existing);
       return null;
     }
     return addUser(name);
