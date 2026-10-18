@@ -6,7 +6,7 @@ import '../../l10n/s.dart';
 import '../../models/topic.dart';
 import '../../services/discourse/discourse_service.dart';
 import '../../services/toast_service.dart';
-import '../../common/app_bottom_sheet.dart';
+import '../common/app_bottom_sheet.dart';
 
 Future<void> showPostRawSheet(BuildContext context, Post post) {
   return AppBottomSheet.show<void>(
