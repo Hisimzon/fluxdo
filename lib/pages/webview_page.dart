@@ -22,14 +22,22 @@ import '../providers/download_provider.dart';
 import 'package:common_ui/common_ui.dart';
 import '../l10n/s.dart';
 import '../utils/dialog_utils.dart';
+import '../utils/webview_isolation.dart';
 
 /// 通用内置浏览器页面
 class WebViewPage extends ConsumerStatefulWidget {
   final String url;
   final String? title;
   final String? injectCss;
+  final bool isolated;
 
-  const WebViewPage({super.key, required this.url, this.title, this.injectCss});
+  const WebViewPage({
+    super.key,
+    required this.url,
+    this.title,
+    this.injectCss,
+    this.isolated = false,
+  });
 
   /// 打开浏览器，url 为空字符串时显示空白页
   static Future<T?> open<T extends Object?>(
@@ -37,12 +45,18 @@ class WebViewPage extends ConsumerStatefulWidget {
     String url, {
     String? title,
     String? injectCss,
+    bool? isolated,
   }) {
+    final useIsolatedWebView = isolated ?? WebViewIsolation.shouldIsolate(url);
     return Navigator.push<T>(
       context,
       MaterialPageRoute(
-        builder: (_) =>
-            WebViewPage(url: url, title: title, injectCss: injectCss),
+        builder: (_) => WebViewPage(
+          url: url,
+          title: title,
+          injectCss: injectCss,
+          isolated: useIsolatedWebView,
+        ),
       ),
     );
   }
@@ -248,8 +262,15 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
                         child: WebViewSettings.wrapWithScrollFix(
                       InAppWebView(
                             webViewEnvironment: windowsWebViewEnvironment,
-                            initialSettings: WebViewSettings.visible
-                              ..useShouldOverrideUrlLoading = true,
+                            initialSettings: widget.isolated
+                                ? (WebViewSettings.visible
+                                    ..useShouldOverrideUrlLoading = true
+                                    ..incognito = true
+                                    ..sharedCookiesEnabled = false
+                                    ..thirdPartyCookiesEnabled = false
+                                    ..cacheEnabled = false)
+                                : (WebViewSettings.visible
+                                    ..useShouldOverrideUrlLoading = true),
                             initialUserScripts:
                                 WebViewSettings.compatPolyfillScripts,
                             shouldOverrideUrlLoading:
@@ -263,9 +284,11 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
                               // 老 WKWebView 的 JS 运行时错误回传到 LogWriter。
                               WebViewSettings.registerJsErrorReporter(controller);
                               if (widget.url.isNotEmpty) {
-                                // v0.4.0: 取代 RawSetCookieQueue.flush
-                                await WebViewCookiePriming.instance
-                                    .prime(widget.url);
+                                if (!widget.isolated) {
+                                  // v0.4.0: 取代 RawSetCookieQueue.flush
+                                  await WebViewCookiePriming.instance
+                                      .prime(widget.url);
+                                }
                                 await controller.loadUrl(
                                   urlRequest:
                                       URLRequest(url: WebUri(widget.url)),
@@ -294,10 +317,13 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
                             onLoadStop: (controller, url) async {
                               final revision = _navigationRevision;
                               setState(() => _isLoading = false);
-                              // 触发 cookie observer sweep (Android 主要触发点;
-                              // Apple 平台 native observer 已有覆盖, 此处与 debounce
-                              // 合并不会重复 sweep)
-                              CookieStoreObserver.instance.notifyExternalChange();
+                              if (!widget.isolated) {
+                                // 触发 cookie observer sweep (Android 主要触发点;
+                                // Apple 平台 native observer 已有覆盖, 此处与 debounce
+                                // 合并不会重复 sweep)
+                                CookieStoreObserver.instance
+                                    .notifyExternalChange();
+                              }
                               await WebViewSettings.injectScrollFix(controller);
                               final title = await controller.getTitle();
                               final canGoBack = await controller.canGoBack();
@@ -401,7 +427,17 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
 
     final scheme = url.scheme.toLowerCase();
 
-    // HTTP(S) 和内部 scheme 正常加载
+    if (scheme == 'http' || scheme == 'https') {
+      final urlString = url.toString();
+      final targetIsolated = WebViewIsolation.shouldIsolate(urlString);
+      if (mounted && targetIsolated != widget.isolated) {
+        await WebViewPage.open(context, urlString);
+      }
+      return targetIsolated == widget.isolated
+          ? NavigationActionPolicy.ALLOW
+          : NavigationActionPolicy.CANCEL;
+    }
+
     if (_allowedSchemes.contains(scheme)) {
       return NavigationActionPolicy.ALLOW;
     }
