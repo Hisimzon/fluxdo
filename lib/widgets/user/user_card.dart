@@ -10,6 +10,7 @@ import '../../models/user.dart';
 import '../../pages/chat/channel/chat_channel_page.dart';
 import '../../providers/discourse_providers.dart';
 import '../../providers/selected_topic_provider.dart';
+import '../../providers/seeking_provider.dart';
 import '../../services/app_error_handler.dart';
 import '../../services/discourse_cache_manager.dart';
 import '../../services/preloaded_data_service.dart';
@@ -495,6 +496,7 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
 
   bool _isFollowed = false;
   bool _followLoading = false;
+  bool _seekingLoading = false;
 
   // normal / mute / ignore
   String _notificationLevel = 'normal';
@@ -588,6 +590,35 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
       AppErrorHandler.handleUnexpected(e, s);
     } finally {
       if (mounted) setState(() => _followLoading = false);
+    }
+  }
+
+  Future<void> _toggleSeeking() async {
+    if (_seekingLoading) return;
+    setState(() => _seekingLoading = true);
+    try {
+      final result = await ref
+          .read(seekingProvider.notifier)
+          .toggleUser(widget.username);
+      if (!mounted) return;
+      switch (result) {
+        case 'exists':
+          ToastService.showInfo(S.current.seeking_userExists);
+          break;
+        case 'full':
+          ToastService.showInfo(
+            S.current.seeking_userLimit(SeekingNotifier.maxUsers),
+          );
+          break;
+        case 'notFound':
+          ToastService.showInfo(S.current.seeking_userNotFound);
+          break;
+        case 'failed':
+          ToastService.showError(S.current.seeking_addUserFailed);
+          break;
+      }
+    } finally {
+      if (mounted) setState(() => _seekingLoading = false);
     }
   }
 
@@ -1049,6 +1080,12 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
     final canMessage = isLoggedIn && user?.canSendPrivateMessageToUser == true;
     final canChat = isLoggedIn && user?.canChatUser == true;
     final canFollow = isLoggedIn && user?.canFollow == true;
+    final seekingUsers = ref.watch(
+      seekingProvider.select((value) => value.users),
+    );
+    final isSeeking = seekingUsers.any(
+      (username) => username.toLowerCase() == widget.username.toLowerCase(),
+    );
     final canMute = isLoggedIn && user?.canMuteUser == true;
     final canIgnore = isLoggedIn && user?.canIgnoreUser == true;
     // 「只看 TA」:话题上下文中该用户发帖 ≥2 才显示(对齐官方
@@ -1090,6 +1127,19 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
               onPressed: _followLoading ? null : _toggleFollow,
               icon: const Icon(Symbols.person_add_alt_rounded, size: 18),
               label: Text(S.current.userProfile_follow),
+            ));
+    }
+    if (isLoggedIn) {
+      primary.add(isSeeking
+          ? OutlinedButton.icon(
+              onPressed: _seekingLoading ? null : _toggleSeeking,
+              icon: const Icon(Symbols.person_search_rounded, size: 18),
+              label: Text(S.current.seeking_removeUser),
+            )
+          : FilledButton.tonalIcon(
+              onPressed: _seekingLoading ? null : _toggleSeeking,
+              icon: const Icon(Symbols.person_search_rounded, size: 18),
+              label: Text(S.current.seeking_addUser),
             ));
     }
 

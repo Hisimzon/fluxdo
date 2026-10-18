@@ -97,6 +97,17 @@ extension _PostFooterMenuActions on _PostFooterSectionState {
                     widget.onReply!();
                   },
                 ),
+              ListTile(
+                leading: Icon(
+                  Symbols.code_rounded,
+                  color: theme.colorScheme.onSurface,
+                ),
+                title: Text(context.l10n.composerView_source),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  showPostRawSheet(context, widget.post);
+                },
+              ),
               if (widget.post.canEdit && widget.onEdit != null)
                 ListTile(
                   leading: Icon(
