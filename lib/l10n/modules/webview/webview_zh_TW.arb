@@ -29,5 +29,7 @@
         "type": "String"
       }
     }
-  }
+  },
+  "webview_thirdPartyAuthMessage": "該網站正在請求透過 LINUX.DO 授權，是否繼續？",
+  "webview_thirdPartyAuthTitle": "第三方授權確認"
 }

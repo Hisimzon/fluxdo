@@ -49,6 +49,7 @@ class WebViewCookiePriming {
   // ---------------------------------------------------------------------------
 
   bool _isPrimed = false;
+  final Set<String> _primedHosts = {};
 
   static const Duration _variantCleanupRetryDelay = Duration(milliseconds: 120);
   static const int _variantCleanupMaxAttempts = 2;
@@ -66,14 +67,19 @@ class WebViewCookiePriming {
 
   /// 确保 WV 中的 critical cookies 与 jar 同步。
   ///
+  /// 已同步 host 不重复执行；首次出现的 host（如跨子域授权页）会单独重灌。
+  ///
   /// 详见 §5.2 接口契约。
   Future<void> prime(String url) async {
-    if (_isPrimed) return;
+    final host = Uri.tryParse(url)?.host.toLowerCase() ?? '';
+    if (_isPrimed && (host.isEmpty || _primedHosts.contains(host))) return;
 
     // 同 url 并发去重
     final existing = _primingFuture;
-    if (existing != null && _primingUrl == url) {
-      return existing;
+    if (existing != null) {
+      if (_primingUrl == url) return existing;
+      await existing;
+      if (_isPrimed && _primedHosts.contains(host)) return;
     }
 
     final future = _primeInternal(url);
@@ -93,6 +99,7 @@ class WebViewCookiePriming {
   /// 标记 WV 状态为"未就绪"。
   void invalidate() {
     _isPrimed = false;
+    _primedHosts.clear();
   }
 
   /// 等待当前正在进行的 priming 完成（如有）。
@@ -105,6 +112,7 @@ class WebViewCookiePriming {
   @visibleForTesting
   void resetForTest() {
     _isPrimed = false;
+    _primedHosts.clear();
     _primingFuture = null;
     _primingUrl = null;
   }
@@ -267,6 +275,9 @@ class WebViewCookiePriming {
       }
 
       _isPrimed = true;
+      if (uri.host.isNotEmpty) {
+        _primedHosts.add(uri.host.toLowerCase());
+      }
       final hasMismatch = mismatched.isNotEmpty || missingNames.isNotEmpty;
       debugPrint(
         '[Priming] WV primed for $url: '

@@ -67,5 +67,7 @@
   "webview_noAppForLink": "No app found for this link",
   "webview_openExternal": "Open in external browser",
   "webview_openFailed": "Open failed: {error}",
+  "webview_thirdPartyAuthMessage": "This site is requesting LINUX.DO authorization. Continue?",
+  "webview_thirdPartyAuthTitle": "Third-party authorization",
   "webview_removeBookmark": "Remove bookmark"
 }

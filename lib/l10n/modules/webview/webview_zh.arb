@@ -81,5 +81,7 @@
       }
     }
   },
+  "webview_thirdPartyAuthMessage": "该网站正在请求通过 LINUX.DO 授权，是否继续？",
+  "webview_thirdPartyAuthTitle": "第三方授权确认",
   "webview_removeBookmark": "取消收藏"
 }

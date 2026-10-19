@@ -30,6 +30,7 @@ class WebViewPage extends ConsumerStatefulWidget {
   final String? title;
   final String? injectCss;
   final bool isolated;
+  final int? windowId;
 
   const WebViewPage({
     super.key,
@@ -37,6 +38,7 @@ class WebViewPage extends ConsumerStatefulWidget {
     this.title,
     this.injectCss,
     this.isolated = false,
+    this.windowId,
   });
 
   /// 打开浏览器，url 为空字符串时显示空白页
@@ -46,6 +48,7 @@ class WebViewPage extends ConsumerStatefulWidget {
     String? title,
     String? injectCss,
     bool? isolated,
+    int? windowId,
   }) {
     final useIsolatedWebView = isolated ?? WebViewIsolation.shouldIsolate(url);
     return Navigator.push<T>(
@@ -56,6 +59,7 @@ class WebViewPage extends ConsumerStatefulWidget {
           title: title,
           injectCss: injectCss,
           isolated: useIsolatedWebView,
+          windowId: windowId,
         ),
       ),
     );
@@ -262,9 +266,12 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
                         child: WebViewSettings.wrapWithScrollFix(
                       InAppWebView(
                             webViewEnvironment: windowsWebViewEnvironment,
+                            windowId: widget.windowId,
                             initialSettings: widget.isolated
                                 ? (WebViewSettings.visible
                                     ..useShouldOverrideUrlLoading = true
+                                    ..supportMultipleWindows = true
+                                    ..javaScriptCanOpenWindowsAutomatically = true
                                     ..incognito = true
                                     ..sharedCookiesEnabled = false
                                     ..thirdPartyCookiesEnabled = false
@@ -275,6 +282,14 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
                                 WebViewSettings.compatPolyfillScripts,
                             shouldOverrideUrlLoading:
                                 _shouldOverrideUrlLoading,
+                            onCreateWindow: (controller, action) async {
+                              return _handleCreatedWindow(action);
+                            },
+                            onCloseWindow: (_) {
+                              if (mounted) {
+                                Navigator.of(context).pop();
+                              }
+                            },
                             onReceivedServerTrustAuthRequest: (_, challenge) =>
                                 WebViewSettings.handleServerTrustAuthRequest(
                                   challenge,
@@ -283,7 +298,8 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
                               _controller = controller;
                               // 老 WKWebView 的 JS 运行时错误回传到 LogWriter。
                               WebViewSettings.registerJsErrorReporter(controller);
-                              if (widget.url.isNotEmpty) {
+                              if (widget.windowId == null &&
+                                  widget.url.isNotEmpty) {
                                 if (!widget.isolated) {
                                   // v0.4.0: 取代 RawSetCookieQueue.flush
                                   await WebViewCookiePriming.instance
@@ -430,6 +446,13 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
     if (scheme == 'http' || scheme == 'https') {
       final urlString = url.toString();
       final targetIsolated = WebViewIsolation.shouldIsolate(urlString);
+      if (widget.isolated && _isConnectAuthorizationUrl(url)) {
+        final opened = await _openConfirmedConnectAuthorization(urlString);
+        if (opened && widget.windowId != null && mounted) {
+          Navigator.of(context).pop();
+        }
+        return NavigationActionPolicy.CANCEL;
+      }
       if (mounted && targetIsolated != widget.isolated) {
         await WebViewPage.open(context, urlString);
       }
@@ -479,6 +502,65 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
 
     // 无论用户选择如何，都不让 WebView 加载此 URL
     return NavigationActionPolicy.CANCEL;
+  }
+
+  bool _isConnectAuthorizationUrl(Uri url) {
+    final host = url.host.toLowerCase();
+    return (host == 'connect.linux.do' ||
+            host.endsWith('.connect.linux.do')) &&
+        url.path.toLowerCase().startsWith('/oauth2/');
+  }
+
+  Future<bool> _confirmConnectAuthorizationIfNeeded(Uri url) async {
+    if (!widget.isolated || !_isConnectAuthorizationUrl(url)) return true;
+    return _confirmConnectAuthorization();
+  }
+
+  Future<bool> _openConfirmedConnectAuthorization(String urlString) async {
+    final confirmed = await _confirmConnectAuthorization();
+    if (!confirmed || !mounted) return false;
+    await WebViewPage.open(context, urlString, isolated: false);
+    return true;
+  }
+
+  Future<bool> _handleCreatedWindow(CreateWindowAction action) async {
+    final url = action.request.url;
+    if (widget.isolated &&
+        url != null &&
+        _isConnectAuthorizationUrl(url)) {
+      return _openConfirmedConnectAuthorization(url.toString());
+    }
+
+    if (!mounted) return true;
+    await WebViewPage.open(
+      context,
+      url?.toString() ?? '',
+      isolated: widget.isolated,
+      windowId: action.windowId,
+    );
+    return true;
+  }
+
+  Future<bool> _confirmConnectAuthorization() async {
+    final confirmed = await showAppDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: Text(context.l10n.webview_thirdPartyAuthTitle),
+        content: Text(context.l10n.webview_thirdPartyAuthMessage),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(context.l10n.common_deny),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(context.l10n.common_allow),
+          ),
+        ],
+      ),
+    );
+    return confirmed == true;
   }
 
   void _handleMenuAction(String action) {
@@ -555,12 +637,23 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
     }
   }
 
-  void _navigateToUrl(String input) {
+  Future<void> _navigateToUrl(String input) async {
     var url = input.trim();
     if (url.isEmpty) return;
     // 自动补全 scheme
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
       url = 'https://$url';
+    }
+    final uri = Uri.tryParse(url);
+    if (uri != null &&
+        !await _confirmConnectAuthorizationIfNeeded(uri)) {
+      return;
+    }
+    if (WebViewIsolation.shouldIsolate(url) != widget.isolated) {
+      if (mounted) {
+        await WebViewPage.open(context, url);
+      }
+      return;
     }
     _controller?.loadUrl(urlRequest: URLRequest(url: WebUri(url)));
   }
