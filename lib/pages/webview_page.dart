@@ -1,10 +1,13 @@
+import 'dart:async' show unawaited;
 import 'dart:io' as io;
 
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:html/parser.dart' as html_parser;
 import 'package:m3e_ui/m3e_ui.dart';
 import '../utils/frame_jank_monitor.dart';
 import '../utils/link_launcher.dart';
@@ -14,6 +17,7 @@ import '../services/app_link_service.dart';
 import '../services/network/cookie/cookie_store_observer.dart';
 import '../services/network/cookie/webview_cookie_priming.dart';
 import '../services/webview_settings.dart';
+import '../services/network/discourse_dio.dart';
 import '../services/windows_webview_environment_service.dart';
 import '../widgets/common/app_link_confirm_dialog.dart';
 import '../providers/web_bookmark_provider.dart';
@@ -277,7 +281,9 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
                                     ..thirdPartyCookiesEnabled = false
                                     ..cacheEnabled = false)
                                 : (WebViewSettings.visible
-                                    ..useShouldOverrideUrlLoading = true),
+                                    ..useShouldOverrideUrlLoading = true
+                                    ..supportMultipleWindows = true
+                                    ..javaScriptCanOpenWindowsAutomatically = true),
                             initialUserScripts:
                                 WebViewSettings.compatPolyfillScripts,
                             shouldOverrideUrlLoading:
@@ -446,11 +452,8 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
     if (scheme == 'http' || scheme == 'https') {
       final urlString = url.toString();
       final targetIsolated = WebViewIsolation.shouldIsolate(urlString);
-      if (widget.isolated && _isConnectAuthorizationUrl(url)) {
-        final opened = await _openConfirmedConnectAuthorization(urlString);
-        if (opened && widget.windowId != null && mounted) {
-          Navigator.of(context).pop();
-        }
+      if (_isConnectAuthorizationUrl(url)) {
+        await _openConfirmedConnectAuthorization(urlString);
         return NavigationActionPolicy.CANCEL;
       }
       if (mounted && targetIsolated != widget.isolated) {
@@ -512,30 +515,38 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
   }
 
   Future<bool> _confirmConnectAuthorizationIfNeeded(Uri url) async {
-    if (!widget.isolated || !_isConnectAuthorizationUrl(url)) return true;
+    if (!_isConnectAuthorizationUrl(url)) return true;
     return _confirmConnectAuthorization();
   }
 
   Future<bool> _openConfirmedConnectAuthorization(String urlString) async {
     final confirmed = await _confirmConnectAuthorization();
     if (!confirmed || !mounted) return false;
-    await WebViewPage.open(context, urlString, isolated: false);
+    final prepared = await _prepareConnectSession();
+    if (!prepared || !mounted) return false;
+    WebViewCookiePriming.instance.invalidateHost('connect.linux.do');
+    unawaited(WebViewPage.open(context, urlString, isolated: false));
+    if (widget.windowId != null && mounted) {
+      Navigator.of(context).pop();
+    }
     return true;
   }
 
   Future<bool> _handleCreatedWindow(CreateWindowAction action) async {
     final url = action.request.url;
-    if (widget.isolated &&
-        url != null &&
-        _isConnectAuthorizationUrl(url)) {
-      return _openConfirmedConnectAuthorization(url.toString());
+    if (url != null && _isConnectAuthorizationUrl(url)) {
+      await _openConfirmedConnectAuthorization(url.toString());
+      return true;
     }
 
     if (!mounted) return true;
+    final urlString = url?.toString() ?? '';
+    final inheritIsolation =
+        urlString.isEmpty || urlString == 'about:blank';
     await WebViewPage.open(
       context,
-      url?.toString() ?? '',
-      isolated: widget.isolated,
+      urlString,
+      isolated: inheritIsolation ? widget.isolated : null,
       windowId: action.windowId,
     );
     return true;
@@ -561,6 +572,56 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
       ),
     );
     return confirmed == true;
+  }
+
+  Future<bool> _prepareConnectSession() async {
+    try {
+      final dio = DiscourseDio.create();
+      final response = await dio.get(
+        'https://connect.linux.do/',
+        options: Options(
+          validateStatus: (status) => status != null && status < 500,
+          extra: {'skipCsrf': true, 'showErrorToast': false},
+        ),
+      );
+      if (response.statusCode != 200) {
+        ToastService.showError(S.current.common_loadFailedRetry);
+        return false;
+      }
+      if (_isConnectLoginResponse(response.data.toString())) {
+        ToastService.showError(S.current.common_pleaseLogin);
+        return false;
+      }
+      return true;
+    } catch (e) {
+      debugPrint('[WebView] Connect session bootstrap failed: $e');
+      ToastService.showError(S.current.common_loadFailedRetry);
+      return false;
+    }
+  }
+
+  bool _isConnectLoginResponse(String html) {
+    final document = html_parser.parse(html);
+    final title =
+        document.querySelector('title')?.text.trim().toLowerCase() ?? '';
+    if (RegExp(r'login|log in|sign in|登录|登入|登錄|登陸').hasMatch(title)) {
+      return true;
+    }
+
+    if (document.querySelector(
+          'a[href*="/login"], form[action*="/login"], a[href*="/session"], form[action*="/session"]',
+        ) !=
+        null) {
+      return true;
+    }
+
+    final buttonTexts = document
+        .querySelectorAll('button, a')
+        .map((element) => element.text.trim().toLowerCase())
+        .where((text) => text.isNotEmpty);
+    return buttonTexts.any(
+      (text) => RegExp(r'^(log ?in|sign ?in|登录|登入|登錄|登陸)$').hasMatch(text),
+    );
   }
 
   void _handleMenuAction(String action) {

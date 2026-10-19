@@ -102,6 +102,15 @@ class WebViewCookiePriming {
     _primedHosts.clear();
   }
 
+  /// 仅失效指定 host 的同步状态，避免其他官方域重复全量重灌。
+  void invalidateHost(String host) {
+    final normalizedHost = host.trim().toLowerCase();
+    if (normalizedHost.isEmpty) return;
+    if (_primedHosts.remove(normalizedHost)) {
+      _isPrimed = _primedHosts.isNotEmpty;
+    }
+  }
+
   /// 等待当前正在进行的 priming 完成（如有）。
   Future<void> awaitReady() async {
     final future = _primingFuture;
