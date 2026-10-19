@@ -50,12 +50,17 @@ class WebBookmarkNotifier extends StateNotifier<List<WebBookmark>> {
   }
 
   /// 切换收藏状态，返回操作后是否为已收藏
-  bool toggle(String url, String title) {
+  bool toggle(String url, String title, {bool? isolated}) {
     if (isBookmarked(url)) {
       removeByUrl(url);
       return false;
     } else {
-      add(WebBookmark(url: url, title: title, createdAt: DateTime.now()));
+      add(WebBookmark(
+        url: url,
+        title: title,
+        createdAt: DateTime.now(),
+        isolated: isolated,
+      ));
       return true;
     }
   }

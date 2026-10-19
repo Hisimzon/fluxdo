@@ -453,7 +453,7 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
     if (scheme == 'http' || scheme == 'https') {
       final urlString = url.toString();
       final targetIsolated = WebViewIsolation.shouldIsolate(urlString);
-      if (widget.isolated && _isConnectAuthorizationUrl(url)) {
+      if (_isConnectAuthorizationUrl(url)) {
         await _openConfirmedConnectAuthorization(urlString);
         return NavigationActionPolicy.CANCEL;
       }
@@ -516,7 +516,7 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
   }
 
   Future<bool> _confirmConnectAuthorizationIfNeeded(Uri url) async {
-    if (!widget.isolated || !_isConnectAuthorizationUrl(url)) return true;
+    if (!_isConnectAuthorizationUrl(url)) return true;
     return _confirmConnectAuthorization();
   }
 
@@ -526,12 +526,10 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
     final prepared = await _prepareConnectSession();
     if (!prepared || !mounted) return false;
     WebViewCookiePriming.instance.invalidateHost('connect.linux.do');
+    await WebViewCookiePriming.instance.prime('https://connect.linux.do/');
     final sourceRoute = ModalRoute.of(context);
     await WebViewPage.open(context, urlString, isolated: false);
-    if (mounted &&
-        widget.windowId != null &&
-        sourceRoute != null &&
-        sourceRoute.isActive) {
+    if (mounted && sourceRoute != null && sourceRoute.isActive) {
       Navigator.of(context).removeRoute(sourceRoute);
     }
     return true;
@@ -539,7 +537,7 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
 
   Future<bool> _handleCreatedWindow(CreateWindowAction action) async {
     final url = action.request.url;
-    if (widget.isolated && url != null && _isConnectAuthorizationUrl(url)) {
+    if (url != null && _isConnectAuthorizationUrl(url)) {
       await _openConfirmedConnectAuthorization(url.toString());
       return true;
     }
@@ -728,7 +726,7 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
     if (_currentUrl.isEmpty) return;
     final added = ref
         .read(webBookmarkProvider.notifier)
-        .toggle(_currentUrl, _currentTitle);
+        .toggle(_currentUrl, _currentTitle, isolated: widget.isolated);
     ToastService.showSuccess(
       added
           ? S.current.webview_bookmarkAdded

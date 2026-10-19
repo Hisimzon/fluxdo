@@ -285,7 +285,8 @@ class _BookmarkListPage extends ConsumerWidget {
                       child: _BookmarkCard(
                         item: item,
                         onTap: () => WebViewPage.open(context, item.url,
-                            title: item.title),
+                            title: item.title,
+                            isolated: item.isolated ?? true),
                       ),
                     ),
                   );
@@ -381,6 +382,7 @@ class _BookmarkListPage extends ConsumerWidget {
                 url: item.url,
                 title: titleController.text.trim(),
                 createdAt: item.createdAt,
+                isolated: item.isolated,
               ));
               Navigator.pop(ctx);
             },
