@@ -377,6 +377,7 @@ class SessionCookieSentinel {
     required int variantsBefore,
     required Stopwatch stopwatch,
   }) async {
+    final uri = Uri.parse(url);
     if (variantsBefore <= 1) {
       _markSweepSuccess(name);
       final result = SweepResult(
@@ -409,7 +410,7 @@ class SessionCookieSentinel {
     final variants = allInfos
         .where((c) => c.name == name)
         .toList(growable: false);
-    final winnerResult = await _pickWinner(name, variants);
+    final winnerResult = await _pickWinner(name, variants, uri);
 
     // CHECK 3: generation (在副作用前)
     if (_isCancelled(entryGen)) {
@@ -592,12 +593,13 @@ class SessionCookieSentinel {
   Future<_WinnerInfo?> _pickWinner(
     String name,
     List<CookieFullInfo> variants,
+    Uri uri,
   ) async {
     if (variants.isEmpty) return null;
 
     CanonicalCookie? jarCookie;
     try {
-      jarCookie = await _jar.getCanonicalCookie(name);
+      jarCookie = await _jar.getCanonicalCookieForUri(name, uri);
     } catch (e) {
       debugPrint('[Sentinel] _pickWinner jar lookup failed: $e');
     }
@@ -612,7 +614,10 @@ class SessionCookieSentinel {
       // Auth cookies are server-authoritative. A WebView snapshot can contain
       // stale host/domain variants, so never pick a non-jar value merely
       // because it differs from the jar value.
-      if (CookieJarService.authCookieNames.contains(name)) {
+      final isServerAuthoritative =
+          CookieJarService.authCookieNames.contains(name) ||
+          name == 'auth.session-token';
+      if (isServerAuthoritative) {
         return _WinnerInfo(
           cookieInfo:
               jarMatch ?? CookieFullInfo(name: name, value: jarCookie.value),

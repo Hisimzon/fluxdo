@@ -209,9 +209,9 @@ class BoundarySyncService {
       }
 
       for (final entry in cookieGroups.entries) {
-        final isSessionCookie = CookieJarService.sessionCookieNames.contains(
-          entry.key,
-        );
+        final isSessionCookie =
+            CookieJarService.sessionCookieNames.contains(entry.key) ||
+            entry.key == 'auth.session-token';
         final selected = isSessionCookie
             ? _selectBestSessionCookie(entry.value, host)
             : _selectBestWebViewCookie(entry.value, host);
@@ -238,9 +238,9 @@ class BoundarySyncService {
 
       for (final wc in cookiesToPersist) {
         final value = wc.value?.toString() ?? '';
-        final isSessionCookie = CookieJarService.sessionCookieNames.contains(
-          wc.name,
-        );
+        final isSessionCookie =
+            CookieJarService.sessionCookieNames.contains(wc.name) ||
+            wc.name == 'auth.session-token';
         final isHostOnlyCookie = CookieJarService.hostOnlyCookieNames.contains(
           wc.name,
         );
@@ -265,7 +265,8 @@ class BoundarySyncService {
         // domain 处理：优先用平台返回值，旧 Android 兜底
         String? domain;
         final rawDomain = wc.domain?.trim();
-        final shouldForceSessionHostOnly = isHostOnlyCookie;
+        final shouldForceSessionHostOnly =
+            isHostOnlyCookie || wc.name == 'auth.session-token';
         if (shouldForceSessionHostOnly) {
           domain = null;
           if (rawDomain != null && rawDomain.isNotEmpty) {
@@ -291,7 +292,7 @@ class BoundarySyncService {
         } else {
           // 旧 Android（GET_COOKIE_INFO 不支持）：domain 为 null
           // 优先继承 jar 中已有的 domain
-          final existing = await _jar.getCanonicalCookie(wc.name);
+          final existing = await _jar.getCanonicalCookieForUri(wc.name, uri);
           if (existing != null &&
               existing.domain != null &&
               existing.domain!.trim().isNotEmpty) {
@@ -335,7 +336,8 @@ class BoundarySyncService {
               value: value,
               domain: domain,
               path: cookie.path ?? '/',
-              requestHost: host,
+            requestHost: host,
+            uri: uri,
             )) {
           continue;
         }
@@ -577,8 +579,9 @@ class BoundarySyncService {
     required String? domain,
     required String path,
     required String requestHost,
+    required Uri uri,
   }) async {
-    final existing = await _jar.getCanonicalCookie(name);
+    final existing = await _jar.getCanonicalCookieForUri(name, uri);
     if (existing == null || existing.value != value) return false;
     if (existing.path != path) return false;
 

@@ -1,4 +1,3 @@
-import 'dart:async' show unawaited;
 import 'dart:io' as io;
 
 import 'package:flutter/material.dart';
@@ -292,7 +291,9 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
                               return _handleCreatedWindow(action);
                             },
                             onCloseWindow: (_) {
-                              if (mounted) {
+                              if (!mounted) return;
+                              final route = ModalRoute.of(context);
+                              if (route?.isCurrent == true) {
                                 Navigator.of(context).pop();
                               }
                             },
@@ -452,7 +453,7 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
     if (scheme == 'http' || scheme == 'https') {
       final urlString = url.toString();
       final targetIsolated = WebViewIsolation.shouldIsolate(urlString);
-      if (_isConnectAuthorizationUrl(url)) {
+      if (widget.isolated && _isConnectAuthorizationUrl(url)) {
         await _openConfirmedConnectAuthorization(urlString);
         return NavigationActionPolicy.CANCEL;
       }
@@ -515,7 +516,7 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
   }
 
   Future<bool> _confirmConnectAuthorizationIfNeeded(Uri url) async {
-    if (!_isConnectAuthorizationUrl(url)) return true;
+    if (!widget.isolated || !_isConnectAuthorizationUrl(url)) return true;
     return _confirmConnectAuthorization();
   }
 
@@ -525,16 +526,20 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
     final prepared = await _prepareConnectSession();
     if (!prepared || !mounted) return false;
     WebViewCookiePriming.instance.invalidateHost('connect.linux.do');
-    unawaited(WebViewPage.open(context, urlString, isolated: false));
-    if (widget.windowId != null && mounted) {
-      Navigator.of(context).pop();
+    final sourceRoute = ModalRoute.of(context);
+    await WebViewPage.open(context, urlString, isolated: false);
+    if (mounted &&
+        widget.windowId != null &&
+        sourceRoute != null &&
+        sourceRoute.isActive) {
+      Navigator.of(context).removeRoute(sourceRoute);
     }
     return true;
   }
 
   Future<bool> _handleCreatedWindow(CreateWindowAction action) async {
     final url = action.request.url;
-    if (url != null && _isConnectAuthorizationUrl(url)) {
+    if (widget.isolated && url != null && _isConnectAuthorizationUrl(url)) {
       await _openConfirmedConnectAuthorization(url.toString());
       return true;
     }

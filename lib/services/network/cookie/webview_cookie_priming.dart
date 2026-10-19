@@ -197,7 +197,10 @@ class WebViewCookiePriming {
         // - jar 已删 (返回 null): 跳过, 不再写回 WV
         // - value 变了: 用最新值 (新值更准)
         // - value 未变: 用原快照 (最常见)
-        final fresh = await _jar.getCanonicalCookie(initialCookie.name);
+        final fresh = await _jar.getCanonicalCookieForUri(
+          initialCookie.name,
+          uri,
+        );
         if (fresh == null || fresh.value.isEmpty) {
           skippedRaceRemoved++;
           debugPrint('[Priming] ${initialCookie.name} 在 priming 期间被外部删除, 跳过');
@@ -213,7 +216,7 @@ class WebViewCookiePriming {
 
         // a) 再次 race check: 上面读取是 async, 期间外部又可能删 cookie
         // 例如 sweep 跑到一半 cf_challenge_service 介入, 我们要尊重那个删除
-        final reFresh = await _jar.getCanonicalCookie(cookie.name);
+        final reFresh = await _jar.getCanonicalCookieForUri(cookie.name, uri);
         if (reFresh == null || reFresh.value.isEmpty) {
           skippedRaceRemoved++;
           attempted--;
@@ -325,6 +328,7 @@ class WebViewCookiePriming {
   ) async {
     var written = false;
     var postCount = 0;
+    final uri = Uri.parse(url);
     for (var attempt = 1; attempt <= _variantCleanupMaxAttempts; attempt++) {
       await _sentinel.sweep(
         url,
@@ -332,7 +336,7 @@ class WebViewCookiePriming {
         intent: SweepIntent.delete,
         force: true,
       );
-      final fresh = await _jar.getCanonicalCookie(cookie.name);
+      final fresh = await _jar.getCanonicalCookieForUri(cookie.name, uri);
       if (fresh == null || fresh.value.isEmpty || _isExpired(fresh)) {
         postCount = await _writer.countCookiesByName(url, cookie.name);
         return _PrimeWriteResult(

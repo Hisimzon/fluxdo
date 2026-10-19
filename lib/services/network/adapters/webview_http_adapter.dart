@@ -1040,6 +1040,10 @@ document.close();
     if (requestHost.isEmpty || baseHost.isEmpty) {
       return false;
     }
+    if (requestHost == 'connect.linux.do' ||
+        requestHost.endsWith('.connect.linux.do')) {
+      return true;
+    }
     return requestHost == baseHost || requestHost.endsWith('.$baseHost');
   }
 

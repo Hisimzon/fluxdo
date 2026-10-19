@@ -366,6 +366,18 @@ class CookieJarService {
     return null;
   }
 
+  /// 获取指定 URI 请求可携带的同名 CanonicalCookie。
+  Future<CanonicalCookie?> getCanonicalCookieForUri(
+    String name,
+    Uri uri,
+  ) async {
+    final cookies = await loadCanonicalCookiesForRequest(uri);
+    for (final cookie in cookies) {
+      if (cookie.name == name) return cookie;
+    }
+    return null;
+  }
+
   /// 加载指定 URI 下的 Cookie 诊断信息（不含真实值）
   Future<List<Map<String, dynamic>>> getCookieDiagnosticsForRequest(
     Uri uri, {
