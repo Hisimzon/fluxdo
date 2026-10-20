@@ -211,7 +211,11 @@ class CfChallengeInterceptor extends Interceptor {
       // 静默请求只在后台尝试验证；页面数据/操作请求在前台展示验证。
       // (Windows 曾因插件析构竞态崩溃 0xc0000005 禁用过静默后台验证;
       // vendored 插件的 aliveGuard/TextureBridge 修复落地后恢复。)
-      final result = await cfService.showManualVerify(null, !isSilent);
+      final result = await cfService.showManualVerify(
+        null,
+        !isSilent,
+        requestUrl,
+      );
 
       if (result == true) {
         await _syncCookiesOnce();

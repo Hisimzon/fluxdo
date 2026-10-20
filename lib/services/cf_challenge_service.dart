@@ -491,6 +491,7 @@ class CfChallengeService {
   Future<bool?> showManualVerify([
     BuildContext? context,
     bool forceForeground = true,
+    String? challengeUrl,
   ]) async {
     // 检查冷却期
     if (isInCooldown) {
@@ -499,7 +500,15 @@ class CfChallengeService {
       return null;
     }
 
-    final verifyUrl = '${AppConstants.baseUrl}/challenge';
+    final baseUri = Uri.parse(AppConstants.baseUrl);
+    final requestedUri = Uri.tryParse(challengeUrl ?? '');
+    final requestedHost = requestedUri?.host.toLowerCase() ?? '';
+    final baseHost = baseUri.host.toLowerCase();
+    final usesOfficialHost = requestedHost == baseHost ||
+        requestedHost.endsWith('.$baseHost');
+    final verifyUrl = usesOfficialHost && requestedUri != null
+        ? '${requestedUri.origin}/challenge'
+        : '${AppConstants.baseUrl}/challenge';
     CfChallengeLogger.logVerifyStart(verifyUrl);
 
     // 尝试获取 context：传入的 > 已设置的 > 全局 navigatorKey
@@ -806,9 +815,10 @@ class CfChallengeService {
   Future<bool?> showManualVerifyNow([
     BuildContext? context,
     bool forceForeground = true,
+    String? challengeUrl,
   ]) {
     resetCooldown();
-    return showManualVerify(context, forceForeground);
+    return showManualVerify(context, forceForeground, challengeUrl);
   }
 }
 
@@ -944,7 +954,7 @@ class _CfChallengePageState extends State<CfChallengePage> {
   Future<String?> _readCookieValue(String name) async {
     try {
       final cookie = await _cfCookieManager.getCookie(
-        url: WebUri(AppConstants.baseUrl),
+        url: WebUri(widget.verifyUrl),
         name: name,
       );
       if (cookie != null && cookie.value.isNotEmpty) {
