@@ -39,6 +39,8 @@ void main() {
     (true, 700.0, false),
     (false, 390.0, false),
     (false, 320.0, false),
+    (false, 390.0, true),
+    (false, 320.0, true),
     (true, 1100.0, true),
   ]) {
     final (desktop, width, empty) = variant;
@@ -174,6 +176,60 @@ void main() {
         }
 
         expect(tester.takeException(), isNull);
+        final richEditor = tester.widget<FluxdoEditor>(
+          find.byType(FluxdoEditor),
+        );
+        expect(
+          richEditor.focusNode!.hasFocus,
+          desktop,
+          reason: '手机创建页不能自动聚焦文末并唤起键盘',
+        );
+        if (!desktop) {
+          expect(richEditor.state.selection, isNull);
+          final tail = empty
+              ? find.byKey(const ValueKey('rich-composer-placeholder'))
+              : find.descendant(
+                  of: find.byType(FluxdoEditor),
+                  matching: find.byWidgetPredicate(
+                    (w) =>
+                        w is RichText &&
+                        w.text.toPlainText().contains('大家平时更习惯'),
+                  ),
+                );
+          if (empty) {
+            // 空段落的提示只在获得焦点后显示，先点击首行输入区域。
+            await tester.tapAt(
+              tester.getTopLeft(find.byType(FluxdoEditor)) +
+                  const Offset(20, 12),
+            );
+          } else {
+            await tester.tap(tail);
+          }
+          await tester.pump();
+          expect(richEditor.focusNode!.hasFocus, isTrue);
+          for (final height in [60.0, 120.0, 200.0, 300.0]) {
+            tester.view.viewInsets = FakeViewPadding(bottom: height);
+            ChatBottomContainerListenerManager().flutterApi.keyboardHeight(
+              height,
+            );
+            await tester.pump(const Duration(milliseconds: 16));
+          }
+          await tester.pump(const Duration(milliseconds: 300));
+          await tester.pump();
+          final tailRect = tester.getRect(tail);
+          final toolbarTop = tester
+              .getRect(find.byKey(const ValueKey('composer-workbench')))
+              .top;
+          expect(
+            tailRect.top,
+            greaterThanOrEqualTo(statusBarHeight + kToolbarHeight),
+          );
+          expect(tailRect.bottom, lessThanOrEqualTo(toolbarTop));
+          tester.view.viewInsets = const FakeViewPadding();
+          ChatBottomContainerListenerManager().flutterApi.keyboardHeight(0);
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 300));
+        }
         final appbar = find.byType(AppBar);
         final publish = find.byKey(const ValueKey('composer-header-submit'));
         expect(width - tester.getRect(publish).right, 16);

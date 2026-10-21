@@ -17,12 +17,16 @@ class UploadTaskPanel extends StatefulWidget {
     this.labels,
     this.initiallyExpanded = true,
     this.hideWhenAllSucceeded = true,
+    this.taskFilter,
   });
 
   final UploadTaskController controller;
   final UploadTaskLabels? labels;
   final bool initiallyExpanded;
   final bool hideWhenAllSucceeded;
+
+  /// 宿主可排除已在正文或图片组中展示的任务。
+  final bool Function(UploadTask)? taskFilter;
 
   @override
   State<UploadTaskPanel> createState() => _UploadTaskPanelState();
@@ -35,7 +39,9 @@ class _UploadTaskPanelState extends State<UploadTaskPanel> {
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: widget.controller,
     builder: (context, _) {
-      final tasks = widget.controller.tasks;
+      final tasks = widget.controller.tasks
+          .where((task) => widget.taskFilter?.call(task) ?? true)
+          .toList();
       if (tasks.isEmpty ||
           (widget.hideWhenAllSucceeded &&
               tasks.every((task) => task.phase == UploadTaskPhase.succeeded))) {

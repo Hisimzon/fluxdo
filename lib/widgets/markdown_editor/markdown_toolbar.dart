@@ -1172,19 +1172,12 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
     final tools = ids == null ? editorTools : resolveVisibleTools(ids);
 
     return [
-      for (final tool in tools)
-        if (anchored)
-          widget.toolsAnchor?.compactControl(_buildToolButton(tool)) ??
-              _buildToolButton(tool)
-        else
-          _buildToolButton(tool, anchored: false),
+      for (final tool in tools) _buildToolButton(tool, anchored: anchored),
     ];
   }
 
   Widget _buildToolButton(EditorTool tool, {bool anchored = true}) {
-    final icon = anchored
-        ? widget.toolsAnchor?.icon(tool.id, tool.icon) ?? tool.icon
-        : tool.icon;
+    final icon = tool.icon;
     final s = S.current;
     // 桌面端 tooltip 标注快捷键(如「粗体 (⌘B)」;移动端无物理键盘不标)
     final hint = PlatformUtils.isDesktop ? composerShortcutHint(tool.id) : null;

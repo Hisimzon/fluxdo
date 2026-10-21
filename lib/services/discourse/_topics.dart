@@ -523,30 +523,33 @@ mixin _TopicsMixin on _DiscourseServiceBase {
 
   /// 获取话题 AI 摘要。
   ///
-  /// Discourse v2026.5.0 起，生成摘要改为 POST（aa3e44b32cf），传入
-  /// `stream=true` 后通过 MessageBus 频道推送增量结果。
+  /// 对齐 Discourse AI 当前 Web 行为：
+  /// - 普通打开先 GET，直接复用已有缓存摘要；
+  /// - GET 携带 `stream=true`，兼容旧版首次生成时的流式响应；
+  /// - 当前版本没有缓存（GET 404/405）时再 POST 触发生成；
+  /// - 重新生成时跳过缓存探测，POST `stream=true` +
+  ///   `skip_age_check=true`，并通过 MessageBus 接收增量结果。
+  ///
+  /// 旧版 Discourse 仅提供 GET 生成接口，因此 POST 404/405 时仍保留
+  /// GET + stream 参数的兼容回退。
   Stream<TopicSummary?> watchTopicSummary(
     int topicId, {
     bool skipAgeCheck = false,
   }) async* {
+    final endpoint = '/discourse-ai/summarization/t/$topicId';
+
     final messageBus = MessageBusService();
     final channel = '/discourse-ai/summaries/topic/$topicId';
     final updates = StreamController<Map<String, dynamic>>();
-    int? lastMessageId;
 
     void onMessage(MessageBusMessage message) {
-      // 基线未建立时照常投递：MessageBus 已在 /__status 确认后按基线
-      // 过滤并重放暂存帧，到这里只需防止延迟投递造成的乱序。
       final data = message.data;
       if (!updates.isClosed && data is Map) {
-        final id = message.messageId;
-        if (lastMessageId == null || id > lastMessageId!) {
-          lastMessageId = id;
-          updates.add(Map<String, dynamic>.from(data));
-        }
+        updates.add(Map<String, dynamic>.from(data));
       }
     }
 
+    // 旧版 GET 也可能触发生成，必须在任何请求之前订阅，避免丢失分片。
     messageBus.subscribe(channel, onMessage);
 
     try {
@@ -555,52 +558,41 @@ mixin _TopicsMixin on _DiscourseServiceBase {
         requestData['skip_age_check'] = 'true';
       }
 
-      late Response<dynamic> response;
-      try {
-        response = await _dio.post(
-          '/discourse-ai/summarization/t/$topicId',
-          data: requestData,
-          options: Options(contentType: Headers.formUrlEncodedContentType),
-        );
-      } on DioException catch (e) {
-        final statusCode = e.response?.statusCode;
-        if (statusCode != 404 && statusCode != 405) {
-          rethrow;
+      Response<dynamic>? response;
+      if (!skipAgeCheck) {
+        try {
+          // 当前版本直接返回缓存；旧版无缓存时异步生成并返回 success，
+          // 两者都不能再重复 POST。404/405 才进入当前版本的生成路径。
+          response = await _dio.get(endpoint, queryParameters: requestData);
+        } on DioException catch (e) {
+          final statusCode = e.response?.statusCode;
+          if (statusCode != 404 && statusCode != 405) rethrow;
         }
+      }
 
-        // 兼容 v2026.5.0 之前仅支持 GET 的 Discourse。
-        response = await _dio.get(
-          '/discourse-ai/summarization/t/$topicId',
-          queryParameters: requestData,
-        );
+      if (response == null) {
+        try {
+          response = await _dio.post(
+            endpoint,
+            data: requestData,
+            options: Options(contentType: Headers.formUrlEncodedContentType),
+          );
+        } on DioException catch (e) {
+          final statusCode = e.response?.statusCode;
+          if (statusCode != 404 && statusCode != 405) rethrow;
+
+          // 兼容尚未提供 POST create 路由的旧版 Discourse。
+          response = await _dio.get(endpoint, queryParameters: requestData);
+        }
       }
 
       final responseData = response.data;
       if (responseData is Map && responseData['ai_topic_summary'] is Map) {
-        // 缓存命中：订阅尚未就绪就已拿到完整摘要，直接返回终态。
         yield TopicSummary.fromJson(
           Map<String, dynamic>.from(responseData['ai_topic_summary'] as Map),
         );
         return;
       }
-
-      // 以 -1 订阅时服务端首轮只回 /__status 建立游标，期间到达的实际
-      // 消息由 MessageBus 暂存，建立后按基线重放 —— POST 无需等待游标。
-      // 仍取一次基线用于 onMessage 的乱序兜底，但超时继续，不阻塞摘要。
-      unawaited(
-        messageBus
-            .waitForSubscription(channel)
-            .then((baseline) {
-              if (lastMessageId == null) {
-                lastMessageId = baseline;
-              }
-            })
-            .catchError((Object _) {
-              // 订阅被取消（页面退出/登出）或超时降级，基线兜底放弃即可。
-            }),
-      );
-
-      Map<String, dynamic>? latestSummaryJson;
 
       await for (final update in updates.stream) {
         if (update['error'] == true) {
@@ -611,25 +603,15 @@ mixin _TopicsMixin on _DiscourseServiceBase {
 
         final summaryData = update['ai_topic_summary'];
         if (summaryData is Map) {
-          latestSummaryJson = Map<String, dynamic>.from(summaryData);
-        }
-
-        final isDone = _isTopicSummaryDone(update['done']);
-        if (latestSummaryJson != null) {
-          final summaryJson = Map<String, dynamic>.from(latestSummaryJson!);
-          summaryJson['done'] = isDone;
+          final summaryJson = Map<String, dynamic>.from(summaryData);
+          summaryJson['done'] = update['done'];
           yield TopicSummary.fromJson(summaryJson);
         }
 
-        if (isDone) {
+        if (update['done'] == true) {
           return;
         }
       }
-    } on StateError {
-      // 订阅被取消（页面退出/登出）导致游标等待失败，属于正常清理，
-      // 不当作摘要生成失败。
-      yield null;
-      return;
     } on DioException catch (e) {
       if (e.response?.statusCode == 404 || e.response?.statusCode == 403) {
         yield null;
@@ -639,7 +621,7 @@ mixin _TopicsMixin on _DiscourseServiceBase {
       rethrow;
     } finally {
       messageBus.unsubscribe(channel, onMessage);
-      // 缓存命中或请求失败时还没有流监听者，等待 close 会使清理永久挂起。
+      // 缓存命中或请求失败时尚未监听 updates，等待 close 会使请求无法结束。
       unawaited(updates.close());
     }
   }
@@ -649,10 +631,6 @@ mixin _TopicsMixin on _DiscourseServiceBase {
     bool skipAgeCheck = false,
   }) {
     return watchTopicSummary(topicId, skipAgeCheck: skipAgeCheck).last;
-  }
-
-  bool _isTopicSummaryDone(dynamic value) {
-    return value == true || value == 'true' || value == 1;
   }
 
   /// 获取话题主贴的 HTML 内容

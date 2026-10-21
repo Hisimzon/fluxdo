@@ -11,10 +11,8 @@ import 'composer_chrome.dart';
 import 'composer_keyboard_dismiss.dart';
 import 'composer_input_handoff.dart';
 import 'composer_tools_panel.dart';
-import 'composer_tool_cell.dart' show ComposerToolGlyph;
 
 import 'package:flutter/services.dart';
-import 'package:m3e_ui/m3e_ui.dart';
 
 import 'composer_tool_style.dart';
 import 'composer_desktop_layout.dart';
@@ -57,8 +55,8 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
     with TickerProviderStateMixin {
   late final _animation = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 380),
-    reverseDuration: const Duration(milliseconds: 260),
+    duration: const Duration(milliseconds: 280),
+    reverseDuration: const Duration(milliseconds: 200),
   );
   late final _visualAnimation = AnimationController(vsync: this);
   late final _toolAnimation = _ToolTransitionAnimation(
@@ -69,18 +67,13 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
         : AnimationStatus.forward,
   );
   ComposerInputHandoff? _input;
-  final _contentKey = GlobalKey();
   final _focus = FocusNode();
-  List<String> _flightIds = [];
-  List<Widget> _flightChildren = [];
   bool _dragging = false;
   ComposerKeyboardDismissController? _keyboardGesture;
   bool _dragWasExpanded = false;
   double _expansionHeight = 400;
   double _gestureExtent = 400;
   double? _lastDragY;
-  Offset _sourceBottomLeft = Offset.zero;
-  Map<String, Rect> _sourceIcons = {};
   LocalHistoryEntry? _history;
   bool _presenting = false;
   Widget? _expandedTools;
@@ -131,24 +124,6 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
   void _changed() {
     final anchor = widget.toolsAnchor!;
     if (anchor.expanded && !_presenting) {
-      _sourceIcons = anchor.visibleIcons();
-      _sourceBottomLeft = anchor.rect?.bottomLeft ?? Offset.zero;
-      final byId = {for (final action in anchor.actions) action.keyId: action};
-      _flightIds = MediaQuery.disableAnimationsOf(context)
-          ? []
-          : _sourceIcons.keys.where(byId.containsKey).toList();
-      _flightChildren = [
-        for (final id in _flightIds)
-          IconTheme(
-            data: IconThemeData(
-              size: 20,
-              color: byId[id]!.active
-                  ? Theme.of(context).colorScheme.primary
-                  : Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-            child: ComposerToolGlyph(icon: byId[id]!.icon),
-          ),
-      ];
       _presenting = true;
       if (!PlatformUtils.isDesktop && !anchor.preservesKeyboard) {
         final viewport = context
@@ -164,8 +139,6 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
           anchor.contextPanel ??
           ComposerExpandedTools(
             anchor: anchor,
-            animation: _toolAnimation,
-            flyingIds: _flightIds.toSet(),
             onCollapseStart: PlatformUtils.isDesktop ? null : _startDrag,
             onCollapseUpdate: PlatformUtils.isDesktop ? null : _dragFromPanel,
             onCollapseEnd: PlatformUtils.isDesktop ? null : _endDrag,
@@ -202,7 +175,6 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
       return;
     }
     if (_input?.active == true && !_input!.readyToFinish) return;
-    _sourceIcons = {};
     _presenting = false;
     _expandedTools = null;
     final history = _history;
@@ -266,20 +238,15 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
     final duration = Duration(
       milliseconds:
           ((open
-                      ? 380
+                      ? 280
                       : (!PlatformUtils.isDesktop && _input?.dismissing == true
                             ? 160
-                            : 260)) *
+                            : 200)) *
                   remaining)
               .round(),
     );
-    // 输入区的高度不能越过端点。临界阻尼保留弹簧收尾，又不会在
-    // 交回 IME 时过冲、回弹；拖动期间仍直接更新几何进度。
-    final curve = M3eFlags.of(context).enabled
-        // 曲线使用完整响应周期，再按剩余路程缩短播放时间。否则很短的
-        // 反向收尾会截断弹簧响应，在最后一帧跳到端点。
-        ? M3eMotion.defaultEffects.curveFor(const Duration(milliseconds: 380))
-        : Curves.easeOutCubic;
+    // 轻量缓出，不叠加弹簧收尾；拖动与反向仍从当前进度接续。
+    const curve = Curves.easeOutCubic;
     if (open) {
       _animation.animateTo(target, duration: duration, curve: curve);
     } else {
@@ -469,54 +436,52 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
               focusNode: _focus,
               child: ConstrainedBox(
                 constraints: BoxConstraints(maxWidth: desktop ? 640 : 720),
-                child: ComposerIsland(
-                  expanded: _presenting,
-                  key: const ValueKey('composer-workbench'),
-                  toolsAnchor: widget.toolsAnchor,
-                  child: IconButtonTheme(
-                    data: IconButtonThemeData(
-                      style: composerToolButtonStyle(context),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(4),
-                      child: AnimatedBuilder(
-                        animation: Listenable.merge([_animation, _input]),
-                        builder: (context, _) {
-                          final revealed = takeover
-                              ? math.min(
-                                  math.max(0, available - baseHeight - 40),
-                                  _input!.replacementHeight +
-                                      _mobileLift * _animation.value,
-                                )
-                              : expansionHeight * _animation.value;
-                          if (widget.toolsAnchor?.preservesKeyboard == true) {
-                            final extent = widget.toolsAnchor!.contextExtent;
-                            if ((extent.value - revealed).abs() > .1) {
-                              WidgetsBinding.instance.addPostFrameCallback((_) {
-                                if (mounted &&
-                                    widget.toolsAnchor?.preservesKeyboard ==
-                                        true) {
-                                  extent.value = revealed.toDouble();
-                                }
-                              });
-                            }
+                child: AnimatedBuilder(
+                  animation: Listenable.merge([_animation, _input]),
+                  builder: (context, _) {
+                    final revealed = takeover
+                        ? math.min(
+                            math.max(0.0, available - baseHeight - 40),
+                            _input!.replacementHeight +
+                                _mobileLift * _animation.value,
+                          )
+                        : expansionHeight * _animation.value;
+                    if (widget.toolsAnchor?.preservesKeyboard == true) {
+                      final extent = widget.toolsAnchor!.contextExtent;
+                      if ((extent.value - revealed).abs() > .1) {
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (mounted &&
+                              widget.toolsAnchor?.preservesKeyboard == true) {
+                            extent.value = revealed.toDouble();
                           }
-                          final progress = expansionHeight > 0
-                              ? (revealed / expansionHeight).clamp(0.0, 1.0)
-                              : _animation.value;
-                          _visualAnimation.value = progress;
-                          if (_presenting &&
-                              !_dragging &&
-                              _animation.isDismissed &&
-                              (_input?.readyToFinish ?? true)) {
-                            WidgetsBinding.instance.addPostFrameCallback((_) {
-                              if (mounted && _animation.isDismissed) {
-                                _status(AnimationStatus.dismissed);
-                              }
-                            });
-                          }
-                          return SizedBox(
-                            key: _contentKey,
+                        });
+                      }
+                    }
+                    final progress = expansionHeight > 0
+                        ? (revealed / expansionHeight).clamp(0.0, 1.0)
+                        : _animation.value;
+                    _visualAnimation.value = progress;
+                    if (_presenting &&
+                        !_dragging &&
+                        _animation.isDismissed &&
+                        (_input?.readyToFinish ?? true)) {
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (mounted && _animation.isDismissed) {
+                          _status(AnimationStatus.dismissed);
+                        }
+                      });
+                    }
+                    return ComposerIsland(
+                      expansion: progress,
+                      key: const ValueKey('composer-workbench'),
+                      toolsAnchor: widget.toolsAnchor,
+                      child: IconButtonTheme(
+                        data: IconButtonThemeData(
+                          style: composerToolButtonStyle(context),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(4),
+                          child: SizedBox(
                             height: baseHeight + revealed,
                             child: Stack(
                               clipBehavior: Clip.hardEdge,
@@ -530,16 +495,29 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
                                     right: 0,
                                     top: handleHeight,
                                     height: expansionHeight,
-                                    child: IgnorePointer(
-                                      ignoring:
-                                          _toolAnimation.status !=
-                                          AnimationStatus.completed,
-                                      child: Opacity(
-                                        opacity: const Interval(
-                                          .22,
-                                          .82,
-                                        ).transform(progress),
-                                        child: _expandedTools!,
+                                    child: ClipRect(
+                                      clipper: _ToolsRevealClipper(revealed),
+                                      child: IgnorePointer(
+                                        ignoring:
+                                            _toolAnimation.status !=
+                                            AnimationStatus.completed,
+                                        child: Opacity(
+                                          opacity: const Interval(
+                                            .08,
+                                            .68,
+                                          ).transform(progress),
+                                          child: Transform.translate(
+                                            offset: Offset(
+                                              0,
+                                              MediaQuery.disableAnimationsOf(
+                                                    context,
+                                                  )
+                                                  ? 0
+                                                  : 6 * (1 - progress),
+                                            ),
+                                            child: _expandedTools!,
+                                          ),
+                                        ),
                                       ),
                                     ),
                                   ),
@@ -597,34 +575,13 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
                                       onDragCancel: _cancelDrag,
                                     ),
                                   ),
-                                if (_flightIds.isNotEmpty &&
-                                    (_animation.isAnimating ||
-                                        progress > 0 && progress < 1 ||
-                                        _dragging))
-                                  Positioned.fill(
-                                    child: IgnorePointer(
-                                      child: Flow(
-                                        delegate: _ToolFlights(
-                                          ids: _flightIds,
-                                          sources: _sourceIcons,
-                                          sourceBottomLeft: _sourceBottomLeft,
-                                          anchor: widget.toolsAnchor!,
-                                          contentKey: _contentKey,
-                                          progress: progress,
-                                          remainingHeight:
-                                              expansionHeight - revealed,
-                                        ),
-                                        children: _flightChildren,
-                                      ),
-                                    ),
-                                  ),
                               ],
                             ),
-                          );
-                        },
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
+                    );
+                  },
                 ),
               ),
             ),
@@ -635,8 +592,20 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
   }
 }
 
-/// 几何由键盘和手势共同决定；首尾帧仍保留运动方向，图标才能从
-/// 原槽位接入飞行层，不会在反向的第一帧重叠或消失。
+/// 保留网格的完整布局，只显露底栏上方已经展开的区域。
+class _ToolsRevealClipper extends CustomClipper<Rect> {
+  const _ToolsRevealClipper(this.height);
+  final double height;
+
+  @override
+  Rect getClip(Size size) => Rect.fromLTWH(0, 0, size.width, height);
+
+  @override
+  bool shouldReclip(_ToolsRevealClipper oldClipper) =>
+      height != oldClipper.height;
+}
+
+/// 几何由键盘和手势共同决定，交互状态也保留当前运动方向。
 class _ToolTransitionAnimation extends Animation<double>
     with AnimationWithParentMixin<double> {
   _ToolTransitionAnimation(this.parent, this.moving, this.direction);
@@ -648,75 +617,6 @@ class _ToolTransitionAnimation extends Animation<double>
   double get value => parent.value;
   @override
   AnimationStatus get status => moving() ? direction() : parent.status;
-}
-
-/// 用真实图标 Widget 迁移；布局只做一次，逐帧只更新绘制变换。
-class _ToolFlights extends FlowDelegate {
-  _ToolFlights({
-    required this.ids,
-    required this.sources,
-    required this.sourceBottomLeft,
-    required this.anchor,
-    required this.contentKey,
-    required this.progress,
-    required this.remainingHeight,
-  });
-  final List<String> ids;
-  final Map<String, Rect> sources;
-  final Offset sourceBottomLeft;
-  final ComposerToolsAnchor anchor;
-  final GlobalKey contentKey;
-  final double progress;
-  final double remainingHeight;
-  @override
-  BoxConstraints getConstraintsForChild(int i, BoxConstraints constraints) =>
-      const BoxConstraints.tightFor(
-        width: ComposerToolGlyph.extent,
-        height: ComposerToolGlyph.extent,
-      );
-  @override
-  void paintChildren(FlowPaintingContext context) {
-    final content = contentKey.currentContext?.findRenderObject();
-    if (content is! RenderBox || !content.hasSize) return;
-    final offset = content.localToGlobal(Offset.zero);
-    // 只测一次浮岛的位置；不再逐帧遍历每个来源图标的全部祖先裁剪链。
-    final sourceShift =
-        (anchor.rect?.bottomLeft ?? sourceBottomLeft) - sourceBottomLeft;
-    for (var i = 0; i < ids.length; i++) {
-      final id = ids[i];
-      final target = anchor.targets[id]?.currentContext?.findRenderObject();
-      if (target is! RenderBox || !target.attached || !target.hasSize) continue;
-      final destination =
-          (target.localToGlobal(Offset.zero) - Offset(0, remainingHeight)) &
-          target.size;
-      final start = sources[id]!.shift(sourceShift);
-      final delay = math.min(i, 5) * .012;
-      final t = Interval(
-        .04 + delay,
-        .92 + delay,
-        curve: Curves.linear,
-      ).transform(progress);
-      // FaIcon 的字形宽度不等于字号，不能把字形边界拉伸到方形容器。
-      // 插值中心与字号，保持两轴同比例，首尾才能与原图标无缝交接。
-      final center = Offset.lerp(start.center, destination.center, t)! - offset;
-      final extent = start.height + (destination.height - start.height) * t;
-      final scale = extent / ComposerToolGlyph.extent;
-      context.paintChild(
-        i,
-        transform: Matrix4.identity()
-          ..translateByDouble(
-            center.dx - extent / 2,
-            center.dy - extent / 2,
-            0.0,
-            1,
-          )
-          ..scaleByDouble(scale, scale, 1, 1),
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _ToolFlights oldDelegate) => true;
 }
 
 class _WorkbenchViewport extends InheritedWidget {

@@ -5,6 +5,7 @@ import 'package:fluxdo/models/draft.dart';
 import 'package:fluxdo/services/discourse/discourse_service.dart';
 import 'package:fluxdo/services/draft_controller.dart';
 import 'package:fluxdo/services/local_draft_store.dart';
+
 import '../helpers/memory_draft_store.dart';
 
 class DraftService extends Fake implements DiscourseService {
@@ -55,6 +56,83 @@ const a = DraftData(reply: 'A', action: 'reply');
 const b = DraftData(reply: 'B', action: 'reply');
 
 void main() {
+  testWidgets('删除旧草稿后继续写作仍可收取和保存最新正文', (tester) async {
+    final service = DraftService();
+    final store = MemoryDraftStore();
+    var visible = a;
+    final c = DraftController(
+      draftKey: 'topic_1',
+      service: service,
+      localStore: store,
+      accountIdResolver: () async => 'test',
+      connectionStream: const Stream.empty(),
+      isConnected: () => true,
+      currentEditorData: () => visible,
+    );
+    addTearDown(c.dispose);
+    final deletion = c.deleteDraft();
+    await tester.pump();
+    await deletion;
+    expect(c.currentDraft, isNull);
+
+    c.scheduleSave(a);
+    visible = b;
+    final refresh = c.retryPending();
+    await tester.pump();
+    await refresh;
+    expect(c.currentDraft?.data.reply, b.reply);
+    expect(service.server?.data.reply, b.reply);
+    expect(store.entry?.data.reply, b.reply);
+  });
+
+  for (final refreshing in [false, true]) {
+    testWidgets('舍弃时不能从编辑器重新收取旧正文 refreshing=$refreshing', (tester) async {
+      final service = DraftService();
+      final store = MemoryDraftStore();
+      final c = DraftController(
+        draftKey: 'topic_1',
+        service: service,
+        localStore: store,
+        accountIdResolver: () async => 'test',
+        connectionStream: const Stream.empty(),
+        isConnected: () => true,
+        currentEditorData: () => a,
+      );
+      addTearDown(c.dispose);
+      Completer<Draft?>? response;
+      Future<void>? refresh;
+      if (refreshing) {
+        service.server = const Draft(draftKey: 'topic_1', data: a, sequence: 1);
+        final load = c.loadDraft();
+        await tester.pump();
+        await load;
+        response = Completer<Draft?>();
+        service.get = () => response!.future;
+        refresh = c.retryPending();
+        await tester.pump();
+      } else {
+        // 预填内容的创建页跳过 loadDraft，舍弃时才首次核对云端。
+        c.scheduleSave(a);
+        await tester.pump();
+      }
+
+      final deletion = c.deleteDraft();
+      if (response != null) {
+        service.get = null;
+        response.complete(service.server);
+      }
+      await tester.pump();
+      if (refresh != null) await refresh;
+      await deletion;
+
+      expect(service.requests, isEmpty, reason: '舍弃不能重新上传编辑器里的旧内容');
+      expect(service.deletes, 1);
+      expect(service.server, isNull);
+      expect(store.entry, isNull);
+      expect(c.currentDraft, isNull);
+    });
+  }
+
   testWidgets('未加载草稿的首次保存也不覆盖同 sequence 的未知云端版本', (tester) async {
     final service = DraftService()
       ..server = const Draft(draftKey: 'topic_1', data: b, sequence: 0);

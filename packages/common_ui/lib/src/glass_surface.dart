@@ -93,6 +93,37 @@ class GlassRecipe {
   /// 当前亮度下的色罩灰阶
   double tintGrayFor(bool isDark) => isDark ? tintDarkGray : tintLightGray;
 
+  /// 在同一个表面上连续改变材质，避免叠加两层背景模糊。
+  static GlassRecipe lerp(GlassRecipe a, GlassRecipe b, double t) {
+    if (t <= 0) return a;
+    if (t >= 1) return b;
+    double mix(double from, double to) => ui.lerpDouble(from, to, t)!;
+    return GlassRecipe(
+      blurSigmaPx: mix(a.blurSigmaPx, b.blurSigmaPx),
+      tintAlpha: mix(a.tintAlpha, b.tintAlpha),
+      tintDarkAlpha: mix(a.tintAlphaFor(true), b.tintAlphaFor(true)),
+      tintLightGray: mix(a.tintLightGray, b.tintLightGray),
+      tintDarkGray: mix(a.tintDarkGray, b.tintDarkGray),
+      saturation: mix(a.saturation, b.saturation),
+      brightness: mix(a.brightness, b.brightness),
+      contrast: mix(a.contrast, b.contrast),
+      refractionHeight: mix(a.refractionHeight, b.refractionHeight),
+      refractionAmount: mix(a.refractionAmount, b.refractionAmount),
+      depthEffect: mix(a.depthEffect, b.depthEffect),
+      chromaticAberration: mix(a.chromaticAberration, b.chromaticAberration),
+      highlightAlpha: mix(a.highlightAlpha, b.highlightAlpha),
+      darkHighlightMultiplier: mix(
+        a.darkHighlightMultiplier,
+        b.darkHighlightMultiplier,
+      ),
+      noise: mix(a.noise, b.noise),
+      postBlurSigma: mix(a.postBlurSigma, b.postBlurSigma),
+      fallbackEdgeWidth: mix(a.fallbackEdgeWidth, b.fallbackEdgeWidth),
+      fallbackLightAlpha: mix(a.fallbackLightAlpha, b.fallbackLightAlpha),
+      fallbackDarkAlpha: mix(a.fallbackDarkAlpha, b.fallbackDarkAlpha),
+    );
+  }
+
   /// 悬浮导航胶囊。
   ///
   /// 背景细节柔化成色块，色罩保留透色；轮廓光独立绘制，不依赖

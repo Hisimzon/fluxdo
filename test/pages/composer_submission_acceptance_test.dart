@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:fluxdo/plugins/site_plugin.dart';
 import 'package:fluxdo/plugins/plugin_context.dart';
@@ -9,6 +10,9 @@ import 'dart:convert';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:fluxdo/widgets/markdown_editor/image_upload_dialog.dart';
+import 'package:fluxdo/widgets/markdown_editor/uploads/upload_task_panel.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -69,8 +73,9 @@ Widget _editPage() => EditTopicPage(
 Future<void> _pumpPage(
   WidgetTester tester,
   Widget page,
-  List<RequestOptions> requests,
-) async {
+  List<RequestOptions> requests, {
+  String expectedRaw = _raw,
+}) async {
   PlatformUtils.debugDesktopOverride = false;
   addTearDown(() => PlatformUtils.debugDesktopOverride = null);
   SharedPreferences.setMockInitialValues({'pref_use_rich_composer': true});
@@ -88,6 +93,12 @@ Future<void> _pumpPage(
               ? {'post': _postJson}
               : request.path == '/posts/21.json'
               ? _postJson
+              : request.path == '/uploads.json'
+              ? {
+                  'short_url': 'upload://empty-title.png',
+                  'url': 'https://mock.example.test/empty-title.png',
+                  'original_filename': '空标题.png',
+                }
               : {'success': 'OK', 'draft': null, 'draft_sequence': 0},
         ),
       );
@@ -151,7 +162,7 @@ Future<void> _pumpPage(
     if (editors.length == 1 &&
         docToMarkdown((editors.single.widget as FluxdoEditor).state.blocks)
                 .trim() ==
-            _raw)
+            expectedRaw)
       return;
   }
   fail('真实页面未加载预期富文本文档');
@@ -182,6 +193,115 @@ class _DelayedSubmitPlugin extends SitePlugin {
 }
 
 void main() {
+  for (final body in ['', _raw]) {
+    testWidgets('空标题未聚焦正文也能选择并上传图片，上传不挤动标题 body=$body', (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final directory = await tester.runAsync(
+        () => Directory.systemTemp.createTemp('composer-upload-'),
+      );
+      final image = File('${directory!.path}/空标题.png');
+      await tester.runAsync(
+        () => image.writeAsBytes(
+          base64Decode(
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=',
+          ),
+        ),
+      );
+      addTearDown(() => directory.delete(recursive: true));
+      const picker = MethodChannel('plugins.flutter.io/image_picker');
+      var picked = 0;
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(picker, (
+        _,
+      ) async {
+        picked++;
+        for (final state in [
+          AppLifecycleState.inactive,
+          AppLifecycleState.hidden,
+          AppLifecycleState.paused,
+          AppLifecycleState.hidden,
+          AppLifecycleState.inactive,
+          AppLifecycleState.resumed,
+        ]) {
+          tester.binding.handleAppLifecycleStateChanged(state);
+        }
+        return [image.path];
+      });
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          picker,
+          null,
+        ),
+      );
+      final requests = <RequestOptions>[];
+      await _pumpPage(
+        tester,
+        CreateTopicPage(initialContent: body),
+        requests,
+        expectedRaw: body,
+      );
+      final title = find.byType(TextFormField).first;
+      expect(tester.widget<TextFormField>(title).controller!.text, isEmpty);
+      final before = tester.getTopLeft(title).dy;
+      await tester.tap(find.byTooltip('上传图片').first);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 100)),
+      );
+      await tester.pump();
+      expect(picked, 1);
+      expect(find.byType(ImageUploadDialog), findsOneWidget);
+      Navigator.of(tester.element(find.byType(ImageUploadDialog)))
+          .pop(ImageUploadResult(path: image.path, originalName: '空标题.png'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.byType(UploadTaskCard), findsOneWidget);
+      expect(tester.getTopLeft(title).dy, closeTo(before, 1));
+      expect(tester.getTopLeft(title).dy, lessThan(220));
+      expect(find.textContaining(S.current.editorUploads_title), findsNothing);
+      final editor = tester
+          .widget<FluxdoEditor>(find.byType(FluxdoEditor))
+          .state;
+      editor.undo();
+      await tester.pump();
+      expect(
+        find.textContaining(S.current.editorUploads_title),
+        findsOneWidget,
+      );
+      expect(tester.getTopLeft(title).dy, closeTo(before, 1));
+      editor.redo();
+      await tester.pump();
+      expect(find.textContaining(S.current.editorUploads_title), findsNothing);
+      expect(tester.getTopLeft(title).dy, closeTo(before, 1));
+      for (var i = 0; i < 50; i++) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 20)),
+        );
+        await tester.pump(const Duration(milliseconds: 100));
+        if (find.byType(UploadTaskCard).evaluate().isEmpty) break;
+      }
+      expect(requests.where((r) => r.path == '/uploads.json'), hasLength(1));
+      expect(find.byType(UploadTaskCard), findsNothing);
+      final rich = tester.state<RichComposerEditorState>(
+        find.byType(RichComposerEditor),
+      );
+      expect(rich.hasPendingUploads, false);
+      expect(rich.flushToController(), true);
+      expect(
+        tester
+            .widget<RichComposerEditor>(find.byType(RichComposerEditor))
+            .controller
+            .text,
+        contains('upload://empty-title.png'),
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(milliseconds: 100));
+    });
+  }
+
   testWidgets('真实回复等待插件确认时输入，保留最新正文并要求重试，不发送旧 raw', (tester) async {
     final plugin = _DelayedSubmitPlugin();
     PluginRegistry.overridePlugins([plugin]);

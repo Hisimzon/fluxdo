@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 
-/// 网格与迁移层共用同一图标框；宽字形按自然宽度居中，不被方框压缩。
+/// 网格图标框；宽字形按自然宽度居中，不被方框压缩。
 class ComposerToolGlyph extends StatelessWidget {
   const ComposerToolGlyph({super.key, required this.icon});
   static const extent = 20.0;

@@ -1,4 +1,5 @@
 import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -85,7 +86,7 @@ void main() {
   for (final symbol in [FontAwesomeIcons.bold, FontAwesomeIcons.link]) {
     for (final desktop in [true, false]) {
       testWidgets(
-        '底栏连续展开、工具元素落位、自定义后收起 desktop=$desktop glyph=${symbol.data.codePoint}',
+        '底栏轻量展开、工具原位渐显、自定义后收起 desktop=$desktop glyph=${symbol.data.codePoint}',
         (tester) async {
           tester.view.devicePixelRatio = 1;
           tester.view.physicalSize = Size(desktop ? 1000 : 390, 760);
@@ -93,13 +94,12 @@ void main() {
           addTearDown(tester.view.resetDevicePixelRatio);
           await tester.runAsync(() async {
             final loader =
-                FontLoader(
-                  'packages/font_awesome_flutter/FontAwesomeSolid',
-                )..addFont(
-                  rootBundle.load(
-                    'packages/font_awesome_flutter/lib/fonts/Font-Awesome-7-Free-Solid-900.otf',
-                  ),
-                );
+                FontLoader('packages/font_awesome_flutter/FontAwesomeSolid')
+                  ..addFont(
+                    rootBundle.load(
+                      'packages/font_awesome_flutter/lib/fonts/Font-Awesome-7-Free-Solid-900.otf',
+                    ),
+                  );
             await loader.load();
           });
           final anchor = ComposerToolsAnchor();
@@ -149,10 +149,7 @@ void main() {
                                 children: [
                                   IconButton(
                                     onPressed: () {},
-                                    icon: anchor.icon(
-                                      'bold',
-                                      FaIcon(symbol, size: 16),
-                                    ),
+                                    icon: FaIcon(symbol, size: 16),
                                   ),
                                 ],
                               ),
@@ -174,25 +171,26 @@ void main() {
           );
           await tester.pumpAndSettle();
           final origin = anchor.rect!;
-          final originalGlyph = anchor.visibleIcons()['bold']!;
+          final originalGlyph = tester.getRect(find.byType(FaIcon));
           expect(
             (originalGlyph.width - originalGlyph.height).abs(),
             greaterThan(1),
             reason: '使用真实非正方形字形，避免方形测试图标掩盖形变',
           );
-          final flyingIcon = find.descendant(
-            of: find.byType(Flow),
+          final gridIcon = find.descendant(
+            of: find.byKey(const ValueKey('composer-tool-bold')),
             matching: find.byType(FaIcon),
           );
           void expectUniformScale() {
             final transform = tester
-                .renderObject<RenderBox>(flyingIcon)
+                .renderObject<RenderBox>(gridIcon)
                 .getTransformTo(null);
             expect(
               transform.entry(0, 0),
               closeTo(transform.entry(1, 1), .0001),
-              reason: '迁移图标两轴必须等比缩放',
+              reason: '网格图标保持自然字形，不参与跨区域缩放',
             );
+            expect(find.byType(Flow), findsNothing);
           }
 
           final barrierCount = find.byType(ModalBarrier).evaluate().length;
@@ -231,13 +229,6 @@ void main() {
           await tester.pump();
           expectUniformScale();
           if (desktop) {
-            final firstFrame = tester.getRect(flyingIcon);
-            expect(firstFrame.width, closeTo(originalGlyph.width, .1));
-            expect(firstFrame.height, closeTo(originalGlyph.height, .1));
-            expect(
-              (firstFrame.center - originalGlyph.center).distance,
-              lessThan(.1),
-            );
             expect(anchor.rect!.height, closeTo(origin.height, .1));
           }
           await tester.pump(const Duration(milliseconds: 170));
@@ -341,22 +332,9 @@ void main() {
           await tester.pump();
           expect(pinned, isTrue);
           expect(ran, isFalse);
-          final destinationGlyph = tester.getRect(
-            find.descendant(
-              of: find.byKey(anchor.targets['bold']!),
-              matching: find.byType(FaIcon),
-            ),
-          );
           await tester.sendKeyEvent(LogicalKeyboardKey.escape);
           await tester.pump();
           expectUniformScale();
-          final returnStart = tester.getRect(flyingIcon);
-          expect(returnStart.width, closeTo(destinationGlyph.width, .1));
-          expect(returnStart.height, closeTo(destinationGlyph.height, .1));
-          expect(
-            (returnStart.center - destinationGlyph.center).distance,
-            lessThan(.1),
-          );
           await tester.pump(const Duration(milliseconds: 20));
           expectUniformScale();
           final customizeVisibility = find.byKey(
@@ -372,7 +350,7 @@ void main() {
           expect(
             anchor.animation!.value,
             greaterThan(0),
-            reason: '工具仍在返程时，入口已完全让位',
+            reason: '面板仍在收起时，入口已完全让位',
           );
           await tester.pumpAndSettle();
           expect(anchor.rect!.height, closeTo(origin.height, .1));

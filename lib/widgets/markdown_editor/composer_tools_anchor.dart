@@ -7,7 +7,7 @@ import 'composer_tool_action.dart';
 import '../../l10n/s.dart';
 import 'composer_tool_style.dart';
 
-/// 工具栏两种编辑模式共用的转场来源；只记录实际可见的图标。
+/// 工具栏两种编辑模式共用的展开状态与交互会话。
 class ComposerToolsAnchor extends ChangeNotifier {
   List<ComposerToolAction> actions = const [];
   List<String> pinnedIds = const [];
@@ -98,66 +98,10 @@ class ComposerToolsAnchor extends ChangeNotifier {
   }
 
   final surfaceKey = GlobalKey();
-  final _icons = <String, GlobalKey>{};
-
-  Widget icon(String id, Widget child) => AnimatedBuilder(
-    animation: this,
-    builder: (_, _) => Opacity(
-      opacity: presenting ? 0 : 1,
-      child: KeyedSubtree(
-        key: _icons.putIfAbsent(id, GlobalKey.new),
-        child: child,
-      ),
-    ),
-  );
-
-  /// 迁移中的工具保留布局位置，但不能留下不可见的点击区域。
-  Widget compactControl(Widget child) => AnimatedBuilder(
-    animation: this,
-    builder: (_, child) => IgnorePointer(
-      ignoring: presenting,
-      child: ExcludeFocus(
-        excluding: presenting,
-        child: Opacity(opacity: presenting ? 0 : 1, child: child),
-      ),
-    ),
-    child: child,
-  );
-
   Rect? get rect {
     final box = surfaceKey.currentContext?.findRenderObject();
     if (box is! RenderBox || !box.hasSize) return null;
     return box.localToGlobal(Offset.zero) & box.size;
-  }
-
-  Map<String, Rect> visibleIcons() {
-    final result = <String, Rect>{};
-    for (final entry in _icons.entries) {
-      final box = entry.value.currentContext?.findRenderObject();
-      if (box is! RenderBox || !box.attached || !box.hasSize) continue;
-      final iconRect = MatrixUtils.transformRect(
-        box.getTransformTo(null),
-        Offset.zero & box.size,
-      );
-      var visible = iconRect;
-      RenderObject descendant = box;
-      for (var parent = box.parent; parent != null; parent = parent.parent) {
-        final clip = parent.describeApproximatePaintClip(descendant);
-        if (clip != null) {
-          visible = visible.intersect(
-            MatrixUtils.transformRect(parent.getTransformTo(null), clip),
-          );
-        }
-        descendant = parent;
-      }
-      // 半个图标不参与飞行，避免把滚动区外的工具带进来。
-      if (!visible.isEmpty &&
-          visible.width >= iconRect.width - .5 &&
-          visible.height >= iconRect.height - .5) {
-        result[entry.key] = iconRect;
-      }
-    }
-    return result;
   }
 }
 
@@ -223,64 +167,77 @@ class ComposerCompactTools extends StatelessWidget {
     return AnimatedBuilder(
       animation: controller,
       child: child,
-      builder: (_, child) => Stack(
-        fit: StackFit.passthrough,
-        children: [
-          IgnorePointer(
-            ignoring: controller.presenting,
-            child: ExcludeFocus(
-              excluding: controller.presenting,
-              child: Opacity(
-                opacity: controller.presenting ? 0 : 1,
-                child: child,
+      builder: (_, child) => AnimatedBuilder(
+        animation: controller.animation ?? const AlwaysStoppedAnimation(0.0),
+        builder: (_, _) => Stack(
+          fit: StackFit.passthrough,
+          children: [
+            IgnorePointer(
+              ignoring: controller.presenting,
+              child: ExcludeFocus(
+                excluding: controller.presenting,
+                child: Opacity(
+                  key: const ValueKey('composer-compact-visibility'),
+                  opacity:
+                      1 -
+                      const Interval(
+                        0,
+                        .32,
+                        curve: Curves.easeOut,
+                      ).transform(controller.animation?.value ?? 0),
+                  child: child,
+                ),
               ),
             ),
-          ),
-          if (controller.presenting)
-            Positioned.fill(
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: AnimatedBuilder(
-                  animation:
-                      controller.animation ?? const AlwaysStoppedAnimation(1.0),
-                  builder: (_, child) {
-                    // 工具离开后才显示；收起前 20% 就让出原位置，避免返程重叠。
-                    final opacity = const Interval(
-                      .8,
-                      1,
-                      curve: Curves.easeInCubic,
-                    ).transform(controller.animation?.value ?? 1);
-                    final interactive = controller.expanded && opacity == 1;
-                    return IgnorePointer(
-                      ignoring: !interactive,
-                      child: ExcludeFocus(
-                        excluding: !interactive,
-                        child: Opacity(
-                          key: const ValueKey('composer-customize-visibility'),
-                          opacity: opacity,
-                          child: child,
+            if (controller.presenting)
+              Positioned.fill(
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: AnimatedBuilder(
+                    animation:
+                        controller.animation ??
+                        const AlwaysStoppedAnimation(1.0),
+                    builder: (_, child) {
+                      // 与格式按钮错开淡入淡出，收起时先让出自定义入口。
+                      final opacity = const Interval(
+                        .8,
+                        1,
+                        curve: Curves.easeInCubic,
+                      ).transform(controller.animation?.value ?? 1);
+                      final interactive = controller.expanded && opacity == 1;
+                      return IgnorePointer(
+                        ignoring: !interactive,
+                        child: ExcludeFocus(
+                          excluding: !interactive,
+                          child: Opacity(
+                            key: const ValueKey(
+                              'composer-customize-visibility',
+                            ),
+                            opacity: opacity,
+                            child: child,
+                          ),
                         ),
+                      );
+                    },
+                    child: TextButton.icon(
+                      onPressed: controller.toggleCustomizing,
+                      icon: Icon(
+                        controller.customizing
+                            ? Icons.check
+                            : Icons.edit_outlined,
+                        size: 16,
                       ),
-                    );
-                  },
-                  child: TextButton.icon(
-                    onPressed: controller.toggleCustomizing,
-                    icon: Icon(
-                      controller.customizing
-                          ? Icons.check
-                          : Icons.edit_outlined,
-                      size: 16,
-                    ),
-                    label: Text(
-                      controller.customizing
-                          ? S.current.common_done
-                          : S.current.toolPanel_customize,
+                      label: Text(
+                        controller.customizing
+                            ? S.current.common_done
+                            : S.current.toolPanel_customize,
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }

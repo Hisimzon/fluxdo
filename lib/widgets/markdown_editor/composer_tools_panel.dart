@@ -1,5 +1,7 @@
 import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+
 import 'composer_chrome.dart';
 import 'composer_tool_action.dart';
 import 'composer_tool_cell.dart';
@@ -30,16 +32,12 @@ class ComposerExpandedTools extends StatefulWidget {
   const ComposerExpandedTools({
     super.key,
     required this.anchor,
-    required this.animation,
-    required this.flyingIds,
     this.onCollapseStart,
     this.onCollapseUpdate,
     this.onCollapseEnd,
     this.onCollapseCancel,
   });
   final ComposerToolsAnchor anchor;
-  final Animation<double> animation;
-  final Set<String> flyingIds;
   final GestureDragStartCallback? onCollapseStart;
 
   /// 返回未被面板消耗的距离，用于反向还原后继续滚动工具列表。
@@ -172,18 +170,7 @@ class _ComposerExpandedToolsState extends State<ComposerExpandedTools> {
           onLongPress: canPin && !widget.anchor.customizing
               ? widget.anchor.toggleCustomizing
               : null,
-          icon: AnimatedBuilder(
-            animation: widget.animation,
-            builder: (_, child) => Opacity(
-              opacity:
-                  widget.flyingIds.contains(action.keyId) &&
-                      widget.animation.status != AnimationStatus.completed
-                  ? 0
-                  : 1,
-              child: child,
-            ),
-            child: icon,
-          ),
+          icon: icon,
           label: action.label,
           pinned: widget.anchor.customizing
               ? action.isPinned?.call() == true
@@ -266,7 +253,7 @@ class _ComposerExpandedToolsState extends State<ComposerExpandedTools> {
                         if (nested)
                           grid(_parent!.children)
                         else ...[
-                          // 固定工具保留原顺序和起始位置，继续承接底栏的迁移动画。
+                          // 固定工具保留底栏顺序，方便展开后继续定位。
                           if (_initialPinned.isNotEmpty) grid(_initialPinned),
                           for (final entry in groups.entries)
                             if (entry.value.isNotEmpty) ...[
@@ -289,9 +276,9 @@ class _ComposerExpandedToolsState extends State<ComposerExpandedTools> {
                                           .textTheme
                                           .labelMedium
                                           ?.copyWith(
-                                            color: Theme.of(
-                                              context,
-                                            ).colorScheme.onSurfaceVariant,
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .onSurfaceVariant,
                                           ),
                                     ),
                                   ),

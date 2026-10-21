@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
+
 import '../models/draft.dart';
 import 'connectivity_service.dart';
 import 'discourse/discourse_service.dart';
@@ -57,6 +59,7 @@ class DraftController {
   bool get hasConflict => _conflict;
   bool _needsRemoteCheck = true;
   bool _pendingDelete = false;
+  bool _explicitDelete = false;
   bool _requested = false;
   bool _forceNext = false;
   bool _deleting = false;
@@ -166,6 +169,7 @@ class DraftController {
       return false;
     }
     final hadContent = _latestData?.hasContent == true;
+    _explicitDelete = false;
     _latestData = data.copyWith(
       tags: data.tags == null ? null : List.unmodifiable(data.tags!),
       recipients: data.recipients == null
@@ -375,7 +379,8 @@ class DraftController {
         return;
       }
       // 富文本镜像有防抖；远端返回时再收一次当前正文，不能漏掉等待期间的输入。
-      if (!_loading && !_disposed && !_disabled) {
+      // 舍弃后编辑器仍保留旧正文，不能用它覆盖已排队的删除意图。
+      if (!_loading && !_disposed && !_disabled && !_explicitDelete) {
         final current = currentEditorData?.call();
         if (current != null) _accept(current);
       }
@@ -428,7 +433,11 @@ class DraftController {
   Future<void> _adoptRemote(Draft? remote) async {
     final previous = _latestData;
     final data = remote?.data ?? const DraftData();
-    final changed = previous?.contentFingerprint != data.contentFingerprint;
+    // 空编辑器的 action/category 等元数据不代表远端正文发生变化。
+    // 原生选图器返回触发刷新时，空 -> 空不能重建宿主，丢掉待确认的上传。
+    final changed =
+        (previous?.hasContent == true || data.hasContent) &&
+        previous?.contentFingerprint != data.contentFingerprint;
     _latestData = data;
     _revision++;
     final revision = _revision;
@@ -437,6 +446,7 @@ class DraftController {
     _lastSavedFingerprint = remote?.data.contentFingerprint;
     _lastAttemptFingerprint = null;
     _pendingDelete = false;
+    _explicitDelete = false;
     _conflict = false;
     _needsRemoteCheck = false;
     if (changed && !_loading && !_disposed && !_disabled) {
@@ -469,6 +479,7 @@ class DraftController {
 
   Future<void> deleteDraft() {
     _cancelTimers();
+    _explicitDelete = true;
     _latestData = const DraftData();
     _revision++;
     _pendingDelete = true;

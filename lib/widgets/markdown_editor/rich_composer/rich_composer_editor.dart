@@ -12,6 +12,7 @@ library;
 import 'insertion_bookmark.dart';
 
 import '../composer_chrome.dart';
+import '../composer_panel_height.dart';
 
 import 'dart:async';
 
@@ -184,6 +185,7 @@ class RichComposerEditor extends StatefulWidget {
     super.key,
     required this.controller,
     this.focusNode,
+    this.autofocus = true,
     this.hintText = '',
     this.header,
     this.metaBar,
@@ -203,6 +205,9 @@ class RichComposerEditor extends StatefulWidget {
   final TextEditingController controller;
 
   final FocusNode? focusNode;
+
+  /// 是否在挂载后立即聚焦正文。创建页可关闭，等待用户选择输入位置。
+  final bool autofocus;
   final String hintText;
 
   /// 滚动头部(标题/标签等元数据区):放进编辑区滚动容器顶部,与正文
@@ -551,6 +556,25 @@ class RichComposerEditorState extends State<RichComposerEditor> {
         return UploadTaskCard(controller: _uploads, task: current.single);
       },
     );
+  }
+
+  bool _needsUploadPanel(UploadTask task) {
+    if (task.phase == UploadTaskPhase.succeeded) return false;
+    final editor = _editor;
+    if (editor == null) return true;
+    final blockId = _uploadBlocks[task.id];
+    if (blockId != null &&
+        _placeholderNodes.contains(blockId) &&
+        editor.indexOfBlock(blockId) >= 0) {
+      return false;
+    }
+    final gridId = _uploadGrids[task.id];
+    final gridIndex = gridId == null ? -1 : editor.indexOfBlock(gridId);
+    if (gridIndex >= 0) {
+      final block = editor.blocks[gridIndex];
+      if (block is IslandBlock && block.node is ImageGridNode) return false;
+    }
+    return true;
   }
 
   void _removeUpload(String id) {
@@ -2117,15 +2141,11 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     }
   }
 
-  /// 面板高度:键盘高度已知用键盘高(等高切换),否则 emojiPanelHeight
-  /// 兜底;都含底部安全区。
-  double get _panelHeight {
-    final safeBottom = MediaQuery.viewPaddingOf(context).bottom;
-    final kb = _panelController.keyboardHeight;
-    return kb > 0
-        ? max(kb, safeBottom)
-        : max(widget.emojiPanelHeight, safeBottom);
-  }
+  double get _panelHeight => resolveComposerPanelHeight(
+    keyboardHeight: _panelController.keyboardHeight,
+    fallbackHeight: widget.emojiPanelHeight,
+    safeBottom: MediaQuery.viewPaddingOf(context).bottom,
+  );
 
   /// 构建(或复用)EmojiStickerPanel 缓存实例,docked 与桌面悬浮弹层共用
   Widget _ensureEmojiPanelChild() {
@@ -3815,9 +3835,6 @@ class RichComposerEditorState extends State<RichComposerEditor> {
                         controller: _scrollController,
                         slivers: [
                           SliverToBoxAdapter(child: _recoveryBanner()),
-                          SliverToBoxAdapter(
-                            child: UploadTaskPanel(controller: _uploads),
-                          ),
                           if (widget.header != null)
                             SliverToBoxAdapter(child: widget.header),
                           if (_isDesktop && widget.metaBar != null)
@@ -3826,6 +3843,17 @@ class RichComposerEditorState extends State<RichComposerEditor> {
                                 child: widget.metaBar!,
                               ),
                             ),
+                          SliverToBoxAdapter(
+                            // 撤销可能暂时移走占位；只兜底展示没有正文卡片的任务。
+                            // 放在头部之后，出现时也不能把标题推离顶部安全区域。
+                            child: ListenableBuilder(
+                              listenable: editor,
+                              builder: (context, _) => UploadTaskPanel(
+                                controller: _uploads,
+                                taskFilter: _needsUploadPanel,
+                              ),
+                            ),
+                          ),
                           SliverLayoutBuilder(
                             builder: (context, sliver) => SliverToBoxAdapter(
                               // Listener:表情面板开着时点编辑区任意处 → 切回键盘态
@@ -3922,6 +3950,11 @@ class RichComposerEditorState extends State<RichComposerEditor> {
                                                     ),
                                             caretViewportInsets:
                                                 EdgeInsets.only(
+                                                  // 创建/编辑页的顶栏覆盖在滚动区上方。
+                                                  top:
+                                                      ComposerChromeScope.topInsetOf(
+                                                        context,
+                                                      ),
                                                   bottom:
                                                       bottomInset +
                                                       _toolsAnchor
@@ -3943,7 +3976,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
                                                 _objectSelection.update,
                                             onObjectMenuRequested:
                                                 _onObjectMenuRequested,
-                                            autofocus: true,
+                                            autofocus: widget.autofocus,
                                             focusNode: _editorFocus,
                                             nodeFactory: _nodeFactory ??=
                                                 buildComposerNodeFactory(
@@ -4154,7 +4187,11 @@ class RichComposerEditorState extends State<RichComposerEditor> {
               _returningToKeyboard = false;
             } else if (wasCustom) {
               _returningToKeyboard =
-                  MediaQuery.viewInsetsOf(context).bottom == 0;
+                  MediaQuery.viewInsetsOf(context).bottom == 0 &&
+                  (_panelController.keyboardHeight == 0 ||
+                      isComposerDockedKeyboardHeight(
+                        _panelController.keyboardHeight,
+                      ));
             }
             _currentPanel = next;
             _showEmojiPanel = next == _RichPanelType.emoji;
@@ -4551,7 +4588,6 @@ class _RichToolbarState extends State<_RichToolbar> {
         _btn(
           FontAwesomeIcons.image,
           richEditorTools.firstWhere((tool) => tool.id == 'image').label,
-          toolId: 'image',
           anchored: anchored,
           onTap: widget.onPickImage,
         ),
@@ -4560,7 +4596,6 @@ class _RichToolbarState extends State<_RichToolbar> {
           _btn(
             t.icon,
             _tip(t.label, t.id),
-            toolId: t.id,
             active: t.isActive?.call(snap) ?? false,
             anchored: anchored,
             onTap: () => t.run(ctx),
@@ -4588,15 +4623,10 @@ class _RichToolbarState extends State<_RichToolbar> {
     );
     final button = IconButton(
       tooltip: action.label,
-      icon: anchored
-          ? widget.toolsAnchor?.icon('insert:${action.searchText}', icon) ??
-                icon
-          : icon,
+      icon: icon,
       onPressed: anchored ? action.run : () => _desktopAction(action.run),
     );
-    return anchored
-        ? widget.toolsAnchor?.compactControl(button) ?? button
-        : button;
+    return button;
   }
 
   /// 标准工具按钮(MarkdownToolbar._ToolbarButton 同参:FaIcon 16 +
@@ -4606,23 +4636,17 @@ class _RichToolbarState extends State<_RichToolbar> {
     String tooltip, {
     bool active = false,
     bool anchored = true,
-    String? toolId,
     required VoidCallback onTap,
   }) {
     final button = IconButton(
       visualDensity: VisualDensity.standard,
       isSelected: active,
-      icon: toolId == null || !anchored
-          ? FaIcon(icon, size: 16)
-          : widget.toolsAnchor?.icon(toolId, FaIcon(icon, size: 16)) ??
-                FaIcon(icon, size: 16),
+      icon: FaIcon(icon, size: 16),
       onPressed: anchored ? onTap : () => _desktopAction(onTap),
       tooltip: tooltip,
       style: composerToolButtonStyle(context, active: active),
     );
-    return anchored
-        ? widget.toolsAnchor?.compactControl(button) ?? button
-        : button;
+    return button;
   }
 }
 

@@ -92,6 +92,71 @@ class _Device {
 }
 
 void main() {
+  testWidgets('空话题草稿刷新到云端无草稿不通知重建编辑器', (tester) async {
+    final server = _Server()..draft = null;
+    var replacements = 0;
+    const current = DraftData(
+      title: '',
+      reply: '',
+      action: 'createTopic',
+      categoryId: 1,
+    );
+    final controller = DraftController(
+      draftKey: 'new_topic',
+      service: server,
+      localStore: MemoryDraftStore(),
+      accountIdResolver: () async => 'alice',
+      connectionStream: const Stream.empty(),
+      isConnected: () => true,
+      currentEditorData: () => current,
+      onRemoteDraftChanged: (_) => replacements++,
+    );
+    addTearDown(controller.dispose);
+    final load = controller.loadDraft();
+    await tester.pump();
+    await load;
+    controller.scheduleSave(current);
+    final refresh = controller.retryPending();
+    await tester.pump();
+    await refresh;
+    expect(replacements, 0);
+    expect(controller.currentDraft, isNull);
+  });
+
+  testWidgets('清空后继续输入时，云端核对仍收取尚未镜像的新正文', (tester) async {
+    final server = _Server();
+    final store = MemoryDraftStore();
+    var visible = _a;
+    final controller = DraftController(
+      draftKey: _key,
+      service: server,
+      localStore: store,
+      accountIdResolver: () async => 'alice',
+      connectionStream: const Stream.empty(),
+      isConnected: () => true,
+      currentEditorData: () => visible,
+    );
+    addTearDown(controller.dispose);
+    final load = controller.loadDraft();
+    await tester.pump();
+    await load;
+    visible = const DraftData(reply: '', action: 'reply');
+    controller.scheduleSave(visible);
+    final response = Completer<Draft?>();
+    server.read = () => response.future;
+    final refresh = controller.retryPending();
+    await tester.pump();
+    visible = _b; // 新输入还在富文本内核中，尚未触发镜像监听。
+    response.complete(server.draft);
+    await tester.pump();
+    await refresh;
+
+    expect(controller.currentDraft?.data.reply, _b.reply);
+    expect(store.entry?.data.reply, _b.reply);
+    expect(server.draft?.data.reply, _b.reply);
+    expect(controller.hasConflict, isFalse);
+  });
+
   testWidgets('云端仅改变标签表示格式时不冲突也不重复保存', (tester) async {
     const data = DraftData(reply: '正文', tags: ['纯水', '快问快答']);
     final server = _Server()

@@ -11,11 +11,7 @@ import workmanager_apple
 
   func connectFlutterViewController(_ controller: FlutterViewController) {
     flutterViewController = controller
-    // 文件导出需要已连接场景的控制器；隐式引擎回调时控制器尚未绑定。
-    PublicFileHandler.shared.register(
-      messenger: controller.binaryMessenger,
-      viewController: controller
-    )
+    PublicFileHandler.shared.attach(viewController: controller)
   }
   override func application(
     _ application: UIApplication,
@@ -33,6 +29,7 @@ import workmanager_apple
   }
 
   private func registerNativeChannels(messenger: FlutterBinaryMessenger) {
+    PublicFileHandler.shared.register(messenger: messenger)
     // 媒体转码通道(音视频压缩到 4MB:AVAssetWriter 硬编,零依赖)
     MediaTranscodeHandler.shared.register(
       messenger: messenger

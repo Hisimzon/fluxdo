@@ -5,6 +5,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('玻璃配方连续插值，并按实际深色透明度补齐空值', () {
+    const toolbar = GlassRecipe.toolbar;
+    const sheet = GlassRecipe.sheet;
+    expect(GlassRecipe.lerp(toolbar, sheet, 0), same(toolbar));
+    expect(GlassRecipe.lerp(toolbar, sheet, 1), same(sheet));
+    final midpoint = GlassRecipe.lerp(toolbar, sheet, .5);
+    expect(midpoint.blurSigmaPx, 48);
+    expect(midpoint.tintAlphaFor(false), closeTo(.68, .0001));
+    expect(midpoint.tintAlphaFor(true), closeTo(.78, .0001));
+    final optionalDark = GlassRecipe.lerp(GlassRecipe.navigation, toolbar, .5);
+    expect(optionalDark.tintAlphaFor(true), closeTo(.51, .0001));
+  });
+
   Future<void> pumpGlass(
     WidgetTester tester, {
     double dpr = 1,
@@ -116,8 +129,7 @@ void main() {
       expect(
         find.byWidgetPredicate(
           (widget) =>
-              widget is CustomPaint &&
-              widget.painter is GlassEdgePainter,
+              widget is CustomPaint && widget.painter is GlassEdgePainter,
         ),
         findsOneWidget,
       );

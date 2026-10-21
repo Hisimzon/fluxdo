@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'dart:async';
+import 'dart:io';
 
 import 'package:app_icons/app_icons.dart';
+import 'package:chat_bottom_container/constants.dart';
 import 'package:chat_bottom_container/listener_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
@@ -32,6 +34,8 @@ import 'package:fluxdo/services/discourse_cook_service.dart';
 import 'package:fluxdo/widgets/markdown_editor/markdown_editor.dart';
 import 'package:fluxdo/widgets/markdown_editor/emoji_sticker_panel.dart';
 import 'package:fluxdo/widgets/markdown_editor/rich_composer/rich_composer_editor.dart';
+import 'package:fluxdo/widgets/markdown_editor/image_upload_dialog.dart';
+import 'package:fluxdo/widgets/markdown_editor/uploads/upload_task_panel.dart';
 import 'package:fluxdo/widgets/topic/topic_editor_helpers.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:fluxdo_render/editor.dart';
@@ -41,7 +45,7 @@ import 'package:fluxdo/widgets/markdown_editor/rich_composer/composer_import_pip
 import 'package:fluxdo_render/src/editor/widget/editor_caret.dart';
 import 'package:fluxdo_render/src/editor/widget/editor_table_grid.dart';
 import 'package:fluxdo_render/fluxdo_render.dart'
-    show ImageRun, LinkRun, TextRun;
+    show ImageRun, ImageGridNode, LinkRun, TextRun;
 
 Future<void> _pump(
   WidgetTester tester,
@@ -52,10 +56,18 @@ Future<void> _pump(
   bool dark = false,
   bool desktop = false,
   bool disableAnimations = false,
+  bool overlayAppBar = false,
+  double? cachedKeyboardHeight,
 }) async {
   PlatformUtils.debugDesktopOverride = desktop;
   tester.view.physicalSize = Size(width, height);
   tester.view.devicePixelRatio = 1;
+  if (overlayAppBar) {
+    tester.view.padding = const FakeViewPadding(top: 47);
+    tester.view.viewPadding = const FakeViewPadding(top: 47);
+    addTearDown(tester.view.resetPadding);
+    addTearDown(tester.view.resetViewPadding);
+  }
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
   addTearDown(tester.view.resetViewInsets);
@@ -71,7 +83,9 @@ Future<void> _pump(
       null,
     ),
   );
-  SharedPreferences.setMockInitialValues({});
+  SharedPreferences.setMockInitialValues({
+    ChatBottomContainerPrefKey.keyboardHeight: ?cachedKeyboardHeight,
+  });
   final prefs = await SharedPreferences.getInstance();
   await tester.runAsync(() async {
     if (!PreloadedDataService().isLoaded) {
@@ -119,6 +133,7 @@ Future<void> _pump(
                 key: const ValueKey('capture-workbench'),
                 child: Scaffold(
                   resizeToAvoidBottomInset: false,
+                  extendBodyBehindAppBar: overlayAppBar,
                   appBar: AppBar(title: const Text('新话题')),
                   body: child,
                 ),
@@ -180,9 +195,321 @@ class _TableFixtureCodec extends SemanticComposerCodec {
   }
 }
 
+class _DelayedDraftCodec extends SemanticComposerCodec {
+  final loaded = Completer<ComposerImportResult<SemanticNode>>();
+
+  @override
+  Future<ComposerImportResult<SemanticNode>> import(
+    String raw, {
+    Duration timeout = const Duration(seconds: 10),
+    bool guarded = true,
+  }) => loaded.future;
+}
+
 void main() {
   setUp(() => PlatformUtils.debugDesktopOverride = false);
   tearDown(() => PlatformUtils.debugDesktopOverride = null);
+
+  for (final missing in [false, true]) {
+    for (final resolveFrame in [4, 16, 40]) {
+      testWidgets('混合媒体草稿恢复后布局稳定 frame=$resolveFrame missing=$missing', (
+        tester,
+      ) async {
+        final pendingUploads = <(RequestOptions, RequestInterceptorHandler)>[];
+        final mock = InterceptorsWrapper(
+          onRequest: (options, handler) {
+            if (options.path == '/uploads/lookup-urls') {
+              pendingUploads.add((options, handler));
+            } else {
+              handler.resolve(
+                Response(requestOptions: options, data: <String, dynamic>{}),
+              );
+            }
+          },
+        );
+        DiscourseService().dio.interceptors.insert(0, mock);
+        addTearDown(() => DiscourseService().dio.interceptors.remove(mock));
+        // 每个时序独立解析，避免上个用例的 URL 缓存跳过加载态。
+        final raw = File('test/fixtures/composer_mixed_media_draft.md')
+            .readAsStringSync()
+            .replaceAll(
+              'upload://',
+              'upload://case${resolveFrame}${missing ? 'missing' : 'loaded'}',
+            );
+        final controller = TextEditingController(text: raw);
+        final codec = _DelayedDraftCodec();
+        final chrome = ComposerChromeController();
+        await _pump(
+          tester,
+          ComposerChromeScope(
+            controller: chrome,
+            topInset: 131,
+            child: RichComposerEditor(
+              controller: controller,
+              semanticCodec: codec,
+              header: const SizedBox(height: 180),
+            ),
+          ),
+          height: 900,
+          overlayAppBar: true,
+        );
+        final result = await tester.runAsync(
+          () => SemanticComposerCodec().import(raw),
+        );
+        codec.loaded.complete(result!);
+        await tester.pump();
+        await tester.pump();
+        final scroll = tester
+            .widget<CustomScrollView>(find.byType(CustomScrollView))
+            .controller!;
+        final initialExtent =
+            scroll.position.maxScrollExtent + scroll.position.viewportDimension;
+        var resolved = false;
+        for (var i = 0; i < 100; i++) {
+          tester.view.viewInsets = FakeViewPadding(
+            bottom: (i * 24.0).clamp(0, 360),
+          );
+          if (i >= resolveFrame && pendingUploads.isNotEmpty) {
+            resolved = true;
+            for (final (options, handler) in pendingUploads) {
+              handler.resolve(
+                Response(
+                  requestOptions: options,
+                  data: [
+                    if (!missing)
+                      for (final url in options.data['short_urls'] as List)
+                        {
+                          'short_url': url,
+                          'url': 'https://example.invalid/test.jpg',
+                        },
+                  ],
+                ),
+              );
+            }
+            pendingUploads.clear();
+          }
+          await tester.pump(const Duration(milliseconds: 16));
+        }
+        expect(resolved, isTrue);
+        final tail = find.text('就反复');
+        final surface = tester.getRect(
+          find.byKey(const ValueKey('composer-island-surface')),
+        );
+        final loadedTail = tester.getRect(tail);
+        final loadedCaret = tester.getRect(find.byType(EditorCaret));
+        expect(
+          scroll.position.maxScrollExtent + scroll.position.viewportDimension,
+          closeTo(initialExtent, 1),
+          reason: '有声明尺寸的图片解析成功或失败都不能改变正文高度',
+        );
+        expect(loadedTail.bottom, greaterThan(131));
+        expect(loadedTail.top, lessThan(surface.top));
+        expect(loadedCaret.top, closeTo(loadedTail.top, 1));
+        expect(loadedCaret.bottom, lessThanOrEqualTo(surface.top));
+        await tester.pumpWidget(const SizedBox.shrink());
+        controller.dispose();
+        chrome.dispose();
+      });
+    }
+  }
+
+  for (final keyboardFirst in [false, true]) {
+    testWidgets('长草稿恢复后自动定位避开顶栏 keyboardFirst=$keyboardFirst', (tester) async {
+      final controller = TextEditingController(
+        text: List.filled(40, '正文内容').join('\n\n'),
+      );
+      final codec = _DelayedDraftCodec();
+      final chrome = ComposerChromeController();
+      await _pump(
+        tester,
+        ComposerChromeScope(
+          controller: chrome,
+          topInset: 131,
+          child: RichComposerEditor(
+            controller: controller,
+            semanticCodec: codec,
+            header: const SizedBox(height: 180),
+          ),
+        ),
+        height: 640,
+        overlayAppBar: true,
+      );
+      expect(find.byType(FluxdoEditor), findsNothing);
+      if (keyboardFirst) {
+        tester.view.viewInsets = const FakeViewPadding(bottom: 340);
+        await tester.pump();
+      }
+      codec.loaded.complete(
+        ComposerImportResult.success(
+          SemanticNode(
+            'doc',
+            content: [
+              for (var i = 0; i < 40; i++)
+                SemanticNode(
+                  'paragraph',
+                  content: [SemanticNode('text', text: '正文第 $i 段内容')],
+                ),
+            ],
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      expect(
+        tester
+            .widget<FluxdoEditor>(find.byType(FluxdoEditor))
+            .focusNode!
+            .hasFocus,
+        isTrue,
+      );
+      for (final height
+          in keyboardFirst ? <double>[] : [40.0, 120.0, 200.0, 300.0, 340.0]) {
+        tester.view.viewInsets = FakeViewPadding(bottom: height);
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      for (var i = 0; i < 30; i++) {
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      final caret = tester.getRect(find.byType(EditorCaret));
+      final surface = tester.getRect(
+        find.byKey(const ValueKey('composer-island-surface')),
+      );
+      expect(caret.top, greaterThanOrEqualTo(131), reason: '键盘弹起后光标不能藏进页面顶栏');
+      expect(caret.bottom, lessThanOrEqualTo(surface.top));
+      // 键盘已经打开后再移动光标，也必须使用同一有效视口。
+      final editor = tester.widget<FluxdoEditor>(find.byType(FluxdoEditor));
+      editor.state.updateSelection(
+        EditorSelection.collapsed(
+          EditorPosition(blockId: editor.state.blocks.first.id, offset: 1),
+        ),
+      );
+      for (var i = 0; i < 30; i++) {
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      final movedCaret = tester.getRect(find.byType(EditorCaret));
+      expect(movedCaret.top, greaterThanOrEqualTo(131));
+      expect(movedCaret.bottom, lessThanOrEqualTo(surface.top));
+      expect(editor.state.blocks.length, 40);
+      await tester.pumpWidget(const SizedBox.shrink());
+      controller.dispose();
+      chrome.dispose();
+    });
+  }
+
+  testWidgets('源码光标定位避开覆盖正文的顶栏', (tester) async {
+    final text = List.filled(8, '正文内容').join('\n');
+    final controller = TextEditingController(text: text)
+      ..selection = TextSelection.collapsed(offset: text.length);
+    final focus = FocusNode();
+    final chrome = ComposerChromeController();
+    await _pump(
+      tester,
+      ComposerChromeScope(
+        controller: chrome,
+        topInset: 131,
+        child: MarkdownEditor(
+          controller: controller,
+          focusNode: focus,
+          expands: true,
+          header: const SizedBox(height: 180),
+        ),
+      ),
+      height: 640,
+      overlayAppBar: true,
+    );
+    focus.requestFocus();
+    await tester.pump();
+    for (final height in [40.0, 120.0, 200.0, 300.0, 340.0]) {
+      tester.view.viewInsets = FakeViewPadding(bottom: height);
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    for (var i = 0; i < 30; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    Rect caretRect() {
+      final render = tester
+          .state<EditableTextState>(find.byType(EditableText))
+          .renderEditable;
+      final local = render.getLocalRectForCaret(controller.selection.extent);
+      return render.localToGlobal(local.topLeft) & local.size;
+    }
+
+    final surface = tester.getRect(
+      find.byKey(const ValueKey('composer-island-surface')),
+    );
+    expect(caretRect().top, greaterThanOrEqualTo(131));
+    expect(caretRect().bottom, lessThanOrEqualTo(surface.top));
+    controller.selection = const TextSelection.collapsed(offset: 1);
+    for (var i = 0; i < 30; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    expect(caretRect().top, greaterThanOrEqualTo(131));
+    expect(caretRect().bottom, lessThanOrEqualTo(surface.top));
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.dispose();
+    focus.dispose();
+    chrome.dispose();
+  });
+
+  for (final lines in [1, 8, 40]) {
+    for (final headerHeight in [0.0, 180.0]) {
+      testWidgets('富文本自动聚焦键盘定位 lines=$lines header=$headerHeight', (
+        tester,
+      ) async {
+        final controller = TextEditingController(
+          text: List.generate(lines, (i) => '正文第 $i 段内容').join('\n\n'),
+        );
+        await _pump(
+          tester,
+          RichComposerEditor(
+            controller: controller,
+            header: SizedBox(height: headerHeight),
+          ),
+        );
+        for (
+          var i = 0;
+          i < 40 && find.byType(FluxdoEditor).evaluate().isEmpty;
+          i++
+        ) {
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 20)),
+          );
+          await tester.pump(const Duration(milliseconds: 16));
+        }
+        await tester.pump();
+        final editor = tester.widget<FluxdoEditor>(find.byType(FluxdoEditor));
+        expect(editor.focusNode!.hasFocus, isTrue);
+        for (var cycle = 0; cycle < 3; cycle++) {
+          for (final height in [40.0, 120.0, 200.0, 300.0, 360.0]) {
+            tester.view.viewInsets = FakeViewPadding(bottom: height);
+            await tester.pump(const Duration(milliseconds: 16));
+          }
+          for (var i = 0; i < 20; i++) {
+            await tester.pump(const Duration(milliseconds: 16));
+          }
+          final caret = tester.getRect(find.byType(EditorCaret));
+          final surface = tester.getRect(
+            find.byKey(const ValueKey('composer-island-surface')),
+          );
+          expect(
+            caret.top,
+            greaterThanOrEqualTo(kToolbarHeight),
+            reason: '光标不能滚到视口上方',
+          );
+          expect(
+            caret.bottom,
+            lessThanOrEqualTo(surface.top),
+            reason: '光标必须位于工具栏上方',
+          );
+          tester.view.viewInsets = const FakeViewPadding();
+          await tester.pump(const Duration(milliseconds: 200));
+          await tester.pump(const Duration(milliseconds: 200));
+        }
+        await tester.pumpWidget(const SizedBox.shrink());
+        controller.dispose();
+      });
+    }
+  }
 
   testWidgets('语义表格真实单元格编辑保留未知属性和来源对齐', (tester) async {
     final codec = _TableFixtureCodec();
@@ -543,6 +870,152 @@ void main() {
     editor.undo();
     key.currentState!.flushToController();
     expect(controller.text, '前后');
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.dispose();
+  });
+
+  for (final name in [
+    '图片.png',
+    '附件.pdf',
+    '视频.mp4.xz',
+    '音频.mp3.xz',
+    '录音.m4a.xz',
+  ]) {
+    testWidgets('富文本上传只在正文展示一张卡片 $name', (tester) async {
+      final controller = TextEditingController();
+      final key = GlobalKey<RichComposerEditorState>();
+      await _pump(tester, RichComposerEditor(key: key, controller: controller));
+      await tester.pump(const Duration(milliseconds: 800));
+      final completion = Completer<UploadResult>();
+      var executions = 0;
+      key.currentState!.queueUpload(
+        '/模拟/$name',
+        name,
+        image: name.endsWith('.png'),
+        execute: (_, _) {
+          executions++;
+          return completion.future;
+        },
+      );
+      await tester.pump();
+      expect(executions, 1);
+      expect(find.byType(UploadTaskCard), findsOneWidget);
+      expect(find.textContaining(S.current.editorUploads_title), findsNothing);
+      expect(
+        find.descendant(
+          of: find.byType(FluxdoEditor),
+          matching: find.byType(UploadTaskCard),
+        ),
+        findsOneWidget,
+      );
+      completion.completeError(StateError('模拟上传失败'));
+      await tester.pump();
+      await tester.pump();
+      expect(find.byType(UploadTaskCard), findsOneWidget);
+      expect(find.byTooltip(S.current.common_retry), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+      controller.dispose();
+    });
+  }
+
+  testWidgets('富文本上传占位撤销后兜底，重做后去重，失败仍可重试取消', (tester) async {
+    final controller = TextEditingController();
+    final key = GlobalKey<RichComposerEditorState>();
+    await _pump(tester, RichComposerEditor(key: key, controller: controller));
+    await tester.pump(const Duration(milliseconds: 800));
+    final editor = tester.widget<FluxdoEditor>(find.byType(FluxdoEditor)).state;
+    editor.insertText('保留正文');
+    var completion = Completer<UploadResult>();
+    var executions = 0;
+    key.currentState!.queueUpload(
+      '/模拟/图片.png',
+      '撤销上传',
+      image: true,
+      execute: (_, _) {
+        executions++;
+        return completion.future;
+      },
+    );
+    await tester.pump();
+    expect(find.byType(UploadTaskCard), findsOneWidget);
+    editor.undo();
+    await tester.pump();
+    expect(find.byType(UploadTaskCard), findsOneWidget);
+    expect(find.textContaining(S.current.editorUploads_title), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(FluxdoEditor),
+        matching: find.byType(UploadTaskCard),
+      ),
+      findsNothing,
+    );
+    completion.completeError(StateError('模拟上传失败'));
+    await tester.pump();
+    await tester.pump();
+    completion = Completer<UploadResult>();
+    await tester.tap(find.byTooltip(S.current.common_retry));
+    await tester.pump();
+    expect(executions, 2);
+    editor.redo();
+    await tester.pump();
+    expect(find.byType(UploadTaskCard), findsOneWidget);
+    expect(find.textContaining(S.current.editorUploads_title), findsNothing);
+    expect(executions, 2);
+    await tester.tap(find.byTooltip(S.current.common_cancel));
+    await tester.pump();
+    expect(key.currentState!.hasPendingUploads, false);
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.dispose();
+  });
+
+  testWidgets('富文本图片组追加失败只展示组内瓦片并可重试', (tester) async {
+    const picker = MethodChannel('plugins.flutter.io/image_picker');
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      picker,
+      (_) async => ['/模拟/组内图片.png'],
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        picker,
+        null,
+      ),
+    );
+    final controller = TextEditingController();
+    await _pump(tester, RichComposerEditor(controller: controller));
+    await tester.pump(const Duration(milliseconds: 800));
+    final editor = tester.widget<FluxdoEditor>(find.byType(FluxdoEditor));
+    editor.state.pasteBlocks([
+      const IslandBlock(
+        id: 'group',
+        node: ImageGridNode(
+          id: 'grid-node',
+          images: [ImageRun(src: 'a', width: 120, height: 80)],
+        ),
+      ),
+    ]);
+    await tester.pump();
+    final group = editor.state.blocks.whereType<IslandBlock>().single;
+    editor.onAddGridImages!(group.id);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byType(ImageUploadDialog), findsOneWidget);
+    Navigator.of(tester.element(find.byType(ImageUploadDialog))).pop(
+      ImageUploadResult(path: '/模拟/组内图片.png', originalName: '组内图片.png'),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    // 文件不存在让真实上传入口在本地失败，无需发送网络请求。
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 100)),
+    );
+    await tester.pump();
+    expect(find.byType(UploadGridTile), findsOneWidget);
+    expect(find.byType(UploadTaskCard), findsNothing);
+    expect(find.textContaining(S.current.editorUploads_title), findsNothing);
+    expect(find.text(S.current.common_retry), findsOneWidget);
+    await tester.tap(find.byIcon(Icons.refresh_rounded));
+    await tester.pump();
+    expect(find.byTooltip(S.current.common_cancel), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
     controller.dispose();
   });
@@ -1507,6 +1980,99 @@ void main() {
   }
 
   for (final rich in [false, true]) {
+    for (final cached in [false, true]) {
+      testWidgets('平板微小键盘高度不压缩表情和附件面板 rich=$rich cached=$cached', (
+        tester,
+      ) async {
+        tester.view.viewPadding = const FakeViewPadding(bottom: 24);
+        addTearDown(tester.view.resetViewPadding);
+        final controller = TextEditingController();
+        final focus = FocusNode();
+        await _pump(
+          tester,
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: SizedBox(
+              width: 640,
+              height: 700,
+              child: rich
+                  ? RichComposerEditor(
+                      controller: controller,
+                      focusNode: focus,
+                    )
+                  : MarkdownEditor(
+                      controller: controller,
+                      focusNode: focus,
+                    ),
+            ),
+          ),
+          width: 1200,
+          height: 800,
+          cachedKeyboardHeight: cached ? 24 : null,
+        );
+        await tester.pump(const Duration(milliseconds: 300));
+        focus.requestFocus();
+        await tester.pump();
+        if (!cached) {
+          // 浮动/外接键盘可能仅回报底部栏高度，也会被插件缓存。
+          ChatBottomContainerListenerManager().flutterApi.keyboardHeight(48);
+          await tester.pump();
+        }
+        final formats = find.byKey(const ValueKey('composer-format-row'));
+        final emojiToggle = find.descendant(
+          of: formats,
+          matching: find.byTooltip(S.current.emoji_tab),
+        );
+        await tester.tap(emojiToggle);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+        final panel = find.byType(EmojiStickerPanel);
+        expect(panel, findsOneWidget);
+        expect(tester.getSize(panel).height, 280);
+        expect(tester.getRect(panel).bottom, lessThanOrEqualTo(800));
+        expect(tester.takeException(), isNull);
+
+        // 返回浮动/外接键盘时不能继续占住兜底面板的 280 高度。
+        await tester.tap(emojiToggle);
+        await tester.pump();
+        ChatBottomContainerListenerManager().flutterApi.keyboardHeight(48);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(panel, findsNothing);
+        expect(
+          tester.getSize(
+            find.byKey(const ValueKey('composer-keyboard-space')),
+          ).height,
+          24,
+        );
+        await tester.tap(find.byTooltip(S.current.composer_expandToolbar));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 450));
+        final attachment = find.byKey(
+          ValueKey(
+            rich
+                ? 'composer-tool-insert:file attachment'
+                : 'composer-tool-attachment',
+          ),
+        );
+        await tester.scrollUntilVisible(
+          attachment,
+          120,
+          scrollable: find.descendant(
+            of: find.byKey(const ValueKey('composer-tools-panel')),
+            matching: find.byType(Scrollable),
+          ),
+        );
+        await tester.pump();
+        expect(attachment.hitTestable(), findsOneWidget);
+        expect(tester.getRect(attachment).bottom, lessThanOrEqualTo(776));
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+        controller.dispose();
+        focus.dispose();
+      });
+    }
+
     testWidgets('键盘终态通知不抢跑位置，普通开合逐帧同步浮岛 rich=$rich', (tester) async {
       tester.view.viewPadding = const FakeViewPadding(bottom: 20);
       addTearDown(tester.view.resetViewPadding);

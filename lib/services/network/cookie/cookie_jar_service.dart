@@ -61,6 +61,7 @@ class CookieJarService {
     ...authCookieNames,
     'cf_clearance',
     'linux_do_credit_session_id',
+    'linux_do_cdk_session_id',
   };
 
   CookieManager get webViewCookieManager =>

@@ -167,11 +167,15 @@ class _ComposerDesktopWorkbenchState extends State<ComposerDesktopWorkbench>
         child: TapRegion(
           groupId: this,
           onTapOutside: _presenting ? (_) => widget.anchor?.dismiss() : null,
-          child: ComposerIsland(
-            expanded: _presenting,
-            padding: EdgeInsets.zero,
-            radius: 28,
-            toolsAnchor: anchor,
+          child: AnimatedBuilder(
+            animation: _panelAnimation,
+            builder: (context, child) => ComposerIsland(
+              expansion: _panelAnimation.value,
+              padding: EdgeInsets.zero,
+              radius: 28,
+              toolsAnchor: anchor,
+              child: child!,
+            ),
             child: IconButtonTheme(
               data: IconButtonThemeData(
                 style: composerToolButtonStyle(context),
@@ -359,8 +363,6 @@ class _ComposerDesktopWorkbenchState extends State<ComposerDesktopWorkbench>
                           Expanded(
                             child: ComposerExpandedTools(
                               anchor: widget.anchor!,
-                              animation: _animation,
-                              flyingIds: const {},
                             ),
                           ),
                         ],

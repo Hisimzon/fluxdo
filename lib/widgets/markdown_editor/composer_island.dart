@@ -21,13 +21,15 @@ class ComposerIsland extends StatelessWidget {
       kComposerIslandBottomGap,
     ),
     this.radius = kComposerIslandRadius,
-    this.expanded = false,
+    this.expansion = 0,
   });
   final Widget child;
   final ComposerToolsAnchor? toolsAnchor;
   final EdgeInsetsGeometry padding;
   final double radius;
-  final bool expanded;
+
+  /// 与浮岛几何共用 0–1 进度，保持展开与收起的材质连续。
+  final double expansion;
 
   @override
   Widget build(BuildContext context) {
@@ -38,7 +40,11 @@ class ComposerIsland extends StatelessWidget {
         child: GlassSurfaceFrame(
           key: const ValueKey('composer-island-surface'),
           radius: radius,
-          recipe: expanded ? GlassRecipe.sheet : GlassRecipe.toolbar,
+          recipe: GlassRecipe.lerp(
+            GlassRecipe.toolbar,
+            GlassRecipe.sheet,
+            expansion,
+          ),
           child: Material(color: Colors.transparent, child: child),
         ),
       ),

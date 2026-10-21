@@ -20,6 +20,7 @@ import 'composer_tools_panel.dart';
 import 'composer_quick_panel.dart';
 import 'composer_tools_anchor.dart';
 import 'composer_workbench.dart';
+import 'composer_panel_height.dart';
 import 'editor_tools.dart';
 import 'emoji_popover.dart';
 import 'emoji_sticker_panel.dart';
@@ -737,20 +738,20 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
       final caretBottom = caretTop + caretLocal.height;
 
       double? target;
-      // 余量 24 > EditableText scrollPadding(20):我们跳完后其膨胀矩形
-      // 已在视口内,自身的 showOnScreen reveal 直接 no-op,单驱动无抖尾。
-      const margin = 24.0;
-      if (caretBottom > position.viewportDimension - _floatingInset) {
+      final visibleTop = ComposerChromeScope.topInsetOf(context);
+      final visibleBottom = position.viewportDimension - _floatingInset;
+      if (visibleBottom <= visibleTop) return;
+      // 和富文本一样扣除上下遮挡；空间紧张时先保住光标，再留滚动余量。
+      final margin = min(
+        24.0,
+        max(0.0, (visibleBottom - visibleTop - caretLocal.height) / 2),
+      );
+      if (caretBottom > visibleBottom - margin) {
         // 光标在视口下方，需要向下滚
-        target =
-            position.pixels +
-            caretBottom -
-            position.viewportDimension +
-            _floatingInset +
-            margin;
-      } else if (caretTop < 0) {
+        target = position.pixels + caretBottom - visibleBottom + margin;
+      } else if (caretTop < visibleTop + margin) {
         // 光标在视口上方，需要向上滚
-        target = position.pixels + caretTop - margin;
+        target = position.pixels + caretTop - visibleTop - margin;
       }
 
       if (target != null) {
@@ -980,15 +981,11 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
     return wrappedField;
   }
 
-  /// 自定义面板高度：键盘高度已知时直接使用（与 _KeyboardPlaceholder 等高），
-  /// 否则用 emojiPanelHeight 兜底
-  double get _panelHeight {
-    final safeBottom = MediaQuery.viewPaddingOf(context).bottom;
-    final keyboardHeight = _panelController.keyboardHeight;
-    return keyboardHeight > 0
-        ? max(keyboardHeight, safeBottom)
-        : max(widget.emojiPanelHeight, safeBottom);
-  }
+  double get _panelHeight => resolveComposerPanelHeight(
+    keyboardHeight: _panelController.keyboardHeight,
+    fallbackHeight: widget.emojiPanelHeight,
+    safeBottom: MediaQuery.viewPaddingOf(context).bottom,
+  );
 
   /// 构建(或复用)EmojiStickerPanel 缓存实例,docked 与桌面悬浮弹层共用
   Widget _ensureEmojiPanelChild() {
@@ -1210,7 +1207,11 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
               _returningToKeyboard = false;
             } else if (wasCustom) {
               _returningToKeyboard =
-                  MediaQuery.viewInsetsOf(context).bottom == 0;
+                  MediaQuery.viewInsetsOf(context).bottom == 0 &&
+                  (_panelController.keyboardHeight == 0 ||
+                      isComposerDockedKeyboardHeight(
+                        _panelController.keyboardHeight,
+                      ));
             }
             _currentPanelType = newType;
           });
