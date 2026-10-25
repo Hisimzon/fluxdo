@@ -153,10 +153,16 @@ class _DohSettingsCardInner extends StatelessWidget {
             ),
           ),
 
+        // Windows: 证书入口常驻 —— DoH 关闭后仍要能卸载已进信任库的 CA，
+        // 否则用户想清理时找不到入口；未开启且未安装时内部自隐藏。
+        if (Platform.isWindows)
+          _CertGuide(isApplying: isApplying, dohEnabled: settings.dohEnabled),
+
         // 仅在开启 DOH 后显示以下内容
         if (settings.dohEnabled) ...[
           // 证书引导（iOS: 安装引导，其他平台: per-device 开关；macOS 钥匙串自动处理）
-          if (!Platform.isMacOS) _CertGuide(isApplying: isApplying),
+          if (!Platform.isMacOS && !Platform.isWindows)
+            _CertGuide(isApplying: isApplying, dohEnabled: true),
 
           // 状态区域（含启动失败提示）
           Column(
@@ -410,9 +416,12 @@ Future<bool> ensureWindowsCertTrusted(BuildContext context) async {
 /// iOS（强制 per-device）：显示安装引导
 /// 其他平台：显示 per-device 证书开关
 class _CertGuide extends StatefulWidget {
-  const _CertGuide({required this.isApplying});
+  const _CertGuide({required this.isApplying, required this.dohEnabled});
 
   final bool isApplying;
+
+  /// DOH 当前是否开启（仅 Windows 分支需要：关闭且未安装时隐藏入口）
+  final bool dohEnabled;
 
   @override
   State<_CertGuide> createState() => _CertGuideState();
@@ -474,6 +483,49 @@ class _CertGuideState extends State<_CertGuide> {
     if (!mounted) return;
     if (ok) {
       setState(() => _installed = true);
+    }
+  }
+
+  Future<void> _uninstallWindowsCert() async {
+    final l10n = context.l10n;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(l10n.dohSettings_certUninstallTitle),
+        content: Text(l10n.dohSettings_certUninstallDesc),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(l10n.common_cancel),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(dialogContext).colorScheme.error,
+              foregroundColor: Theme.of(
+                dialogContext,
+              ).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(l10n.dohSettings_certUninstall),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    // 先停用 DOH 再移除 CA：运行中的 MITM 代理在证书移除后，
+    // WebView 新握手会因信任链缺失而全部失败。
+    final service = NetworkSettingsService.instance;
+    if (service.notifier.value.dohEnabled) {
+      await service.setDohEnabled(false);
+    }
+    final ok = await WindowsCertTrustService.instance.remove();
+    if (!mounted) return;
+    if (ok) {
+      setState(() => _installed = false);
+      ToastService.showSuccess(l10n.dohSettings_certUninstallSuccess);
+    } else {
+      ToastService.showError(l10n.dohSettings_certUninstallFailed);
     }
   }
 
@@ -542,6 +594,10 @@ class _CertGuideState extends State<_CertGuide> {
     // 未安装 CA 时 WebView2 全部握手失败,必须给出安装引导
     // (certutil 用户级安装,系统弹框确认)
     if (Platform.isWindows) {
+      // DOH 未开启且 CA 未安装:不需要引导,也不提供入口
+      if (!widget.dohEnabled && !_installed) {
+        return const SizedBox.shrink();
+      }
       return ListTile(
         leading: Icon(
           _installed ? Symbols.verified_user_rounded : Symbols.security_rounded,
@@ -562,9 +618,22 @@ class _CertGuideState extends State<_CertGuide> {
           ),
         ),
         trailing: _installed
-            ? OutlinedButton(
-                onPressed: _installWindowsCert,
-                child: Text(l10n.dohSettings_certReinstall),
+            ? Wrap(
+                spacing: 4,
+                runSpacing: 4,
+                children: [
+                  OutlinedButton(
+                    onPressed: _installWindowsCert,
+                    child: Text(l10n.dohSettings_certReinstall),
+                  ),
+                  TextButton(
+                    onPressed: _uninstallWindowsCert,
+                    style: TextButton.styleFrom(
+                      foregroundColor: theme.colorScheme.error,
+                    ),
+                    child: Text(l10n.dohSettings_certUninstall),
+                  ),
+                ],
               )
             : FilledButton(
                 onPressed: _installWindowsCert,

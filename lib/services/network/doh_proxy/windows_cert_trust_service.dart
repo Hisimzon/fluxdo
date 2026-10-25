@@ -113,4 +113,37 @@ class WindowsCertTrustService {
       } catch (_) {}
     }
   }
+
+  /// 从用户根信任库移除当前 CA
+  ///
+  /// 与 [install] 对称:按 SHA-1 指纹定位 `certutil -user -delstore Root`,
+  /// 无需管理员权限,也不弹系统确认框。调用方应先停用依赖 MITM 的
+  /// 代理(DoH),否则运行中的 WebView 新握手会因信任链缺失而失败。
+  Future<bool> remove() async {
+    if (!Platform.isWindows) return true;
+    final pem = await _activeCaPem();
+    if (pem == null) return false;
+    final thumbprint = _thumbprint(pem);
+    if (thumbprint == null) return false;
+    try {
+      final result = await Process.run('certutil', [
+        '-user',
+        '-delstore',
+        'Root',
+        thumbprint,
+      ]);
+      if (result.exitCode != 0) {
+        debugPrint(
+          '[WinCertTrust] 卸载未完成 (exit=${result.exitCode}): '
+          '${result.stdout}${result.stderr}',
+        );
+        return false;
+      }
+      debugPrint('[WinCertTrust] CA 已从用户根信任库移除');
+      return true;
+    } catch (e) {
+      debugPrint('[WinCertTrust] 卸载失败: $e');
+      return false;
+    }
+  }
 }
