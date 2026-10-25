@@ -336,10 +336,12 @@ class WindowsWebViewEnvironmentService {
       // Environment 存活：Cookie 现场清(第三方站点立即登出)，
       // 被锁定的缓存/存储文件推迟到下次启动。
       try {
+        // deleteCookies 需要逐 URL 调用;deleteAllCookies 按环境全量清，
+        // 且会传入隔离 Environment 的 id，不会碰到主环境。
         final isolatedCookieManager = CookieManager.instance(
           webViewEnvironment: _isolatedEnvironment,
         );
-        await isolatedCookieManager.deleteCookies();
+        await isolatedCookieManager.deleteAllCookies();
       } catch (e) {
         debugPrint('[WebViewEnv] isolated cookies clear failed: $e');
       }
