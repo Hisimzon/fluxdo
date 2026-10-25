@@ -1,0 +1,70 @@
+name: Build Windows Preview
+
+# 参考 app-topic-created-at.yaml(Android 预览打包)与 build.yaml(windows 发布矩阵):
+# 仅本分支推送触发,构建免安装、不做代码签名校验的便携 ZIP。
+on:
+  push:
+    branches:
+      - feature/windows-custom
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FLUTTER_VERSION: '3.47.4'
+
+jobs:
+  build-windows:
+    runs-on: windows-2022
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      # flutterw build windows 内部会执行 native:prepare windows --release,
+      # 在此预置 Rust 工具链与构建缓存。
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core/doh_proxy
+          key: windows-x86_64
+
+      # 与上游 build.yaml 的 Windows 构建保持一致:Flutter Windows 链接
+      # 依赖 NASM,NuGet 用于还原原生构建组件。
+      - name: Setup NuGet
+        uses: nuget/setup-nuget@v2
+
+      - name: Setup NASM
+        uses: ilammy/setup-nasm@v1
+
+      - name: Build Windows
+        run: |
+          dart tool/flutterw.dart build windows --release
+          $releaseDir = "build\windows\x64\runner\Release"
+          if (-not (Test-Path "$releaseDir\native\doh_proxy.dll")) { throw "Missing doh_proxy.dll" }
+          if (-not (Test-Path "$releaseDir\native\doh_proxy_bin.exe")) { throw "Missing doh_proxy_bin.exe" }
+          mkdir dist
+
+      # 便携免安装包:不签名、不进 Inno Setup 安装器,解压即用。
+      - name: Package Windows ZIP
+        run: |
+          cd build\windows\x64\runner\Release
+          7z a -tzip "..\..\..\..\..\dist\fluxdo-windows-x86_64-portable.zip" .
+
+      - name: Upload Windows ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: fluxdo-windows-x86_64-portable
+          path: dist/fluxdo-windows-x86_64-portable.zip
+          retention-days: 7
