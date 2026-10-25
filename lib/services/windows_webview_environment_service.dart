@@ -44,6 +44,11 @@ class WindowsWebViewEnvironmentService {
   static const String _desiredProxyPrefKey =
       'windows_webview_desired_proxy_url';
 
+  /// 隔离数据延迟清理标记：Environment 存活期间目录被 WebView2 进程
+  /// 锁定无法整删，下次启动(创建隔离 Environment 前)再整目录清理。
+  static const String _isolatedPendingClearPrefKey =
+      'windows_webview_isolated_pending_clear';
+
   /// 本次启动的代理决策(NetworkSettingsService 起完本地代理后调用
   /// [setProxy] 时完成)。本地代理端口每次启动可能不同(上次的端口被
   /// TIME_WAIT / 残留会话占用时会随机漂移),Environment 一旦创建又不能
@@ -238,13 +243,13 @@ class WindowsWebViewEnvironmentService {
       // 的最终值(或持久化回退值)，隔离环境直接复用。
       await initialize();
 
+      // 上次会话标记的延迟清理：本会话隔离 Environment 尚未创建，目录
+      // 无进程占用，整删后重建；失败(残留进程锁目录)则保留标记下次再试。
+      await _purgeIsolatedDataIfPending();
+
       if (_isolatedUserDataFolder == null) {
-        final supportDirectory = await getApplicationSupportDirectory();
-        _isolatedUserDataFolder = path.join(
-          supportDirectory.path,
-          'webview2-isolated',
-        );
-        final userDataDirectory = Directory(_isolatedUserDataFolder!);
+        final userDataDirectory = await _resolveIsolatedDataFolder();
+        _isolatedUserDataFolder = userDataDirectory.path;
         if (!await userDataDirectory.exists()) {
           await userDataDirectory.create(recursive: true);
         }
@@ -275,6 +280,94 @@ class WindowsWebViewEnvironmentService {
       );
       _isolatedEnvironment = null;
       _isolatedInitializeFuture = null;
+    }
+  }
+
+  /// 隔离数据目录（即使 Environment 尚未创建也能定位，供统计/清理）。
+  Future<Directory> _resolveIsolatedDataFolder() async {
+    final supportDirectory = await getApplicationSupportDirectory();
+    return Directory(
+      path.join(supportDirectory.path, 'webview2-isolated'),
+    );
+  }
+
+  /// 第三方站点隔离数据占用(字节)。目录不存在为 0，统计失败为 -1。
+  Future<int> getIsolatedDataSize() async {
+    if (!_isSupported) return -1;
+    try {
+      final dir = await _resolveIsolatedDataFolder();
+      if (!await dir.exists()) return 0;
+      var total = 0;
+      await for (final entity
+          in dir.list(recursive: true, followLinks: false)) {
+        if (entity is File) {
+          try {
+            total += await entity.length();
+          } catch (_) {
+            // 被占用的临时文件忽略即可
+          }
+        }
+      }
+      return total;
+    } catch (e) {
+      debugPrint('[WebViewEnv] isolated data size calc failed: $e');
+      return -1;
+    }
+  }
+
+  /// 清除第三方站点隔离数据(Cookie + 缓存 + 站点存储)。
+  ///
+  /// 返回 true：目录已整删，立即生效；
+  /// 返回 false：本会话隔离 Environment 已创建、目录被 WebView2 进程
+  /// 锁定，已现场清 Cookie，磁盘文件标记下次启动自动整删
+  /// (见 [_purgeIsolatedDataIfPending])。
+  /// 均不影响主站 Environment 的任何数据。
+  Future<bool> clearIsolatedData() async {
+    if (!_isSupported) return true;
+    try {
+      final dir = await _resolveIsolatedDataFolder();
+      if (!await dir.exists()) return true;
+      if (_isolatedEnvironment == null) {
+        // 尚无隔离 Environment：目录无进程占用，直接整删
+        await dir.delete(recursive: true);
+        debugPrint('[WebViewEnv] isolated data purged');
+        return true;
+      }
+      // Environment 存活：Cookie 现场清(第三方站点立即登出)，
+      // 被锁定的缓存/存储文件推迟到下次启动。
+      try {
+        final isolatedCookieManager = CookieManager.instance(
+          webViewEnvironment: _isolatedEnvironment,
+        );
+        await isolatedCookieManager.deleteCookies();
+      } catch (e) {
+        debugPrint('[WebViewEnv] isolated cookies clear failed: $e');
+      }
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_isolatedPendingClearPrefKey, true);
+      debugPrint('[WebViewEnv] isolated data clear deferred to next launch');
+      return false;
+    } catch (e) {
+      debugPrint('[WebViewEnv] isolated data clear failed: $e');
+      rethrow;
+    }
+  }
+
+  /// 启动期延迟清理：Environment 创建前目录无锁，整删成功后清除标记。
+  Future<void> _purgeIsolatedDataIfPending() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.getBool(_isolatedPendingClearPrefKey) ?? false) {
+        final dir = await _resolveIsolatedDataFolder();
+        if (await dir.exists()) {
+          await dir.delete(recursive: true);
+          debugPrint('[WebViewEnv] pending isolated data purged on startup');
+        }
+      }
+      await prefs.setBool(_isolatedPendingClearPrefKey, false);
+    } catch (e) {
+      // 目录被残留进程锁定等：保留标记，下次启动再试。
+      debugPrint('[WebViewEnv] pending isolated purge failed: $e');
     }
   }
 }

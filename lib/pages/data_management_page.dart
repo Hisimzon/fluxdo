@@ -1,5 +1,6 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'dart:io' as io;
 import 'package:app_icons/app_icons.dart';
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -14,6 +15,7 @@ import '../providers/theme_provider.dart';
 import '../utils/dialog_utils.dart';
 import '../services/data_management/cache_size_service.dart';
 import '../services/data_management/data_backup_service.dart';
+import '../services/windows_webview_environment_service.dart';
 import '../services/toast_service.dart';
 import '../settings/definitions/data_management_defs.dart';
 import 'package:m3e_ui/m3e_ui.dart';
@@ -61,6 +63,9 @@ class _CacheManagementSectionState
   Map<ImageCacheCategory, int>? _breakdown;
   int _aiChatDataSize = -1;
   int _cookieCacheSize = -1;
+
+  /// Windows 隔离 WebView 的第三方站点数据占用；其余平台无持久化隔离数据
+  int _thirdPartyWebSize = -1;
   bool _isClearing = false;
 
   /// 勾选状态。默认全选(Telegram 同款)。
@@ -79,11 +84,16 @@ class _CacheManagementSectionState
       CacheSizeService.getAiChatDataSize(prefs),
       CacheSizeService.getCookieCacheSize(),
     ]);
+    final thirdPartyWebSize = io.Platform.isWindows
+        ? await WindowsWebViewEnvironmentService.instance
+            .getIsolatedDataSize()
+        : -1;
     if (mounted) {
       setState(() {
         _breakdown = results[0] as Map<ImageCacheCategory, int>;
         _aiChatDataSize = results[1] as int;
         _cookieCacheSize = results[2] as int;
+        _thirdPartyWebSize = thirdPartyWebSize;
       });
     }
   }
@@ -200,6 +210,42 @@ class _CacheManagementSectionState
       ToastService.showError(S.current.common_clearFailed(e.toString()));
     } finally {
       if (mounted) setState(() => _isClearing = false);
+    }
+  }
+
+  /// 清除第三方站点隔离数据：
+  /// 隔离 Environment 未创建时整删目录立即生效；
+  /// 已创建时现场清 Cookie，磁盘文件下次启动自动清理。
+  Future<void> _clearThirdPartyWebData() async {
+    final confirmed = await _showConfirmDialog(
+      title: S.current.dataManagement_clearThirdPartyWebTitle,
+      content: S.current.dataManagement_clearThirdPartyWebContent,
+      confirmText: S.current.common_clear,
+    );
+    if (confirmed != true) return;
+
+    setState(() => _isClearing = true);
+    try {
+      final immediate = await WindowsWebViewEnvironmentService.instance
+          .clearIsolatedData();
+      if (immediate) {
+        ToastService.showSuccess(
+          S.current.dataManagement_thirdPartyWebCleared,
+        );
+      } else {
+        // Environment 存活期间目录被 WebView2 进程锁定：Cookie 已清，
+        // 缓存/存储文件待下次启动自动整删。
+        ToastService.showInfo(
+          S.current.dataManagement_thirdPartyWebDeferred,
+        );
+      }
+    } catch (e) {
+      ToastService.showError(S.current.common_clearFailed(e.toString()));
+    } finally {
+      if (mounted) {
+        setState(() => _isClearing = false);
+        await _loadCacheSizes();
+      }
     }
   }
 
@@ -342,6 +388,16 @@ class _CacheManagementSectionState
               size: _cookieCacheSize,
               onClear: _isClearing ? null : _clearCookieCache,
             ),
+            // Windows: 隔离 WebView 的第三方站点数据(独立 userDataFolder)，
+            // 其余平台隔离 WebView 无持久化数据
+            if (io.Platform.isWindows)
+              _buildLocalDataTile(
+                theme: theme,
+                icon: Symbols.public_rounded,
+                title: context.l10n.dataManagement_thirdPartyWebData,
+                size: _thirdPartyWebSize,
+                onClear: _isClearing ? null : _clearThirdPartyWebData,
+              ),
           ],
         ),
       ],

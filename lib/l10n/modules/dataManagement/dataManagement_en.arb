@@ -30,6 +30,8 @@
   "dataManagement_clearSelected": "Clear selected ({size})",
   "dataManagement_clearSelectedContent": "Selected cache will be re-downloaded when needed.",
   "dataManagement_clearSelectedTitle": "Clear selected cache",
+  "dataManagement_clearThirdPartyWebContent": "This clears cookies, cache and site data in the isolated WebView for third-party sites. You will be signed out of third-party sites. Main site login and data are not affected.",
+  "dataManagement_clearThirdPartyWebTitle": "Clear third-party site data",
   "dataManagement_confirmImport": "Confirm import",
   "dataManagement_cookieCache": "Cookie cache",
   "dataManagement_cookieCleared": "Cookie cache cleared, please log in again",
@@ -51,5 +53,8 @@
   "dataManagement_importWarning": "Importing will overwrite current settings. Restart required.",
   "dataManagement_noCache": "No cache",
   "dataManagement_settingsCount": "Contains {count} settings",
+  "dataManagement_thirdPartyWebCleared": "Third-party site data cleared",
+  "dataManagement_thirdPartyWebData": "Third-party site data",
+  "dataManagement_thirdPartyWebDeferred": "Third-party cookies cleared. Cache files will be purged on next app restart",
   "dataManagement_title": "Data Management"
 }

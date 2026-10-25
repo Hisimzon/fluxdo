@@ -51,6 +51,8 @@
   },
   "dataManagement_clearSelectedContent": "所选缓存清除后将在需要时重新下载。",
   "dataManagement_clearSelectedTitle": "清理所选缓存",
+  "dataManagement_clearThirdPartyWebContent": "将清除隔离 WebView 中的第三方站点 Cookie、缓存与站点数据，第三方站点登录状态会丢失。不影响主站登录与数据。",
+  "dataManagement_clearThirdPartyWebTitle": "清除第三方站点数据",
   "dataManagement_confirmImport": "确认导入",
   "dataManagement_cookieCache": "Cookie 缓存",
   "dataManagement_cookieCleared": "Cookie 缓存已清除，请重新登录",
@@ -107,5 +109,8 @@
       }
     }
   },
+  "dataManagement_thirdPartyWebCleared": "第三方站点数据已清除",
+  "dataManagement_thirdPartyWebData": "第三方站点数据",
+  "dataManagement_thirdPartyWebDeferred": "第三方 Cookie 已清除，缓存文件将在重启应用后自动清理",
   "dataManagement_title": "数据管理"
 }
