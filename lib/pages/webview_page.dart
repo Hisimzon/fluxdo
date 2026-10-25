@@ -87,12 +87,26 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
   /// hybrid composition（Android）/HWND（Windows）实时回读造成卡顿。
   Uint8List? _webViewSnapshot;
 
+  /// Windows 隔离 Environment 就绪标记。隔离页必须等它就绪再挂 WebView：
+  /// 提前挂载会落到主/默认环境，主站 Cookie 直接泄露给第三方站点。
+  bool _windowsIsolatedEnvReady = false;
 
   @override
   void initState() {
     super.initState();
     _currentUrl = widget.url;
     _currentTitle = widget.title ?? '';
+    if (io.Platform.isWindows && widget.isolated) {
+      WindowsWebViewEnvironmentService.instance
+          .ensureIsolatedEnvironment()
+          .whenComplete(() {
+        if (mounted) {
+          setState(() => _windowsIsolatedEnvReady = true);
+        }
+      });
+    } else {
+      _windowsIsolatedEnvReady = true;
+    }
     // 可见 WebView(hybrid composition)在位期间会参与每帧合成,
     // 打点让诊断时间轴能对齐"WebView 页在前台"与掉帧段
     FrameJankMonitor.logEvent('WEBVIEW', 'WebViewPage mount');
@@ -107,8 +121,18 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
 
   @override
   Widget build(BuildContext context) {
-    final windowsWebViewEnvironment =
-        WindowsWebViewEnvironmentService.instance.environment;
+    // Windows: 隔离页挂独立 userDataFolder 的 Environment，
+    // 主站页继续用主 Environment，Cookie 物理隔离。
+    final windowsWebViewEnvironment = !io.Platform.isWindows
+        ? null
+        : (widget.isolated
+              ? WindowsWebViewEnvironmentService.instance.isolatedEnvironment
+              : WindowsWebViewEnvironmentService.instance.environment);
+    // 隔离 Environment 尚未就绪(或创建失败)时绝不挂主环境降级运行。
+    final deferIsolatedWebView =
+        io.Platform.isWindows &&
+        widget.isolated &&
+        (!_windowsIsolatedEnvReady || windowsWebViewEnvironment == null);
 
     final theme = Theme.of(context);
     final isBookmarked = ref.watch(
@@ -253,7 +277,15 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
             ),
           ],
         ),
-        body: Column(
+        body: deferIsolatedWebView
+            ? Center(
+                // 隔离 Environment 未就绪：绝不降级挂主环境，主站 Cookie
+                // 不能泄露给第三方站点。
+                child: CircularProgressIndicator(
+                  color: theme.colorScheme.primary,
+                ),
+              )
+            : Column(
               children: [
                 if (_isLoading)
                   M3eLinearProgress(
@@ -544,15 +576,28 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
 
     if (!mounted) return true;
     final urlString = url?.toString() ?? '';
-    final inheritIsolation =
-        urlString.isEmpty || urlString == 'about:blank';
+    final inheritIsolation = _isOpaqueBlankUrl(urlString);
     await WebViewPage.open(
       context,
-      urlString,
+      // about:blank/#blocked 窗口不代表目标页面本身，只作为 windowId 宿主
+      // 打开；后续真实导航会走新页面的 shouldOverrideUrlLoading，
+      // 再由隔离边界与 connect OAuth 摆渡逻辑接管。
+      inheritIsolation ? '' : urlString,
       isolated: inheritIsolation ? widget.isolated : null,
       windowId: action.windowId,
     );
     return true;
+  }
+
+  /// 空白/不可见目标的新窗口：包括空 URL、about:blank，以及 Chromium
+  /// 在 opener 不可见目标时给出的 about:blank#blocked。
+  /// 一些站点的 OAuth 登录链路正是先开这种窗口再导航到真实授权页。
+  static bool _isOpaqueBlankUrl(String urlString) {
+    if (urlString.isEmpty) return true;
+    final uri = Uri.tryParse(urlString);
+    if (uri == null) return false;
+    if (uri.scheme != 'about') return false;
+    return uri.path.isEmpty || uri.path == 'blank';
   }
 
   Future<bool> _confirmConnectAuthorization() async {

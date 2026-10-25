@@ -5,6 +5,12 @@ import '../constants.dart';
 class WebViewIsolation {
   WebViewIsolation._();
 
+  /// Windows 隔离依赖独立 WebView2 Environment(独立 userDataFolder),
+  /// 由 WindowsWebViewEnvironmentService.ensureIsolatedEnvironment 提供;
+  /// Android/iOS 用 incognito + 禁共享 Cookie。
+  static bool _isSupportedPlatform() =>
+      Platform.isAndroid || Platform.isIOS || Platform.isWindows;
+
   static bool _isOfficialHost(Uri uri) {
     final baseUri = Uri.tryParse(AppConstants.baseUrl);
     final baseHost = baseUri?.host.toLowerCase();
@@ -16,7 +22,7 @@ class WebViewIsolation {
   }
 
   static bool shouldIsolate(String url) {
-    if (!Platform.isAndroid && !Platform.isIOS) {
+    if (!_isSupportedPlatform()) {
       return false;
     }
 

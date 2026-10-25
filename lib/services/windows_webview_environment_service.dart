@@ -30,6 +30,13 @@ class WindowsWebViewEnvironmentService {
   String? _activeProxyUrl;
   String? _desiredProxyUrl;
 
+  // 第三方站点隔离 Environment：独立 userDataFolder 实现 Cookie
+  // 级隔离(WebView2 无 incognito，隔离只能靠独立用户数据目录)。
+  // 与主 Environment 同样遵守「创建后绝不销毁重建」约束。
+  WebViewEnvironment? _isolatedEnvironment;
+  Future<void>? _isolatedInitializeFuture;
+  String? _isolatedUserDataFolder;
+
   /// WebView2 Environment 的代理参数只能在创建时确定。运行中修改代理时，
   /// 由设置页持续提示用户重启，避免仅写日志后让用户误以为已经生效。
   final ValueNotifier<bool> proxyRestartRequiredNotifier = ValueNotifier(false);
@@ -57,6 +64,10 @@ class WindowsWebViewEnvironmentService {
   bool get _isSupported => !kIsWeb && Platform.isWindows;
 
   WebViewEnvironment? get environment => _environment;
+
+  /// 隔离 Environment。null 表示尚未创建或创建失败(此时调用方
+  /// 不应已在渲染隔离 WebView)。
+  WebViewEnvironment? get isolatedEnvironment => _isolatedEnvironment;
 
   String? get userDataFolder => _userDataFolder;
   String? get activeProxyUrl => _activeProxyUrl;
@@ -106,6 +117,17 @@ class WindowsWebViewEnvironmentService {
       return Future.value();
     }
     return _initializeFuture ??= _createEnvironment();
+  }
+
+  /// 懒创建隔离 Environment。首次打开第三方站点时调用。
+  ///
+  /// 先等待主 Environment 就绪，以复用其代理决策；代理参数与主环境
+  /// 保持一致，仅 userDataFolder 不同。
+  Future<void> ensureIsolatedEnvironment() {
+    if (!_isSupported || _isolatedEnvironment != null) {
+      return Future.value();
+    }
+    return _isolatedInitializeFuture ??= _createIsolatedEnvironment();
   }
 
   /// 登记期望代理。Environment 已创建时不在运行期重建，变更将在下次
@@ -207,6 +229,52 @@ class WindowsWebViewEnvironmentService {
       _activeProxyUrl = null;
       _syncProxyRestartRequired();
       _initializeFuture = null;
+    }
+  }
+
+  Future<void> _createIsolatedEnvironment() async {
+    try {
+      // 主环境先行：它已等待过代理决策，_desiredProxyUrl 已是本次会话
+      // 的最终值(或持久化回退值)，隔离环境直接复用。
+      await initialize();
+
+      if (_isolatedUserDataFolder == null) {
+        final supportDirectory = await getApplicationSupportDirectory();
+        _isolatedUserDataFolder = path.join(
+          supportDirectory.path,
+          'webview2-isolated',
+        );
+        final userDataDirectory = Directory(_isolatedUserDataFolder!);
+        if (!await userDataDirectory.exists()) {
+          await userDataDirectory.create(recursive: true);
+        }
+      }
+
+      final browserArguments = <String>['--renderer-process-limit=6'];
+      if (_desiredProxyUrl != null) {
+        browserArguments.add('--proxy-server=$_desiredProxyUrl');
+      }
+
+      _isolatedEnvironment = await WebViewEnvironment.create(
+        settings: WebViewEnvironmentSettings(
+          userDataFolder: _isolatedUserDataFolder,
+          additionalBrowserArguments: browserArguments.join(' '),
+        ),
+      );
+
+      debugPrint(
+        '[WebViewEnv] isolated WebView2 environment initialized: '
+        'userDataFolder=$_isolatedUserDataFolder'
+        '${_desiredProxyUrl != null ? ', proxy=$_desiredProxyUrl' : ''}',
+      );
+    } catch (e, stackTrace) {
+      debugPrint('[WebViewEnv] isolated environment init failed: $e');
+      debugPrintStack(
+        label: '[WebViewEnv] isolated initialize stack',
+        stackTrace: stackTrace,
+      );
+      _isolatedEnvironment = null;
+      _isolatedInitializeFuture = null;
     }
   }
 }
