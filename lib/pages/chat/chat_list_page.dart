@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -18,11 +19,13 @@ import '../../widgets/common/relative_time_text.dart';
 import '../../widgets/common/skeleton.dart';
 import '../../widgets/common/smart_avatar.dart';
 import '../../widgets/desktop_refresh_indicator.dart';
+import '../../widgets/layout/bottom_nav_clearance.dart';
 import '../../widgets/layout/master_detail_layout.dart';
 import 'chat_browse_channels_page.dart';
 import 'chat_search_page.dart';
 import 'channel/chat_channel_page.dart';
 import 'new_chat_sheet.dart';
+import '../../utils/color_utils.dart';
 
 /// 桌面双栏下当前选中的会话(仅聊天页内部,不进平行视界栈体系——
 /// 聊天窗是常驻会话流,不是"层"语义)
@@ -70,7 +73,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage>
     }
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => ChatChannelPage(channelId: channel.id)),
+      InteractionPageRoute(builder: (_) => ChatChannelPage(channelId: channel.id)),
     );
   }
 
@@ -202,7 +205,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage>
             tooltip: context.l10n.chat_searchAll,
             onPressed: () => Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => const ChatSearchPage()),
+              InteractionPageRoute(builder: (_) => const ChatSearchPage()),
             ),
           ),
           IconButton(
@@ -210,7 +213,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage>
             tooltip: context.l10n.chat_browseChannels,
             onPressed: () => Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => const ChatBrowseChannelsPage()),
+              InteractionPageRoute(builder: (_) => const ChatBrowseChannelsPage()),
             ),
           ),
         ],
@@ -270,16 +273,18 @@ class _ChatListPageState extends ConsumerState<ChatListPage>
         ),
       ),
       // 新建会话只对私信有意义;频道 tab 隐藏 FAB
-      floatingActionButton: AnimatedBuilder(
-        animation: _tabController,
-        builder: (context, _) => _tabController.index == 1
-            ? FloatingActionButton(
-                heroTag: 'newChat',
-                onPressed: _openNewChat,
-                tooltip: context.l10n.chat_newChat,
-                child: const Icon(Symbols.add_comment_rounded),
-              )
-            : const SizedBox.shrink(),
+      floatingActionButton: BottomNavClearance(
+        child: AnimatedBuilder(
+          animation: _tabController,
+          builder: (context, _) => _tabController.index == 1
+              ? FloatingActionButton(
+                  heroTag: 'newChat',
+                  onPressed: _openNewChat,
+                  tooltip: context.l10n.chat_newChat,
+                  child: const Icon(Symbols.add_comment_rounded),
+                )
+              : const SizedBox.shrink(),
+        ),
       ),
     );
 
@@ -538,9 +543,13 @@ class ChatChannelAvatar extends StatelessWidget {
     if (channel.isPublicChannel) {
       final theme = Theme.of(context);
       final colorHex = channel.categoryColor;
-      final bg = colorHex != null && colorHex.length >= 6
-          ? Color(int.parse('FF${colorHex.substring(0, 6)}', radix: 16))
-          : theme.colorScheme.primaryContainer;
+      final bg = ColorUtils.category(
+        colorHex != null && colorHex.length >= 6
+            ? colorHex.substring(0, 6)
+            : null,
+        theme,
+        fallback: theme.colorScheme.primaryContainer,
+      );
       // 分类色亮度决定前景黑白
       final fg = bg.computeLuminance() > 0.55 ? Colors.black87 : Colors.white;
       return CircleAvatar(
@@ -621,7 +630,9 @@ class _UnreadPill extends StatelessWidget {
       constraints: const BoxConstraints(minWidth: 20),
       decoration: ShapeDecoration(
         color: error ? theme.colorScheme.error : theme.colorScheme.primary,
-        shape: const StadiumBorder(),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.all(context.shapes.radius(9999)),
+        ),
       ),
       child: Text(
         text,
@@ -651,17 +662,23 @@ String stripHtmlForPreview(String html) {
 }
 
 const _imageExts = {
-  'png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'heic', 'heif', 'svg', 'bmp',
+  'png',
+  'jpg',
+  'jpeg',
+  'gif',
+  'webp',
+  'avif',
+  'heic',
+  'heif',
+  'svg',
+  'bmp',
 };
 
 /// 消息预览文本(会话列表/回复引用/搜索等单行场景统一口径):
 /// 剥 HTML → 图片/附件 markdown 残渣替换为 [图片]/[文件] 标签
 /// (excerpt 对上传消息会留 `[文件名.webp]`/`![alt](url)` 残渣);
 /// :shortcode: 保留,由 EmojiText 渲染成 emoji 图。
-String chatPreviewText(
-  BuildContext context,
-  String raw,
-) {
+String chatPreviewText(BuildContext context, String raw) {
   final l10n = context.l10n;
   var text = stripHtmlForPreview(raw);
 

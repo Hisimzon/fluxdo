@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+
 import 'package:jovial_svg/jovial_svg.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
@@ -12,17 +13,21 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 // ignore: depend_on_referenced_packages
 import 'package:flutter_riverpod/legacy.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:positioned_sliver_list/positioned_sliver_list.dart';
 
 import '../../../l10n/s.dart';
 import '../../../models/topic.dart';
 import '../../../utils/dialog_utils.dart';
 import '../../../widgets/common/app_bottom_sheet.dart';
+import '../../../widgets/common/positioned_stream_list.dart';
 import '../../../services/discourse/discourse_service.dart';
 import '../../../services/toast_service.dart';
 import '../../../widgets/ai/ai_model_select_sheet.dart';
 import '../../../widgets/ai/ai_quick_prompts_bar.dart';
 import '../../../widgets/share/ai_share_image_preview.dart';
+
 import 'package:common_ui/common_ui.dart';
+
 import 'ai_chat_input.dart';
 import 'ai_chat_message_item.dart';
 import 'ai_context_selector.dart';
@@ -66,6 +71,16 @@ class AiChatPage extends ConsumerStatefulWidget {
 }
 
 class _AiChatPageState extends ConsumerState<AiChatPage> {
+  final ScrollController _scrollController = ScrollController();
+  final ListController _listController = ListController();
+
+  @override
+  void dispose() {
+    _listController.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
   /// 已获取到的上下文帖子（按 postNumber 升序）
   final List<TopicPostContext> _contextPosts = [];
 
@@ -350,13 +365,12 @@ class _AiChatPageState extends ConsumerState<AiChatPage> {
   }
 
   Future<void> _showImageModelMissingDialog() async {
-    final theme = Theme.of(context);
     final result = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         icon: Icon(
           Symbols.image_rounded,
-          color: theme.colorScheme.primary,
+          color: context.emphasis.accent,
           size: 32,
         ),
         title: Text(S.current.ai_imageModelMissingTitle),
@@ -374,9 +388,8 @@ class _AiChatPageState extends ConsumerState<AiChatPage> {
       ),
     );
     if (result == true && mounted) {
-      Navigator.of(
-        context,
-      ).push(MaterialPageRoute(builder: (_) => const AiProvidersPage()));
+      Navigator.of(context)
+          .push(InteractionPageRoute(builder: (_) => const AiProvidersPage()));
     }
   }
 
@@ -648,9 +661,11 @@ class _AiChatPageState extends ConsumerState<AiChatPage> {
       padding: EdgeInsets.only(bottom: bottomInset),
       child: Container(
         height: contentHeight,
-        decoration: BoxDecoration(
+        decoration: ShapeDecoration(
           color: theme.colorScheme.surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+          shape: RoundedSuperellipseBorder(
+            borderRadius: BorderRadius.vertical(top: context.shapes.radius(16)),
+          ),
         ),
         child: SafeArea(
           bottom: false,
@@ -661,11 +676,13 @@ class _AiChatPageState extends ConsumerState<AiChatPage> {
                 margin: const EdgeInsets.symmetric(vertical: 12),
                 width: 40,
                 height: 4,
-                decoration: BoxDecoration(
+                decoration: ShapeDecoration(
                   color: theme.colorScheme.onSurfaceVariant.withValues(
                     alpha: 0.3,
                   ),
-                  borderRadius: BorderRadius.circular(2),
+                  shape: RoundedSuperellipseBorder(
+                    borderRadius: context.shapes.borderRadius(2),
+                  ),
                 ),
               ),
 
@@ -792,9 +809,7 @@ class _AiChatPageState extends ConsumerState<AiChatPage> {
       children: [
         // 上下文加载提示
         if (_isLoadingContext)
-          M3eLinearProgress(
-            color: theme.colorScheme.primary,
-          ),
+          M3eLinearProgress(color: theme.colorScheme.primary),
 
         // 聊天主要内容区
         Expanded(
@@ -999,56 +1014,74 @@ class _AiChatPageState extends ConsumerState<AiChatPage> {
     TopicAiChatState chatState,
   ) {
     final messages = chatState.messages;
-    return ListView.builder(
-      reverse: true,
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      itemCount: messages.length,
-      itemBuilder: (context, index) {
-        final message = messages[messages.length - 1 - index];
-        return AiChatMessageItem(
-          message: message,
-          onRetry: message.status == MessageStatus.error
-              ? () {
-                  final scope = ref.read(
-                    topicAiContextScopeProvider(widget.topicId),
-                  );
-                  final model = _currentModel();
-                  if (model == null) return;
-                  _rememberModel(model);
-                  ref
-                      .read(topicAiChatProvider(widget.topicId).notifier)
-                      .retryLastMessage(
-                        scope,
-                        selectedModel: model,
-                        // 透传当前 thinking 配置,否则重试会用 ThinkingConfig.off
-                        // 默认值,跟原请求不一致(用户感觉「重试就好」其实是
-                        // thinking 被静默关掉了,不是上游恢复)。
-                        thinkingConfig: ref.read(aiThinkingConfigProvider),
-                      );
-                }
-              : null,
-          onShareAsImage:
-              message.status == MessageStatus.completed &&
-                  message.content.isNotEmpty
-              ? () => _shareMessageAsImage(message)
-              : null,
-          onCopyText:
-              message.status == MessageStatus.completed &&
-                  message.content.isNotEmpty
-              ? () => _copyMessageText(message)
-              : null,
-          onReplyImage:
-              widget.onReplyToTopic != null &&
-                  message.status == MessageStatus.completed
-              ? (att) => _replyImageToTopic(att)
-              : null,
-          selectionMode: _selectionMode,
-          isSelected: _selectedMessageIds.contains(message.id),
-          onSelectionToggle: _selectionMode
-              ? () => _toggleMessageSelection(message.id)
-              : null,
-        );
-      },
+    final positionKey = (widget.topicId, chatState.currentSessionId);
+    return StickToTarget(
+      key: ValueKey(positionKey),
+      scrollController: _scrollController,
+      listController: _listController,
+      target: const StickTarget.bottom(),
+      child: PositionedStreamList(
+        scrollController: _scrollController,
+        listController: _listController,
+        positionKey: positionKey,
+        initialIndex: null,
+        reverse: true,
+        cacheExtent: 300,
+        itemKeys: [
+          'bottom-inset',
+          for (final message in messages.reversed) 'message-${message.id}',
+          'top-inset',
+        ],
+        itemBuilder: (context, index) {
+          if (index == 0 || index == messages.length + 1) {
+            return const SizedBox(height: 8);
+          }
+          final message = messages[messages.length - index];
+          return AiChatMessageItem(
+            message: message,
+            onRetry: message.status == MessageStatus.error
+                ? () {
+                    final scope = ref.read(
+                      topicAiContextScopeProvider(widget.topicId),
+                    );
+                    final model = _currentModel();
+                    if (model == null) return;
+                    _rememberModel(model);
+                    ref
+                        .read(topicAiChatProvider(widget.topicId).notifier)
+                        .retryLastMessage(
+                          scope,
+                          selectedModel: model,
+                          // 透传当前 thinking 配置,否则重试会用 ThinkingConfig.off
+                          // 默认值,跟原请求不一致(用户感觉「重试就好」其实是
+                          // thinking 被静默关掉了,不是上游恢复)。
+                          thinkingConfig: ref.read(aiThinkingConfigProvider),
+                        );
+                  }
+                : null,
+            onShareAsImage:
+                message.status == MessageStatus.completed &&
+                    message.content.isNotEmpty
+                ? () => _shareMessageAsImage(message)
+                : null,
+            onCopyText:
+                message.status == MessageStatus.completed &&
+                    message.content.isNotEmpty
+                ? () => _copyMessageText(message)
+                : null,
+            onReplyImage:
+                widget.onReplyToTopic != null &&
+                    message.status == MessageStatus.completed
+                ? (att) => _replyImageToTopic(att)
+                : null,
+            selectionMode: _selectionMode,
+            isSelected: _selectedMessageIds.contains(message.id),
+            onSelectionToggle: _selectionMode
+                ? () => _toggleMessageSelection(message.id)
+                : null,
+          );
+        },
+      ),
     );
   }
 
@@ -1165,7 +1198,9 @@ class _ModelLogoButton extends StatelessWidget {
     return Tooltip(
       message: S.current.ai_selectModel,
       child: InkWell(
-        borderRadius: BorderRadius.circular(20),
+        customBorder: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(20),
+        ),
         onTap: () async {
           final picked = await showAiModelSelectSheet(
             context: context,
@@ -1239,7 +1274,9 @@ class _SessionHistorySheetState extends State<_SessionHistorySheet> {
           final isCurrent = session.id == widget.currentSessionId;
 
           return ListTile(
-            leading: Icon(Symbols.chat_bubble_rounded, fill: isCurrent ? 1 : 0,
+            leading: Icon(
+              Symbols.chat_bubble_rounded,
+              fill: isCurrent ? 1 : 0,
               size: 20,
               color: isCurrent
                   ? theme.colorScheme.primary
@@ -1401,18 +1438,18 @@ class _ThinkingButton extends StatelessWidget {
   ) {
     final cs = Theme.of(context).colorScheme;
     final isSelected = level == current;
-    final color = isSelected ? cs.primary : cs.onSurfaceVariant;
+    final color = isSelected ? context.emphasis.selected : cs.onSurfaceVariant;
     return ListTile(
       leading: _IdeaIcon(asset: _svgAsset(level), color: color, size: 22),
       title: Text(
         label,
         style: TextStyle(
-          color: isSelected ? cs.primary : null,
+          color: isSelected ? context.emphasis.selected : null,
           fontWeight: isSelected ? FontWeight.w500 : null,
         ),
       ),
       trailing: isSelected
-          ? Icon(Symbols.check_rounded, color: cs.primary, size: 20)
+          ? Icon(Symbols.check_rounded, color: context.emphasis.selected, size: 20)
           : null,
       onTap: () {
         _setConfig(ref.read(aiThinkingConfigProvider).copyWith(level: level));
@@ -1428,12 +1465,12 @@ class _ThinkingButton extends StatelessWidget {
       leading: Icon(
         Symbols.tune_rounded,
         size: 22,
-        color: isSelected ? cs.primary : cs.onSurfaceVariant,
+        color: isSelected ? context.emphasis.selected : cs.onSurfaceVariant,
       ),
       title: Text(
         AiL10n.current.thinkingCustom,
         style: TextStyle(
-          color: isSelected ? cs.primary : null,
+          color: isSelected ? context.emphasis.selected : null,
           fontWeight: isSelected ? FontWeight.w500 : null,
         ),
       ),
@@ -1443,7 +1480,7 @@ class _ThinkingButton extends StatelessWidget {
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w500,
-                color: cs.primary,
+                color: context.emphasis.selected,
               ),
             )
           : null,
@@ -1456,7 +1493,7 @@ class _ThinkingButton extends StatelessWidget {
 
   void _showCustomDialog(BuildContext context, ThinkingConfig current) {
     final controller = TextEditingController(text: '${current.customBudget}');
-    showDialog(
+    showInteractionDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(AiL10n.current.thinkingCustom),
@@ -1466,7 +1503,9 @@ class _ThinkingButton extends StatelessWidget {
           autofocus: true,
           decoration: InputDecoration(
             hintText: '1024 - 64000',
-            border: const OutlineInputBorder(),
+            border: OutlineInputBorder(
+              borderRadius: context.shapes.borderRadius(4),
+            ),
             suffixText: 'tokens',
           ),
         ),

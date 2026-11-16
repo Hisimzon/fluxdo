@@ -1,6 +1,9 @@
 import 'dart:math' as math;
+
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+
 import '../../l10n/s.dart';
 import '../../utils/dialog_utils.dart';
 import 'composer_tool_action.dart';
@@ -236,10 +239,7 @@ class _ComposerQuickPanelState extends State<_ComposerQuickPanel> {
                       minWidth: 40,
                       minHeight: 48,
                     ),
-                    border: InputBorder.none,
-                    enabledBorder: InputBorder.none,
-                    focusedBorder: InputBorder.none,
-                  ),
+                  ).withoutBorder(),
                   onChanged: (_) {
                     setState(
                       () => _selected = _matches.indexWhere((a) => a.enabled),
@@ -274,7 +274,9 @@ class _ComposerQuickPanelState extends State<_ComposerQuickPanel> {
                               child: Material(
                                 color: Colors.transparent,
                                 clipBehavior: Clip.antiAlias,
-                                borderRadius: BorderRadius.circular(8),
+                                shape: RoundedSuperellipseBorder(
+                                  borderRadius: context.shapes.borderRadius(8),
+                                ),
                                 child: ListTile(
                                   key: ObjectKey(action),
                                   dense: true,

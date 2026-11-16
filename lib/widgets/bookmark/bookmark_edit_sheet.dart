@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 
@@ -431,7 +432,7 @@ class _BookmarkEditSheetState extends State<BookmarkEditSheet> {
       style: AppSheetStyle.card,
       titleWidget: Row(
         children: [
-          Icon(Symbols.bookmark_rounded, color: theme.colorScheme.primary),
+          Icon(Symbols.bookmark_rounded, color: context.emphasis.selected),
           const SizedBox(width: 8),
           Text(
             S.current.bookmark_editBookmark,
@@ -497,11 +498,13 @@ class _BookmarkEditSheetState extends State<BookmarkEditSheet> {
                   vertical: 8,
                 ),
                 margin: const EdgeInsets.only(bottom: 8),
-                decoration: BoxDecoration(
+                decoration: ShapeDecoration(
                   color: _currentReminderAt!.isAfter(DateTime.now())
                       ? theme.colorScheme.primaryContainer
                       : theme.colorScheme.errorContainer,
-                  borderRadius: BorderRadius.circular(8),
+                  shape: RoundedSuperellipseBorder(
+                    borderRadius: context.shapes.borderRadius(8),
+                  ),
                 ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -572,9 +575,11 @@ class _BookmarkEditSheetState extends State<BookmarkEditSheet> {
                     horizontal: 12,
                     vertical: 8,
                   ),
-                  decoration: BoxDecoration(
+                  decoration: ShapeDecoration(
                     color: theme.colorScheme.primaryContainer,
-                    borderRadius: BorderRadius.circular(8),
+                    shape: RoundedSuperellipseBorder(
+                      borderRadius: context.shapes.borderRadius(8),
+                    ),
                   ),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,

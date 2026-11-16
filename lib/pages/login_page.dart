@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -17,7 +18,9 @@ import '../widgets/auth/login_form.dart';
 import '../widgets/auth/two_factor_dialog.dart';
 import '../widgets/common/ambient_background.dart';
 import '../widgets/common/floating_logo.dart';
+
 import 'package:m3e_ui/m3e_ui.dart';
+
 import 'qr_login_scan_page.dart';
 import 'webview_login_page.dart';
 
@@ -37,6 +40,7 @@ import 'webview_login_page.dart';
 ///
 /// linux.do 的 hcaptcha sitekey 写死, 后续可从 PreloadedDataService 动态拿。
 const String _kLinuxDoHcaptchaSiteKey = 'a776b4ac-8c4c-441e-986a-c6ee9ed8cf08';
+
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
 
@@ -44,8 +48,7 @@ class LoginPage extends StatefulWidget {
   State<LoginPage> createState() => _LoginPageState();
 }
 
-class _LoginPageState extends State<LoginPage>
-    with TickerProviderStateMixin {
+class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
   String? _savedUsername;
   String? _savedPassword;
   bool _credentialsLoaded = false;
@@ -93,7 +96,10 @@ class _LoginPageState extends State<LoginPage>
 
   @override
   void dispose() {
-    if (identical(UserApiKeyLoginFlow.instance.onFlowFinished, _onBrowserAuthFinished)) {
+    if (identical(
+      UserApiKeyLoginFlow.instance.onFlowFinished,
+      _onBrowserAuthFinished,
+    )) {
       UserApiKeyLoginFlow.instance.onFlowFinished = null;
     }
     _entryController.dispose();
@@ -111,7 +117,7 @@ class _LoginPageState extends State<LoginPage>
       // 首次会懒生成 RSA 密钥对(isolate),可能耗时数秒
       final launched = await UserApiKeyLoginFlow.instance.start();
       if (!launched && mounted) {
-        ToastService.showError('无法打开浏览器,请重试');
+        ToastService.showError(context.l10n.common_cannotOpenBrowser);
       }
     } finally {
       if (mounted) setState(() => _browserAuthLaunching = false);
@@ -181,7 +187,7 @@ class _LoginPageState extends State<LoginPage>
     // 直接 403 (TLS 指纹不对). 没有就弹 CF 手动验证页让用户人机过一次。
     if (!await _ensureCfClearance()) {
       if (mounted) {
-        ToastService.showError('Cloudflare 验证未完成,请重试');
+        ToastService.showError(context.l10n.login_cfIncomplete);
       }
       return false;
     }
@@ -197,7 +203,7 @@ class _LoginPageState extends State<LoginPage>
 
     // Step 1-3: WebView 内 JS 全流程登录 (csrf → hcaptcha/create → session)。
     // 三个请求都由 WebView 内核发出, TLS/JA3 指纹与 CF 签发 cf_clearance 时一致,
-    // 避开 dio (IO/rhttp 适配器) 指纹不匹配导致的 403 (BAD CSRF)。
+    // 避开 dio 与 WebView 指纹不一致导致的 403 (BAD CSRF)。
     // 2FA 通过 onNeedSecondFactor 回调弹 TOTP, 由 dialog 内同一 WebView 重试。
     final result = await showWebViewLoginDialog(
       context,
@@ -208,8 +214,8 @@ class _LoginPageState extends State<LoginPage>
       onNeedSecondFactor: (need) => showTwoFactorDialog(
         context,
         hint: need.totpEnabled
-            ? '请输入身份验证器 App 显示的 6 位验证码'
-            : '此账号需要二步验证',
+            ? context.l10n.login_totpHint
+            : context.l10n.login_secondFactorRequired,
         onUseBackupCode: () => _loginWithWebView(),
       ),
     );
@@ -248,21 +254,24 @@ class _LoginPageState extends State<LoginPage>
 
   void _showFailureToast(LoginFailure f) {
     final msg = switch (f.kind) {
-      LoginErrorKind.invalidCredentials => '用户名或密码错误',
-      LoginErrorKind.secondFactorRequired => f.message ?? '二步验证失败',
-      LoginErrorKind.notActivated =>
-        '账号未激活,请到邮箱 ${f.sentToEmail ?? ''} 完成激活',
-      LoginErrorKind.notApproved => '账号尚未通过审核',
-      LoginErrorKind.passwordExpired => '密码已过期,请用浏览器登录重设密码',
-      LoginErrorKind.network => f.message ?? '网络异常',
-      LoginErrorKind.unknown => f.message ?? '登录失败',
+      LoginErrorKind.invalidCredentials =>
+        context.l10n.login_invalidCredentials,
+      LoginErrorKind.secondFactorRequired =>
+        f.message ?? context.l10n.login_secondFactorFailed,
+      LoginErrorKind.notActivated => context.l10n.login_notActivated(
+        f.sentToEmail ?? '',
+      ),
+      LoginErrorKind.notApproved => context.l10n.login_notApproved,
+      LoginErrorKind.passwordExpired => context.l10n.login_passwordExpired,
+      LoginErrorKind.network => f.message ?? context.l10n.login_networkError,
+      LoginErrorKind.unknown => f.message ?? context.l10n.login_failed,
     };
     ToastService.showError(msg);
   }
 
   Future<void> _loginWithWebView([String? initialUrl]) async {
     final result = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(
+      InteractionPageRoute(
         builder: (_) => WebViewLoginPage(initialUrl: initialUrl),
       ),
     );
@@ -278,7 +287,7 @@ class _LoginPageState extends State<LoginPage>
       _savedUsername = null;
       _savedPassword = null;
     });
-    ToastService.showSuccess('已清除保存的账号密码');
+    ToastService.showSuccess(context.l10n.login_savedCredentialsCleared);
   }
 
   @override
@@ -301,7 +310,7 @@ class _LoginPageState extends State<LoginPage>
                     0,
                     AmbientIconButton(
                       icon: Symbols.arrow_back_rounded,
-                      tooltip: '返回',
+                      tooltip: context.l10n.common_back,
                       onPressed: () => Navigator.of(context).maybePop(),
                     ),
                   ),
@@ -315,7 +324,7 @@ class _LoginPageState extends State<LoginPage>
                       0,
                       AmbientIconButton(
                         icon: Symbols.delete_rounded,
-                        tooltip: '清除保存的账号',
+                        tooltip: context.l10n.login_clearSavedCredentials,
                         onPressed: _clearSavedCredentials,
                       ),
                     ),
@@ -395,9 +404,8 @@ class _LoginPageState extends State<LoginPage>
   /// 磨砂玻璃表单卡片
   Widget _buildFormCard(ThemeData theme, ColorScheme scheme) {
     return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
+      decoration: ShapeDecoration(
+        shadows: [
           BoxShadow(
             color: Colors.black.withValues(
               alpha: theme.brightness == Brightness.dark ? 0.4 : 0.1,
@@ -406,18 +414,23 @@ class _LoginPageState extends State<LoginPage>
             offset: const Offset(0, 8),
           ),
         ],
+        shape: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(24),
+        ),
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(24),
+      child: ClipRSuperellipse(
+        borderRadius: context.shapes.borderRadius(24),
         child: BackdropFilter(
           filter: createBlurFilter(blurSigma),
           child: Container(
             padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
-            decoration: BoxDecoration(
+            decoration: ShapeDecoration(
               color: scheme.surfaceContainer.withValues(alpha: 0.72),
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(
-                color: scheme.outlineVariant.withValues(alpha: 0.4),
+              shape: RoundedSuperellipseBorder(
+                borderRadius: context.shapes.borderRadius(24),
+                side: BorderSide(
+                  color: scheme.outlineVariant.withValues(alpha: 0.4),
+                ),
               ),
             ),
             child: !_credentialsLoaded
@@ -444,7 +457,7 @@ class _LoginPageState extends State<LoginPage>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const _DividerWithLabel(label: '或'),
+        _DividerWithLabel(label: context.l10n.login_or),
         const SizedBox(height: 16),
         OutlinedButton.icon(
           onPressed: _loginWithQrScan,
@@ -452,8 +465,8 @@ class _LoginPageState extends State<LoginPage>
           label: Text(context.l10n.login_scanToLogin),
           style: OutlinedButton.styleFrom(
             minimumSize: const Size(double.infinity, 52),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(28),
+            shape: RoundedSuperellipseBorder(
+              borderRadius: context.shapes.borderRadius(28),
             ),
             side: BorderSide(
               color: scheme.outlineVariant.withValues(alpha: 0.6),
@@ -470,11 +483,11 @@ class _LoginPageState extends State<LoginPage>
                   child: LoadingSpinner(size: 20),
                 )
               : const Icon(Symbols.verified_user_rounded, size: 20),
-          label: const Text('浏览器授权登录'),
+          label: Text(context.l10n.login_browserAuth),
           style: OutlinedButton.styleFrom(
             minimumSize: const Size(double.infinity, 52),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(28),
+            shape: RoundedSuperellipseBorder(
+              borderRadius: context.shapes.borderRadius(28),
             ),
             side: BorderSide(
               color: scheme.outlineVariant.withValues(alpha: 0.6),
@@ -485,11 +498,11 @@ class _LoginPageState extends State<LoginPage>
         OutlinedButton.icon(
           onPressed: () => _loginWithWebView(),
           icon: const Icon(Symbols.open_in_browser_rounded, size: 20),
-          label: const Text('其他方式登录 (OAuth / Passkey / 注册)'),
+          label: Text(context.l10n.login_otherMethods),
           style: OutlinedButton.styleFrom(
             minimumSize: const Size(double.infinity, 52),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(28),
+            shape: RoundedSuperellipseBorder(
+              borderRadius: context.shapes.borderRadius(28),
             ),
             side: BorderSide(
               color: scheme.outlineVariant.withValues(alpha: 0.6),
@@ -510,9 +523,9 @@ class _LoginPageState extends State<LoginPage>
 
   /// 扫码登录:跳转扫码页,成功后 pop 登录页
   Future<void> _loginWithQrScan() async {
-    final result = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(builder: (_) => const QrLoginScanPage()),
-    );
+    final result = await Navigator.of(
+      context,
+    ).push<bool>(InteractionPageRoute(builder: (_) => const QrLoginScanPage()));
     if (result == true && mounted) {
       Navigator.of(context).pop(true);
     }

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,14 +10,22 @@ import 'package:fluxdo/l10n/s.dart';
 import 'package:fluxdo/models/nested_topic.dart';
 import 'package:fluxdo/models/nested_reading_position.dart';
 import 'package:fluxdo/models/topic.dart';
+import 'package:fluxdo/models/pending_post.dart';
+import 'package:fluxdo/pages/topic_detail_page/widgets/pending_posts_section.dart';
 import 'package:fluxdo/pages/topic_detail_page/widgets/nested_post_list.dart';
 import 'package:fluxdo/providers/nested_reading_provider.dart';
 import 'package:fluxdo/providers/nested_topic_provider.dart';
+import 'package:fluxdo/providers/message_bus_providers.dart';
 import 'package:fluxdo/providers/theme_provider.dart';
 import 'package:fluxdo/providers/category_provider.dart';
 import 'package:fluxdo/widgets/nested/nested_post_card.dart';
+import 'package:fluxdo/widgets/nested/nested_reading_scope.dart';
+import 'package:fluxdo/widgets/nested/nested_thread_sheet.dart';
+import 'package:fluxdo/widgets/common/positioned_stream_list.dart';
 import 'package:fluxdo/models/category.dart';
 import 'package:fluxdo/services/local_notification_service.dart';
+import 'package:fluxdo/services/preloaded_data_service.dart';
+import 'package:fluxdo/services/discourse_cook_service.dart';
 
 Post _post(int number, {bool long = false}) => Post(
   id: number,
@@ -38,9 +48,15 @@ final _detail = TopicDetail.fromJson({
   'post_stream': {'posts': [], 'stream': []},
 });
 
+class _MessageBusInit extends MessageBusInitNotifier {
+  @override
+  void build() {}
+}
+
 class _Nested extends NestedTopicNotifier {
   _Nested(this.preset) : super(const NestedTopicParams(topicId: 1));
   final NestedTopicState preset;
+  void replace(NestedTopicState value) => state = AsyncData(value);
   void deliver(NestedChildCreatedEvent event) {
     state = AsyncData(state.requireValue.copyWith(lastChildCreated: event));
   }
@@ -52,6 +68,9 @@ class _Nested extends NestedTopicNotifier {
 Future<void> _pump(
   WidgetTester tester, {
   required NestedTopicState state,
+  TopicDetail? detail,
+  void Function(PendingPost)? onWithdraw,
+  void Function(PendingPost)? onWithdrawAndEdit,
   Size size = const Size(375, 812),
   double scale = 1,
   bool dark = false,
@@ -71,6 +90,7 @@ Future<void> _pump(
   final container = ProviderContainer(
     overrides: [
       sharedPreferencesProvider.overrideWithValue(prefs),
+      messageBusInitProvider.overrideWith(_MessageBusInit.new),
       categoryMapProvider.overrideWith(
         (_) => const AsyncData(<int, Category>{}),
       ),
@@ -108,29 +128,41 @@ Future<void> _pump(
               textScaler: TextScaler.linear(scale),
             ),
             child: Scaffold(
-              body: NestedPostList(
-                nestedState: state,
-                params: const NestedTopicParams(topicId: 1),
-                detail: _detail,
-                blockedUsernames: const {},
-                topicId: 1,
-                scrollController: scroll,
-                headerKey: GlobalKey(),
-                isLoggedIn: false,
-                session: session,
-                restorePosition: restore,
-                resumePosition: const NestedReadingPosition(
-                  postNumber: 20,
-                  rootPostNumber: 2,
+              body: Consumer(
+                builder: (context, ref, _) => NestedPostList(
+                  nestedState:
+                      ref
+                          .watch(
+                            nestedTopicProvider(
+                              const NestedTopicParams(topicId: 1),
+                            ),
+                          )
+                          .value ??
+                      state,
+                  params: const NestedTopicParams(topicId: 1),
+                  detail: detail ?? _detail,
+                  onWithdrawPendingPost: onWithdraw,
+                  onWithdrawAndEditPendingPost: onWithdrawAndEdit,
+                  blockedUsernames: const {},
+                  topicId: 1,
+                  scrollController: scroll,
+                  headerKey: GlobalKey(),
+                  isLoggedIn: false,
+                  session: session,
+                  restorePosition: restore,
+                  resumePosition: const NestedReadingPosition(
+                    postNumber: 20,
+                    rootPostNumber: 2,
+                  ),
+                  onResume: onResume,
+                  onVisiblePostsChanged: onVisible,
+                  onReply: (_, {initialContent}) {},
+                  onEdit: (_) {},
+                  onRefreshPost: (_) {},
+                  onJumpToPost: (_) {},
+                  onVoteChanged: (_, _) {},
+                  onScrollNotification: (_) => false,
                 ),
-                onResume: onResume,
-                onVisiblePostsChanged: onVisible,
-                onReply: (_, {initialContent}) {},
-                onEdit: (_) {},
-                onRefreshPost: (_) {},
-                onJumpToPost: (_) {},
-                onVoteChanged: (_, _) {},
-                onScrollNotification: (_) => false,
               ),
             ),
           ),
@@ -142,6 +174,174 @@ Future<void> _pump(
 }
 
 void main() {
+  testWidgets('嵌套列表末尾展示个人待审回复并透传撤回操作', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    await tester.runAsync(() async {
+      await PreloadedDataService().hydrateFromHtml(
+        '<meta id="data-discourse-setup">'
+        '<script id="data-preloaded" type="application/json">${jsonEncode({
+          'currentUser': {'id': 1, 'username': 'tester'},
+          'siteSettings': {'min_post_length': 1, 'max_post_length': 10000},
+          'site': {'categories': [], 'top_tags': []},
+        })}</script>',
+      );
+      await DiscourseCookService().ensureInitialized();
+    });
+    int? withdrawn;
+    int? edited;
+    await _pump(
+      tester,
+      state: const NestedTopicState(roots: [], hasMoreRoots: false),
+      detail: _detail.copyWith(
+        pendingPosts: [const PendingPost(id: 9, raw: '待审核内容', topicId: 1)],
+      ),
+      onWithdraw: (pending) => withdrawn = pending.id,
+      onWithdrawAndEdit: (pending) => edited = pending.id,
+    );
+    expect(find.byType(PendingPostsSection), findsOneWidget);
+    await tester.ensureVisible(find.text('撤回'));
+    await tester.tap(find.text('撤回'));
+    await tester.tap(find.text('撤回并重新编辑'));
+    expect(withdrawn, 9);
+    expect(edited, 9);
+  });
+
+  for (final hasMore in [true, false]) {
+    testWidgets('嵌套列表只在加载到末尾后展示话题提示 hasMore=$hasMore', (tester) async {
+      await _pump(
+        tester,
+        state: NestedTopicState(roots: const [], hasMoreRoots: hasMore),
+        detail: _detail.copyWith(slowModeSeconds: 3600),
+      );
+      expect(
+        find.text('请在此话题的两次发帖之间等待 1 小时'),
+        hasMore ? findsNothing : findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('继续主题弹层按需构建子回复并保持拖拽与阅读上报', (tester) async {
+    final node = NestedNode(
+      post: _post(2),
+      children: [for (var n = 3; n <= 80; n++) NestedNode(post: _post(n))],
+    );
+    Set<int> visible = {};
+    await _pump(
+      tester,
+      state: NestedTopicState(roots: [node]),
+      onVisible: (posts) => visible = posts,
+    );
+    final context = tester.element(find.byType(NestedPostCard).first);
+    showNestedThreadSheet(
+      context: context,
+      node: node,
+      topicId: 1,
+      detail: _detail,
+      params: const NestedTopicParams(topicId: 1),
+      maxDepth: 5,
+      rootPostNumber: 2,
+      isLoggedIn: false,
+      onReply: (_, {initialContent}) {},
+      onEdit: (_) {},
+      onRefreshPost: (_) {},
+      onJumpToPost: (_) {},
+    );
+    await tester.pumpAndSettle();
+    final sheetList = find.byType(PositionedStreamList).last;
+    final before = tester.getSize(sheetList).height;
+    expect(find.byType(NestedPostCard).evaluate().length, lessThan(30));
+    await tester.drag(sheetList, const Offset(0, -150));
+    await tester.pumpAndSettle();
+    expect(tester.getSize(sheetList).height, greaterThan(before));
+    final list = tester.widget<PositionedStreamList>(sheetList);
+    final jump = list.listController.jumpToIndex(
+      list.itemKeys.indexOf('post-60'),
+    );
+    await tester.pumpAndSettle();
+    await jump;
+    expect(visible.contains(60), isTrue);
+    expect(visible.contains(2), isFalse);
+    Navigator.of(tester.element(sheetList)).pop();
+    await tester.pumpAndSettle();
+    expect(visible.contains(2), isTrue);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('同一分支内上方正文增高时保持当前子回复的位置', (tester) async {
+    final session = NestedReadingSession();
+    NestedTopicState state({bool expandedBody = false}) => NestedTopicState(
+      contextMode: true,
+      targetPostNumber: 20,
+      contextChain: NestedNode(
+        post: _post(2, long: expandedBody),
+        children: [NestedNode(post: _post(20, long: true))],
+      ),
+    );
+    final notifier = _Nested(state());
+    await _pump(
+      tester,
+      state: state(),
+      notifier: notifier,
+      session: session,
+      restore: const NestedReadingPosition(
+        postNumber: 20,
+        rootPostNumber: 2,
+        offset: -120,
+      ),
+    );
+    final viewport = tester
+        .widget<NestedReadingScope>(find.byType(NestedReadingScope))
+        .controller;
+    final before = viewport.topOf(20)!;
+    notifier.replace(state(expandedBody: true));
+    await tester.pump();
+    expect(viewport.topOf(20), closeTo(before, 1));
+    await tester.pumpAndSettle();
+    expect(viewport.topOf(20), closeTo(before, 1));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('拖动期间插入主回复和新回复提示保持锚点并继续响应手势', (tester) async {
+    final roots = [for (var n = 2; n < 80; n++) NestedNode(post: _post(n))];
+    final state = NestedTopicState(roots: roots);
+    final notifier = _Nested(state);
+    final scroll = AutoScrollController();
+    await _pump(tester, state: state, notifier: notifier, controller: scroll);
+    final list = tester.widget<PositionedStreamList>(
+      find.byType(PositionedStreamList),
+    );
+    final jump = list.listController.jumpToIndex(
+      list.itemKeys.indexOf('root-40'),
+    );
+    await tester.pumpAndSettle();
+    await jump;
+    final gesture = await tester.startGesture(const Offset(180, 450));
+    await gesture.moveBy(const Offset(0, -60));
+    await tester.pump();
+    final viewport = tester
+        .widget<NestedReadingScope>(find.byType(NestedReadingScope))
+        .controller;
+    final before = viewport.topOf(40)!;
+    notifier.replace(
+      state.copyWith(
+        roots: [
+          NestedNode(post: _post(100, long: true)),
+          ...roots,
+        ],
+        newRootPostIds: [200],
+      ),
+    );
+    await tester.pump();
+    expect(viewport.topOf(40), closeTo(before, 1));
+    await gesture.moveBy(const Offset(0, -70));
+    await tester.pump();
+    expect(viewport.topOf(40), closeTo(before - 70, 1));
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('新回复等待主动加载，页面重建保留提示和折叠状态', (tester) async {
     final session = NestedReadingSession()..expanded[2] = false;
     final state = NestedTopicState(

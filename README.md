@@ -24,6 +24,12 @@ FluxDO 是为 [Linux.do](https://linux.do/) 社区打造的现代化移动和桌
 
 ![FluxDO 预览](screenshots/preview.png)
 
+### Windows 更新
+
+通过 EXE 安装的版本支持应用内下载更新：点击“立即更新”，等待校验完成后选择“安装并重启”。更新会保留原安装目录和安装范围；所有用户安装可能出现 Windows 权限确认。下载失败可以重试，也可通过“查看详情”手动下载。
+
+ZIP 便携版仍通过发布页手动更新。首次使用自更新，需要先安装包含此功能的版本。发布要求见 [CI 说明](scripts/ci/README.md)。
+
 ## 特性
 
 ### 核心功能
@@ -47,7 +53,7 @@ FluxDO 是为 [Linux.do](https://linux.do/) 社区打造的现代化移动和桌
 
 ### 前置要求
 
-- Flutter SDK ^3.10.4
+- Flutter SDK 3.47.9（版本由 `.fvmrc` 固定）
 - Rust 工具链（用于编译 DOH 代理）
 - Android Studio / Xcode（移动端开发）
 
@@ -82,6 +88,7 @@ FluxDO 是为 [Linux.do](https://linux.do/) 社区打造的现代化移动和桌
    ```bash
    just run -- -d windows
    just run -- -d macos
+   just run -- -d linux
    just run -- --dart-define=cronetHttpNoPlay=true
    ```
 
@@ -164,6 +171,10 @@ FluxDO 集成了基于 Rust 的 DOH (DNS over HTTPS) 代理，提供：
 本项目基于 [GPL-3.0](LICENSE) 协议开源。
 
 ## 致谢
+
+This project is tested with BrowserStack.
+
+[BrowserStack](https://www.browserstack.com/) 用于真机测试；已完成一次 Android 安装与启动验证（[运行记录](https://github.com/Lingyan000/fluxdo/actions/runs/43710553020)）。
 
 感谢 [Linux.do](https://linux.do/) 社区的所有成员，是你们的真诚、友善、团结、专业让这个社区充满活力。
 

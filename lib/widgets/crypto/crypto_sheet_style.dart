@@ -3,6 +3,7 @@
 /// 解密/加密弹窗共用，避免两个文件重复同一份 decoration。
 library;
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 
 /// 填充式输入框装饰（无边框 + 圆角 12 + surfaceContainerHighest 填充）。
@@ -19,18 +20,20 @@ InputDecoration cryptoSheetInputDecoration(
     isDense: true,
     filled: true,
     fillColor: theme.colorScheme.surfaceContainerHigh,
-    contentPadding:
-        const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
     border: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: (theme.extension<UiShapes>() ?? UiShapes.standard)
+          .borderRadius(12),
       borderSide: BorderSide.none,
     ),
     enabledBorder: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: (theme.extension<UiShapes>() ?? UiShapes.standard)
+          .borderRadius(12),
       borderSide: BorderSide.none,
     ),
     focusedBorder: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: (theme.extension<UiShapes>() ?? UiShapes.standard)
+          .borderRadius(12),
       borderSide: BorderSide(
         color: theme.colorScheme.primary.withValues(alpha: 0.6),
         width: 1.4,
@@ -58,9 +61,11 @@ class CryptoSheetMessageCard extends StatelessWidget {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: color.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(12),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(12),
+        ),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -99,17 +104,20 @@ class CryptoSheetResultCard extends StatelessWidget {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(12),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(12),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             title,
-            style: theme.textTheme.labelSmall
-                ?.copyWith(color: theme.colorScheme.primary),
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.primary,
+            ),
           ),
           const SizedBox(height: 6),
           ConstrainedBox(
@@ -118,8 +126,9 @@ class CryptoSheetResultCard extends StatelessWidget {
               child: SelectableText(
                 content,
                 style: monospace
-                    ? theme.textTheme.bodySmall
-                        ?.copyWith(fontFamily: 'monospace')
+                    ? theme.textTheme.bodySmall?.copyWith(
+                        fontFamily: 'monospace',
+                      )
                     : theme.textTheme.bodyMedium,
               ),
             ),

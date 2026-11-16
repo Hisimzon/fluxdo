@@ -3,6 +3,8 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:common_ui/common_ui.dart'
+    show showInteractionDialog, UiShapesContext, UiEmphasisContext;
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
@@ -65,7 +67,7 @@ class WebViewLoginNeed2FA {
 /// `GET /session/csrf` → `POST /hcaptcha/create.json` → `POST /session.json`。
 ///
 /// 这样三个请求都由 WebView 内核发出, TLS/JA3 指纹与 CF 签发 `cf_clearance`
-/// 时一致, 避开 dio (IO / rhttp 适配器) 指纹不匹配导致的 403 (BAD CSRF)。
+/// 时一致, 避开 dio 与 WebView 指纹不一致导致的 403 (BAD CSRF)。
 ///
 /// 返回结构化结果; 取消返回 [WebViewLoginStatus.canceled]。
 /// [onNeedSecondFactor] 在检测到 2FA 时回调出去 (由 caller 弹 TOTP 对话框),
@@ -79,7 +81,7 @@ Future<WebViewLoginDialogResult?> showWebViewLoginDialog(
   onNeedSecondFactor,
   String? hcaptchaCreateEndpoint,
 }) {
-  return showDialog<WebViewLoginDialogResult>(
+  return showInteractionDialog<WebViewLoginDialogResult>(
     context: context,
     barrierColor: Colors.black54,
     barrierDismissible: false,
@@ -639,9 +641,8 @@ document.close();
     if (_finished) return;
     _finished = true;
     if (mounted) {
-      Navigator.of(
-        context,
-      ).pop(WebViewLoginDialogResult.failure(kind, message));
+      Navigator.of(context)
+          .pop(WebViewLoginDialogResult.failure(kind, message));
     }
   }
 
@@ -687,19 +688,21 @@ document.close();
                     width: double.infinity,
                     height: panelHeight,
                     child: DecoratedBox(
-                      decoration: BoxDecoration(
+                      decoration: ShapeDecoration(
                         color: scheme.surface,
-                        borderRadius: BorderRadius.circular(20),
-                        boxShadow: [
+                        shadows: [
                           BoxShadow(
                             color: Colors.black.withValues(alpha: 0.15),
                             blurRadius: 24,
                             offset: const Offset(0, 8),
                           ),
                         ],
+                        shape: RoundedSuperellipseBorder(
+                          borderRadius: context.shapes.borderRadius(20),
+                        ),
                       ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(20),
+                      child: ClipRSuperellipse(
+                        borderRadius: context.shapes.borderRadius(20),
                         child: Column(
                           children: [
                             _Header(onClose: _finishCanceled, scheme: scheme),
@@ -851,14 +854,13 @@ class _Header extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(Symbols.verified_user_rounded, size: 20, color: scheme.primary),
+          Icon(Symbols.verified_user_rounded, size: 20, color: context.emphasis.accent),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               '完成人机验证',
-              style: Theme.of(
-                context,
-              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+              style: Theme.of(context).textTheme.titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w600),
             ),
           ),
           IconButton(

@@ -1,9 +1,13 @@
+import 'dart:async';
+import 'package:common_ui/common_ui.dart';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../settings/settings_model.dart';
 import '../../settings/settings_renderer.dart';
+
 import 'package:m3e_ui/m3e_ui.dart';
 
 /// 通用数据驱动设置页
@@ -23,6 +27,9 @@ class SettingsGroupPage extends ConsumerStatefulWidget {
   /// 内容最大宽度。为 null 时铺满页面。
   final double? maxContentWidth;
 
+  /// 嵌入已有表单外壳，沿用分组、搜索定位和设置项渲染。
+  final bool embedded;
+
   const SettingsGroupPage({
     super.key,
     required this.title,
@@ -30,6 +37,7 @@ class SettingsGroupPage extends ConsumerStatefulWidget {
     this.highlightId,
     this.actions,
     this.maxContentWidth,
+    this.embedded = false,
   });
 
   @override
@@ -39,6 +47,7 @@ class SettingsGroupPage extends ConsumerStatefulWidget {
 class _SettingsGroupPageState extends ConsumerState<SettingsGroupPage> {
   final Map<String, GlobalKey> _itemKeys = {};
   String? _highlightedId;
+  Timer? _highlightTimer;
 
   @override
   void initState() {
@@ -50,6 +59,7 @@ class _SettingsGroupPageState extends ConsumerState<SettingsGroupPage> {
   }
 
   void _scrollToHighlight() {
+    if (!mounted) return;
     final key = _itemKeys[_highlightedId];
     if (key?.currentContext != null) {
       Scrollable.ensureVisible(
@@ -60,9 +70,16 @@ class _SettingsGroupPageState extends ConsumerState<SettingsGroupPage> {
       );
     }
     // 2 秒后清除高亮
-    Future.delayed(const Duration(seconds: 2), () {
+    _highlightTimer?.cancel();
+    _highlightTimer = Timer(const Duration(seconds: 2), () {
       if (mounted) setState(() => _highlightedId = null);
     });
+  }
+
+  @override
+  void dispose() {
+    _highlightTimer?.cancel();
+    super.dispose();
   }
 
   @override
@@ -80,25 +97,34 @@ class _SettingsGroupPageState extends ConsumerState<SettingsGroupPage> {
       children: [
         for (final group in groups)
           if (_hasVisibleItems(group)) ...[
-            _buildSectionHeader(theme, group.title, group.icon),
-            const SizedBox(height: 12),
+            if (group.title.isNotEmpty) ...[
+              _buildSectionHeader(
+                theme,
+                group.title,
+                group.icon,
+                group.trailing,
+              ),
+              const SizedBox(height: 12),
+            ],
             _buildGroupItems(theme, group),
             const SizedBox(height: 24),
           ],
       ],
     );
 
+    final body = widget.maxContentWidth == null
+        ? listView
+        : Align(
+            alignment: Alignment.topCenter,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: widget.maxContentWidth!),
+              child: listView,
+            ),
+          );
+    if (widget.embedded) return body;
     return Scaffold(
       appBar: AppBar(title: Text(widget.title), actions: widget.actions),
-      body: widget.maxContentWidth == null
-          ? listView
-          : Align(
-              alignment: Alignment.topCenter,
-              child: ConstrainedBox(
-                constraints: BoxConstraints(maxWidth: widget.maxContentWidth!),
-                child: listView,
-              ),
-            ),
+      body: body,
     );
   }
 
@@ -121,9 +147,7 @@ class _SettingsGroupPageState extends ConsumerState<SettingsGroupPage> {
     }
 
     return SegmentedCardGroup(
-      children: [
-        for (final item in effectiveItems) _buildItem(theme, item),
-      ],
+      children: [for (final item in effectiveItems) _buildItem(theme, item)],
     );
   }
 
@@ -132,13 +156,14 @@ class _SettingsGroupPageState extends ConsumerState<SettingsGroupPage> {
     final key = _itemKeys.putIfAbsent(model.id, () => GlobalKey());
     final isHighlighted = _highlightedId == model.id;
 
-    return AnimatedContainer(
+    // 高亮底色与 ListTile 的 ink 由同一层 Material 绘制，避免底色遮住水波。
+    return Material(
       key: key,
-      duration: const Duration(milliseconds: 500),
+      animationDuration: const Duration(milliseconds: 500),
       color: isHighlighted
           ? theme.colorScheme.primaryContainer.withValues(alpha: 0.4)
           : Colors.transparent,
-      child: SettingsRenderer(model: model),
+      child: SettingsRenderer(model: model, visibilityChecked: true),
     );
   }
 
@@ -146,17 +171,25 @@ class _SettingsGroupPageState extends ConsumerState<SettingsGroupPage> {
     return group.items.any((item) => item.isVisible(ref));
   }
 
-  Widget _buildSectionHeader(ThemeData theme, String title, IconData icon) {
+  Widget _buildSectionHeader(
+    ThemeData theme,
+    String title,
+    IconData icon,
+    Widget? trailing,
+  ) {
     return Row(
       children: [
-        Icon(icon, size: 18, color: theme.colorScheme.primary),
+        Icon(icon, size: 18, color: context.emphasis.accent),
         const SizedBox(width: 8),
-        Text(
-          title,
-          style: theme.textTheme.titleSmall?.copyWith(
-            fontWeight: FontWeight.w500,
+        Expanded(
+          child: Text(
+            title,
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w500,
+            ),
           ),
         ),
+        ?trailing,
       ],
     );
   }

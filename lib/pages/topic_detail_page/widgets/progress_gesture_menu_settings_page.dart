@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -105,7 +106,7 @@ class _ProgressGestureMenuSettingsPageState
             subtitle: Text(l10n.progressGesture_longPressEnableDesc),
             secondary: Icon(
               Symbols.fingerprint_rounded,
-              color: theme.colorScheme.primary,
+              color: context.emphasis.accent,
             ),
             onChanged: (v) => ref
                 .read(preferencesProvider.notifier)
@@ -244,9 +245,7 @@ class _PreviewAreaState extends State<_PreviewArea> {
   }
 
   void _resetDragState() {
-    if (_draggingIndex == null &&
-        _hoverSlot == null &&
-        !_hoverDelete) {
+    if (_draggingIndex == null && _hoverSlot == null && !_hoverDelete) {
       return;
     }
     setState(() {
@@ -422,7 +421,7 @@ class _PreviewAreaState extends State<_PreviewArea> {
       color: dragging
           ? theme.colorScheme.primary
           : theme.colorScheme.surfaceContainerHighest,
-      shape: const CircleBorder(),
+      shape: context.shapes.circle(),
       elevation: dragging ? 10 : 2,
       shadowColor: dragging
           ? theme.colorScheme.primary.withValues(alpha: 0.5)
@@ -443,12 +442,13 @@ class _PreviewAreaState extends State<_PreviewArea> {
 
   Widget _buildPlaceholder(ThemeData theme) {
     return DecoratedBox(
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
+      decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
-        border: Border.all(
-          color: theme.colorScheme.outline.withValues(alpha: 0.35),
-          width: 1.2,
+        shape: context.shapes.circle(
+          side: BorderSide(
+            color: theme.colorScheme.outline.withValues(alpha: 0.35),
+            width: 1.2,
+          ),
         ),
       ),
     );
@@ -457,7 +457,9 @@ class _PreviewAreaState extends State<_PreviewArea> {
   Widget _buildIdlePill(BuildContext context, ThemeData theme) {
     return Material(
       color: theme.colorScheme.surfaceContainerHighest,
-      shape: const StadiumBorder(),
+      shape: RoundedSuperellipseBorder(
+        borderRadius: BorderRadius.all(context.shapes.radius(9999)),
+      ),
       elevation: 2,
       shadowColor: Colors.black26,
       child: Center(
@@ -512,7 +514,9 @@ class _PreviewAreaState extends State<_PreviewArea> {
         color: active
             ? theme.colorScheme.error
             : theme.colorScheme.errorContainer,
-        shape: const StadiumBorder(),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.all(context.shapes.radius(9999)),
+        ),
         elevation: active ? 8 : 2,
         shadowColor: theme.colorScheme.error.withValues(alpha: 0.45),
         child: Row(
@@ -545,9 +549,11 @@ class _EmptyPreview extends StatelessWidget {
       child: Center(
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-          decoration: BoxDecoration(
+          decoration: ShapeDecoration(
             color: theme.colorScheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(28),
+            shape: RoundedSuperellipseBorder(
+              borderRadius: context.shapes.borderRadius(28),
+            ),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -594,9 +600,9 @@ class _AvailableTile extends StatelessWidget {
       leading: Container(
         width: 40,
         height: 40,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
+        decoration: ShapeDecoration(
           color: theme.colorScheme.surfaceContainerHighest,
+          shape: context.shapes.circle(),
         ),
         alignment: Alignment.center,
         child: Icon(
@@ -610,7 +616,7 @@ class _AvailableTile extends StatelessWidget {
       title: Text(meta.label),
       trailing: Icon(
         Symbols.add_circle_rounded,
-        color: enabled ? theme.colorScheme.primary : theme.colorScheme.outline,
+        color: enabled ? context.emphasis.selected : theme.colorScheme.outline,
       ),
       onTap: enabled ? onTap : null,
     );

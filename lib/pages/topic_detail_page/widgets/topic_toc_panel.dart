@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:fluxdo_render/fluxdo_render.dart';
 
@@ -44,7 +45,9 @@ class TopicTocSidePanel extends StatelessWidget {
         margin: EdgeInsets.zero,
         elevation: 1,
         clipBehavior: Clip.antiAlias,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(14),
+        ),
         child: visible
             ? OverflowBox(
                 // 展开内容恒按 expandedWidth 布局:宽度动画(44↔240)途中
@@ -125,7 +128,7 @@ class _PanelHeader extends StatelessWidget {
             Icon(
               Icons.format_list_bulleted,
               size: 16,
-              color: theme.colorScheme.primary,
+              color: context.emphasis.accent,
             ),
             const SizedBox(width: 8),
             Expanded(
@@ -187,8 +190,8 @@ Future<void> showTocBottomSheet({
     context: context,
     isScrollControlled: true,
     showDragHandle: true,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    shape: RoundedSuperellipseBorder(
+      borderRadius: BorderRadius.vertical(top: context.shapes.radius(20)),
     ),
     builder: (sheetContext) {
       return ConstrainedBox(
@@ -339,8 +342,10 @@ class _TocTreeState extends State<_TocTree> {
     final viewBottom = viewTop + pos.viewportDimension;
     if (itemTop >= viewTop && itemBottom <= viewBottom) return; // 已完整可见
 
-    final target = (itemTop - pos.viewportDimension / 2 + extent / 2)
-        .clamp(pos.minScrollExtent, pos.maxScrollExtent);
+    final target = (itemTop - pos.viewportDimension / 2 + extent / 2).clamp(
+      pos.minScrollExtent,
+      pos.maxScrollExtent,
+    );
     if (animate) {
       _scrollController.animateTo(
         target,
@@ -419,10 +424,14 @@ class _TocTile extends StatelessWidget {
         color: isActive
             ? scheme.primary.withValues(alpha: 0.10)
             : Colors.transparent,
-        borderRadius: BorderRadius.circular(8),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(8),
+        ),
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(8),
+          customBorder: RoundedSuperellipseBorder(
+            borderRadius: context.shapes.borderRadius(8),
+          ),
           hoverColor: scheme.onSurface.withValues(alpha: 0.06),
           child: Padding(
             // 层级缩进:顶级 8,每深一级 +12
@@ -434,9 +443,11 @@ class _TocTile extends StatelessWidget {
                   duration: const Duration(milliseconds: 150),
                   width: 3,
                   height: 16,
-                  decoration: BoxDecoration(
+                  decoration: ShapeDecoration(
                     color: isActive ? scheme.primary : Colors.transparent,
-                    borderRadius: BorderRadius.circular(1.5),
+                    shape: RoundedSuperellipseBorder(
+                      borderRadius: context.shapes.borderRadius(1.5),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 6),

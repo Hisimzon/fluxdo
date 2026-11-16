@@ -2,33 +2,40 @@ import 'package:flutter/material.dart';
 
 import '../utils/seed_color_scheme.dart';
 import 'accent_colors.dart';
+import 'app_colors.dart';
+import 'color_scheme_roles.dart';
 import 'neutral_ramps.dart';
+import 'theme_spec.dart';
 
-/// 一次主题解析的产出：明暗两套 ColorScheme + MaterialApp 的 themeMode。
+/// 一次主题解析的产出：明暗两套 ColorScheme 与语义色 + MaterialApp 的
+/// themeMode。
 class ResolvedTheme {
   const ResolvedTheme({
     required this.light,
     required this.dark,
+    required this.lightColors,
+    required this.darkColors,
     required this.mode,
-    required this.transparent,
   });
 
   final ColorScheme light;
   final ColorScheme dark;
+  final AppColors lightColors;
+  final AppColors darkColors;
   final ThemeMode mode;
-
-  /// 透明模式是否生效（供根背景层/脚手架背景判断）。
-  final bool transparent;
 }
 
-/// 主题合成器。
+/// 主题合成器：把 [ThemeSpec] 与用户选择（强调色、纯黑）解析成
+/// 明暗两套 ColorScheme。
 ///
-/// 默认路径（未开任何开关）走 [SeedColorScheme.from] 的完整 fromSeed
-/// 方案：中性表面带种子色相，这是一直以来的默认外观。
+/// - Material 主题（未开纯黑）走 [SeedColorScheme.from] 的完整
+///   fromSeed 方案：中性表面带种子色相，这是一直以来的默认外观；
+/// - 简约主题、纯黑修饰走合成路径：彩色 role 来自 [AccentColors]，
+///   中性 role 来自 [NeutralRamp]（无色相中性灰，不被种子色染色）；
+/// - 固定配色主题：两类 role 都由主题关键色推导，最后应用主题的逐 role
+///   覆盖。
 ///
-/// 中性/纯黑/透明三个开关走合成路径：彩色 role 来自 [AccentColors]，
-/// 中性 role 来自 [NeutralRamp]（无色相中性灰，不被种子色染色）。
-/// 所有 role 显式给出，不依赖 ColorScheme 的缺省回退。
+/// 合成路径的所有 role 显式给出，不依赖 ColorScheme 的缺省回退。
 class ThemeResolver {
   ThemeResolver._();
 
@@ -93,67 +100,135 @@ class ThemeResolver {
 
   /// 解析整套主题。
   ///
-  /// - [black] 只作用于深色一侧：深色用纯黑中性层，浅色不受影响，
-  ///   主题模式选择不变；
-  /// - [transparent] 在对应亮度的中性层上叠加透明版本，让用户背景图
-  ///   透出来（带色相的 fromSeed 表面加透明度会浑浊，故透明路径一律
-  ///   基于中性层）；
-  /// - [neutral] 只决定非纯黑路径的表面：纯黑/透明的表面本来就是
-  ///   中性层，无需再"去染色"。
+  /// - [seed] 是生成式主题的种子色；固定配色主题用 [accentId] 选中的
+  ///   自带强调色（找不到时取第一个），主题允许自定义时 `#RRGGBB` 形式
+  ///   的 [accentId] 直接作为强调色；
+  /// - [black] 只作用于深色一侧，且只对声明了
+  ///   [ThemeSpec.supportsPureBlack] 的主题生效，主题模式选择不变。
+  ///
+  /// 表面类 role 提供不透明基色，阅读内容通过 `PageBackgroundScope`
+  /// 选择透明填充，让页面底层的自定义背景透出。
   static ResolvedTheme resolve({
+    required ThemeSpec spec,
     required ThemeMode mode,
-    required bool neutral,
     required bool black,
-    required bool transparent,
     required Color seed,
     required DynamicSchemeVariant variant,
+    String? accentId,
   }) {
-    ColorScheme schemeFor(Brightness brightness) {
-      // 纯黑只替换深色一侧的中性层
-      final useBlackRamp = black && brightness == Brightness.dark;
-      if (neutral || useBlackRamp || transparent) {
+    (ColorScheme, AppColors) schemeFor(Brightness brightness) {
+      final useBlack =
+          black && spec.supportsPureBlack && brightness == Brightness.dark;
+      if (!spec.isGenerated) {
+        return _fixedScheme(
+          spec: spec,
+          brightness: brightness,
+          accentId: accentId,
+          pureBlack: useBlack,
+        );
+      }
+      final neutral = spec.surface == GeneratedSurface.neutral;
+      if (neutral || useBlack) {
         // 合成路径：彩色 role 来自种子，中性 role 来自中性层
-        final base = useBlackRamp
+        final light = brightness == Brightness.light;
+        final base = useBlack
             ? NeutralRamp.black
-            : brightness == Brightness.light
+            : neutral
+            ? (light ? NeutralRamp.zincLight : NeutralRamp.zincDark)
+            : light
             ? NeutralRamp.light
             : NeutralRamp.dark;
-        return resolveColorScheme(
+        final scheme = resolveColorScheme(
           accent: AccentColors.fromSeed(
             seedColor: seed,
             brightness: brightness,
             variant: variant,
           ),
-          neutral: transparent ? NeutralRamp.transparent(base) : base,
+          neutral: base,
           brightness: brightness,
         );
+        return (scheme, AppColors.material(brightness));
       }
       // 原始路径：完整 fromSeed，表面带种子色相
-      return SeedColorScheme.from(
+      final scheme = SeedColorScheme.from(
         seedColor: seed,
         brightness: brightness,
         variant: variant,
       );
+      return (scheme, AppColors.material(brightness));
     }
 
+    final (light, lightColors) = schemeFor(Brightness.light);
+    final (dark, darkColors) = schemeFor(Brightness.dark);
     return ResolvedTheme(
-      light: schemeFor(Brightness.light),
-      dark: schemeFor(Brightness.dark),
+      light: light,
+      dark: dark,
+      lightColors: lightColors,
+      darkColors: darkColors,
       mode: mode,
-      transparent: transparent,
     );
   }
-}
 
-/// 透明模式的浮层取色约定。
-extension ColorSchemeOverlayX on ColorScheme {
-  /// 当前主题是否处于透明模式（透明模式的表面类 role 带透明度，
-  /// 见 NeutralRamp.transparent；普通模式的表面恒为不透明）。
-  bool get isTransparentMode => surface.a < 0.99;
-
-  /// 浮层根背景色：透明模式下用接近不透明的 [surfaceContainerHigh]，
-  /// 避免透出底下未压暗的内容；普通模式保持 [surface]，观感与
-  /// 透明功能引入前完全一致。
-  Color get overlaySurface =>
-      isTransparentMode ? surfaceContainerHigh : surface;
+  static (ColorScheme, AppColors) _fixedScheme({
+    required ThemeSpec spec,
+    required Brightness brightness,
+    required String? accentId,
+    required bool pureBlack,
+  }) {
+    final palette = spec.paletteOf(brightness);
+    final ramp = NeutralRamp.derive(
+      brightness: brightness,
+      surface: palette.bg,
+      onSurface: palette.fg,
+      onSurfaceVariant: palette.fgMuted,
+      outlineVariant: palette.border,
+      outline: palette.outline,
+      pureBlack: pureBlack,
+    );
+    // tertiary 取强调色列表里的下一个，让三色都来自主题自己的色板
+    final accents = spec.accents;
+    final custom = spec.allowCustomAccent && (accentId?.startsWith('#') ?? false)
+        ? ThemeSpecColor.tryParse(accentId)
+        : null;
+    final accent = spec.accentOf(accentId);
+    final next = custom != null
+        ? accents.first
+        : accents.length > 1
+        ? accents[(accents.indexOf(accent) + 1) % accents.length]
+        : null;
+    final scheme = resolveColorScheme(
+      accent: AccentColors.fromFixed(
+        accent: custom ?? accent.of(brightness),
+        brightness: brightness,
+        bg: ramp.surface,
+        fg: ramp.onSurface,
+        fgMuted: ramp.onSurfaceVariant,
+        tertiary: next?.of(brightness),
+        error: palette.error,
+      ),
+      neutral: ramp,
+      brightness: brightness,
+    );
+    // 表面类覆盖是按主题原底色调的：纯黑已经替换了表面，再应用
+    // 会把修饰冲掉，此时只保留强调色类覆盖
+    final overrides = pureBlack
+        ? {
+            for (final e in palette.roles.entries)
+              if (!NeutralRamp.roleNames.contains(e.key)) e.key: e.value,
+          }
+        : palette.roles;
+    final resolved = ColorSchemeRoles.apply(scheme, overrides);
+    final isLight = brightness == Brightness.light;
+    final colors = AppColors.fromHues(
+      base: palette.hues,
+      brightness: brightness,
+      surface: ramp.surface,
+      onSurface: resolved.onSurface,
+      onSurfaceVariant: resolved.onSurfaceVariant,
+      codeBackground: isLight
+          ? ramp.surfaceContainerHigh
+          : ramp.surfaceContainerLowest,
+    );
+    return (resolved, colors);
+  }
 }

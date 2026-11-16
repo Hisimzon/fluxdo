@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -57,7 +58,8 @@ class _AiProviderListPageState extends ConsumerState<AiProviderListPage> {
                     padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
                     children: [
                       if (pinned.isNotEmpty) ...[
-                        _SectionLabel(text: AiL10n.current.pinnedProvidersSection),
+                        _SectionLabel(
+                            text: AiL10n.current.pinnedProvidersSection),
                         _ProviderReorderSection(
                           providers: pinned,
                           pinned: true,
@@ -71,7 +73,8 @@ class _AiProviderListPageState extends ConsumerState<AiProviderListPage> {
                         if (others.isNotEmpty) const SizedBox(height: 16),
                       ],
                       if (others.isNotEmpty) ...[
-                        _SectionLabel(text: AiL10n.current.otherProvidersSection),
+                        _SectionLabel(
+                            text: AiL10n.current.otherProvidersSection),
                         _ProviderReorderSection(
                           providers: others,
                           pinned: false,
@@ -98,7 +101,8 @@ class _AiProviderListPageState extends ConsumerState<AiProviderListPage> {
         IconButton(
           icon: const Icon(Symbols.delete_rounded),
           tooltip: AiL10n.current.deleteSelectedProviders,
-          onPressed: _selectedIds.isEmpty ? null : () => _confirmBatchDelete(context),
+          onPressed:
+              _selectedIds.isEmpty ? null : () => _confirmBatchDelete(context),
         ),
       ];
     }
@@ -225,7 +229,9 @@ class _AiProviderListPageState extends ConsumerState<AiProviderListPage> {
       ),
     );
     if (confirmed == true) {
-      await ref.read(aiProviderListProvider.notifier).removeProvider(provider.id);
+      await ref
+          .read(aiProviderListProvider.notifier)
+          .removeProvider(provider.id);
     }
   }
 
@@ -253,7 +259,9 @@ class _AiProviderListPageState extends ConsumerState<AiProviderListPage> {
       ),
     );
     if (confirmed == true) {
-      await ref.read(aiProviderListProvider.notifier).removeProviders(_selectedIds);
+      await ref
+          .read(aiProviderListProvider.notifier)
+          .removeProviders(_selectedIds);
       if (mounted) {
         _exitManageMode();
       }
@@ -273,7 +281,8 @@ class _ProviderReorderSection extends StatelessWidget {
 
   final List<AiProvider> providers;
   final bool pinned;
-  final Future<void> Function(bool pinned, int oldIndex, int newIndex) onReorder;
+  final Future<void> Function(bool pinned, int oldIndex, int newIndex)
+      onReorder;
   final ValueChanged<AiProvider> onEdit;
   final ValueChanged<AiProvider> onDelete;
   final ValueChanged<AiProvider> onTogglePin;
@@ -294,20 +303,23 @@ class _ProviderReorderSection extends StatelessWidget {
           key: ValueKey(provider.id),
           index: index,
           child: Padding(
-            padding: EdgeInsets.only(bottom: index < providers.length - 1 ? 8 : 0),
+            padding:
+                EdgeInsets.only(bottom: index < providers.length - 1 ? 8 : 0),
             child: SwipeActionCell(
               key: ValueKey('swipe_${provider.id}'),
               enableLongPressMenu: false,
               trailingActions: [
                 SwipeAction(
                   icon: Symbols.edit_rounded,
-                  color: Colors.blue,
+                  color: Theme.of(context).colorScheme.primary,
+                  foregroundColor: Theme.of(context).colorScheme.onPrimary,
                   label: AiL10n.current.edit,
                   onPressed: () => onEdit(provider),
                 ),
                 SwipeAction(
                   icon: Symbols.delete_rounded,
-                  color: Colors.red,
+                  color: Theme.of(context).colorScheme.error,
+                  foregroundColor: Theme.of(context).colorScheme.onError,
                   label: AiL10n.current.delete,
                   onPressed: () => onDelete(provider),
                 ),
@@ -361,7 +373,8 @@ class _ManageProviderList extends StatelessWidget {
     return [
       for (var index = 0; index < providers.length; index++)
         Padding(
-          padding: EdgeInsets.only(bottom: index < providers.length - 1 ? 8 : 0),
+          padding:
+              EdgeInsets.only(bottom: index < providers.length - 1 ? 8 : 0),
           child: _ProviderCard(
             provider: providers[index],
             selected: selectedIds.contains(providers[index].id),
@@ -420,10 +433,12 @@ class _ProviderCard extends StatelessWidget {
       color: selected
           ? theme.colorScheme.primaryContainer.withValues(alpha: 0.45)
           : theme.colorScheme.surface,
-      borderRadius: BorderRadius.circular(16),
+      shape: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(16)),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
+        customBorder: RoundedSuperellipseBorder(
+            borderRadius: context.shapes.borderRadius(16)),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Row(
@@ -454,11 +469,13 @@ class _ProviderCard extends StatelessWidget {
                             horizontal: 6,
                             vertical: 2,
                           ),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(4),
-                            border: Border.all(
-                              color: theme.colorScheme.outlineVariant
-                                  .withValues(alpha: 0.5),
+                          decoration: ShapeDecoration(
+                            shape: RoundedSuperellipseBorder(
+                              borderRadius: context.shapes.borderRadius(4),
+                              side: BorderSide(
+                                color: theme.colorScheme.outlineVariant
+                                    .withValues(alpha: 0.5),
+                              ),
                             ),
                           ),
                           child: Text(

@@ -1,5 +1,7 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
+
 import '../../../../l10n/s.dart';
 import '../../../../models/topic.dart';
 import '../../../../utils/fluxdo_render_callbacks.dart';
@@ -30,11 +32,13 @@ class PostReplyHistory extends StatelessWidget {
 
     return Container(
       margin: const EdgeInsets.only(top: 12),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerLow.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(12),
+          side: BorderSide(
+            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3),
+          ),
         ),
       ),
       child: Column(
@@ -48,13 +52,13 @@ class PostReplyHistory extends StatelessWidget {
                 Icon(
                   Symbols.format_quote_rounded,
                   size: 16,
-                  color: theme.colorScheme.primary,
+                  color: context.emphasis.accent,
                 ),
                 const SizedBox(width: 8),
                 Text(
                   context.l10n.post_replyTo,
                   style: theme.textTheme.labelMedium?.copyWith(
-                    color: theme.colorScheme.primary,
+                    color: context.emphasis.accent,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -63,7 +67,9 @@ class PostReplyHistory extends StatelessWidget {
                   onTap: () {
                     showReplyHistoryNotifier.value = false;
                   },
-                  borderRadius: BorderRadius.circular(12),
+                  customBorder: RoundedSuperellipseBorder(
+                    borderRadius: context.shapes.borderRadius(12),
+                  ),
                   child: Padding(
                     padding: const EdgeInsets.all(4),
                     child: Icon(
@@ -147,19 +153,20 @@ class PostReplyHistory extends StatelessWidget {
                                 child: SingleChildScrollView(
                                   physics: const NeverScrollableScrollPhysics(),
                                   // 回复历史预览:改用自研 FluxdoRender 只读渲染(关闭选区)
-                                  child: FluxdoRenderCallbacks.generic(
-                                    heroTagNamespace:
-                                        'reply_history_${replyPost.postNumber}',
-                                  ).render(
-                                    cookedHtml: replyPost.cooked,
-                                    baseTextStyle: theme.textTheme.bodySmall
-                                        ?.copyWith(
-                                          fontSize: 13 * contentFontScale,
-                                          height: 1.4,
-                                        ),
-                                    compact: true,
-                                    selectionEnabled: false,
-                                  ),
+                                  child:
+                                      FluxdoRenderCallbacks.generic(
+                                        heroTagNamespace:
+                                            'reply_history_${replyPost.postNumber}',
+                                      ).render(
+                                        cookedHtml: replyPost.cooked,
+                                        baseTextStyle: theme.textTheme.bodySmall
+                                            ?.copyWith(
+                                              fontSize: 13 * contentFontScale,
+                                              height: 1.4,
+                                            ),
+                                        compact: true,
+                                        selectionEnabled: false,
+                                      ),
                                 ),
                               ),
                             ),

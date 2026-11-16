@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -175,15 +176,15 @@ class _ChatChannelMembersPageState
                   alpha: 0.4,
                 ),
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(20),
+                  borderRadius: context.shapes.borderRadius(20),
                   borderSide: BorderSide.none,
                 ),
                 enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(20),
+                  borderRadius: context.shapes.borderRadius(20),
                   borderSide: BorderSide.none,
                 ),
                 focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(20),
+                  borderRadius: context.shapes.borderRadius(20),
                   borderSide: BorderSide.none,
                 ),
                 contentPadding: const EdgeInsets.symmetric(
@@ -285,7 +286,7 @@ class _ChatChannelMembersPageState
           ? null
           : () => Navigator.push(
               context,
-              MaterialPageRoute(
+              InteractionPageRoute(
                 builder: (_) => UserProfilePage(username: member.user.username),
               ),
             ),

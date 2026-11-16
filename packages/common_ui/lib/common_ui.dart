@@ -7,12 +7,26 @@
 ///   按 [GlassRecipe] 按阅读密度分级的场景配方使用。
 /// - [DesktopScrollInteractionBehavior] 与 [DesktopScrollInteractionBinding]:
 ///   统一桌面滚动期间的控件点击，接入应用入口即可覆盖后代滚动容器。
+/// - [KeyboardInsetIsolation]、[RouteMotionHoldMixin]、[AppLoadingSwitcher]:
+///   后台键盘隔离、转场期间延后展示更新、短加载防闪烁。
 library;
 
+export 'src/app_content_state.dart' show AppEmptyState, AppLoadingSwitcher;
+export 'src/adaptive_surface_colors.dart';
 export 'src/app_sheet_scaffold.dart';
 export 'src/dismissible_popup_menu.dart';
 export 'src/desktop_scroll_interaction.dart';
 export 'src/glass_settings.dart';
 export 'src/glass_surface.dart';
 export 'src/glass_surface_frame.dart';
+export 'src/input_field_shell.dart';
+export 'src/interaction_gate.dart';
+export 'src/route_interaction.dart';
+export 'src/page_background.dart';
 export 'src/predictive_back_cupertino_transitions.dart';
+export 'src/keyboard_inset_isolation.dart';
+export 'src/menu_tab_bar.dart';
+export 'src/route_motion_hold.dart';
+export 'src/ui_decor.dart';
+export 'src/ui_emphasis.dart';
+export 'src/ui_shapes.dart';

@@ -2,6 +2,8 @@ import '../constants/composer_tool_defaults.dart';
 
 import 'dart:io';
 
+import '../modules/mini_apps/mini_app_engine.dart';
+
 import 'package:collection/collection.dart';
 import 'package:common_ui/common_ui.dart' show GlassEffectLevel;
 import 'package:flutter/services.dart';
@@ -15,6 +17,7 @@ import '../services/network/request_scheduler_config.dart';
 import '../services/uploads/upload_settings.dart';
 import '../services/cf_challenge_service.dart';
 import '../services/crash_context_reporter.dart';
+import '../services/emoji_handler.dart';
 import '../services/render_backend_service.dart';
 import '../utils/blocked_user_filter.dart';
 import '../widgets/topic/topic_card_layout.dart';
@@ -112,6 +115,12 @@ class AppPreferences {
 
   /// 在首页创作按钮上方显示独立刷新入口，默认关闭
   final bool homeRefreshButton;
+
+  /// 移动端首页深拉打开应用广场；关闭时使用普通下拉刷新。
+  final bool miniAppPullEnabled;
+
+  /// 默认运行引擎；修改只影响随后打开的应用。
+  final MiniAppEngine miniAppEngine;
 
   /// 自动识别剪贴板中的 Linux.do 话题链接
   final bool clipboardTopicLinkDetection;
@@ -307,6 +316,9 @@ class AppPreferences {
   /// 话题卡片自定义样式（元信息字段开关 / 头像布局 / 动态头像）
   final TopicCardStyle topicCardStyle;
 
+  /// 表情风格:[EmojiHandler.followSite] 或 [EmojiHandler.selectableSets] 之一
+  final String emojiStyle;
+
   AppPreferences({
     required this.autoPanguSpacing,
     required this.displayPanguSpacing,
@@ -317,6 +329,8 @@ class AppPreferences {
     required this.shareImageThemeIndex,
     required this.autoFillLogin,
     this.homeRefreshButton = false,
+    this.miniAppPullEnabled = true,
+    this.miniAppEngine = MiniAppEngine.lightweight,
     required this.clipboardTopicLinkDetection,
     required this.topicFilterKeywords,
     this.topicFilterWholeWord = false,
@@ -372,6 +386,7 @@ class AppPreferences {
     this.editorToolbarTools = kDefaultSourceVisibleTools,
     this.richToolbarTools = kDefaultRichVisibleTools,
     this.topicCardStyle = TopicCardStyle.defaults,
+    this.emojiStyle = EmojiHandler.defaultPreference,
   });
 
   AppPreferences copyWith({
@@ -384,6 +399,8 @@ class AppPreferences {
     int? shareImageThemeIndex,
     bool? autoFillLogin,
     bool? homeRefreshButton,
+    bool? miniAppPullEnabled,
+    MiniAppEngine? miniAppEngine,
     bool? clipboardTopicLinkDetection,
     List<String>? topicFilterKeywords,
     bool? topicFilterWholeWord,
@@ -439,6 +456,7 @@ class AppPreferences {
     List<String>? editorToolbarTools,
     List<String>? richToolbarTools,
     TopicCardStyle? topicCardStyle,
+    String? emojiStyle,
   }) {
     return AppPreferences(
       autoPanguSpacing: autoPanguSpacing ?? this.autoPanguSpacing,
@@ -451,6 +469,8 @@ class AppPreferences {
       shareImageThemeIndex: shareImageThemeIndex ?? this.shareImageThemeIndex,
       autoFillLogin: autoFillLogin ?? this.autoFillLogin,
       homeRefreshButton: homeRefreshButton ?? this.homeRefreshButton,
+      miniAppPullEnabled: miniAppPullEnabled ?? this.miniAppPullEnabled,
+      miniAppEngine: miniAppEngine ?? this.miniAppEngine,
       clipboardTopicLinkDetection:
           clipboardTopicLinkDetection ?? this.clipboardTopicLinkDetection,
       topicFilterKeywords: topicFilterKeywords ?? this.topicFilterKeywords,
@@ -531,6 +551,7 @@ class AppPreferences {
       editorToolbarTools: editorToolbarTools ?? this.editorToolbarTools,
       richToolbarTools: richToolbarTools ?? this.richToolbarTools,
       topicCardStyle: topicCardStyle ?? this.topicCardStyle,
+      emojiStyle: emojiStyle ?? this.emojiStyle,
     );
   }
 }
@@ -546,6 +567,8 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
   static const String _shareImageThemeIndexKey = 'pref_share_image_theme_index';
   static const String _autoFillLoginKey = 'pref_auto_fill_login';
   static const String _homeRefreshButtonKey = 'pref_home_refresh_button';
+  static const String _miniAppPullEnabledKey = 'pref_mini_app_pull_enabled';
+  static const String _miniAppEngineKey = 'pref_mini_app_engine';
   static const String _clipboardTopicLinkDetectionKey =
       'pref_clipboard_topic_link_detection';
   static const String _topicFilterKeywordsKey = 'pref_topic_filter_keywords';
@@ -621,6 +644,7 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
   static const String _editorToolbarToolsKey = 'pref_editor_toolbar_tools';
   static const String _richToolbarToolsKey = 'pref_rich_toolbar_tools';
   static const String _topicCardStyleKey = 'pref_topic_card_style';
+  static const String _emojiStyleKey = 'pref_emoji_style';
 
   static const _crashlyticsChannel = MethodChannel(
     'com.github.lingyan000.fluxdo/crashlytics',
@@ -639,6 +663,10 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
           shareImageThemeIndex: _prefs.getInt(_shareImageThemeIndexKey) ?? 0,
           autoFillLogin: _prefs.getBool(_autoFillLoginKey) ?? true,
           homeRefreshButton: _prefs.getBool(_homeRefreshButtonKey) ?? false,
+          miniAppPullEnabled: _prefs.getBool(_miniAppPullEnabledKey) ?? true,
+          miniAppEngine: MiniAppEngine.parse(
+            _prefs.getString(_miniAppEngineKey),
+          ),
           clipboardTopicLinkDetection:
               _prefs.getBool(_clipboardTopicLinkDetectionKey) ?? false,
           topicFilterKeywords:
@@ -740,10 +768,14 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
           topicCardStyle: TopicCardStyle.fromJsonString(
             _prefs.getString(_topicCardStyleKey),
           ),
+          emojiStyle:
+              _prefs.getString(_emojiStyleKey) ??
+              EmojiHandler.defaultPreference,
         ),
       ) {
     isPortraitLocked = state.portraitLock;
     TopicCardStyleScope.current = state.topicCardStyle;
+    EmojiHandler.setPreference(state.emojiStyle);
     CfChallengeService().autoVerifyEnabled = state.autoCfChallenge;
     // CF 服务在「切兼容」询问里给用户第二条出路(关掉自动过盾),但它拿不到
     // Riverpod 容器,也不该自己写 SharedPreferences —— 这里把持久化通道注入。
@@ -799,6 +831,16 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
   Future<void> setHomeRefreshButton(bool enabled) async {
     state = state.copyWith(homeRefreshButton: enabled);
     await _prefs.setBool(_homeRefreshButtonKey, enabled);
+  }
+
+  Future<void> setMiniAppPullEnabled(bool enabled) async {
+    state = state.copyWith(miniAppPullEnabled: enabled);
+    await _prefs.setBool(_miniAppPullEnabledKey, enabled);
+  }
+
+  Future<void> setMiniAppEngine(MiniAppEngine engine) async {
+    state = state.copyWith(miniAppEngine: engine);
+    await _prefs.setString(_miniAppEngineKey, engine.name);
   }
 
   Future<void> setClipboardTopicLinkDetection(bool enabled) async {
@@ -1004,6 +1046,17 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
     TopicCardStyleScope.current = style;
     TopicCardLayout.evictAll();
     await _prefs.setString(_topicCardStyleKey, style.toJsonString());
+  }
+
+  /// 切换表情风格。emoji 地址在取图时按 [EmojiHandler.displaySet] 拼接/
+  /// 改写,新建的组件立即用新风格;话题卡排版里缓存着标题 emoji 地址,
+  /// 清掉重排。已在屏的正文随重建刷新。
+  Future<void> setEmojiStyle(String style) async {
+    if (state.emojiStyle == style) return;
+    EmojiHandler.setPreference(style);
+    state = state.copyWith(emojiStyle: EmojiHandler.preference);
+    TopicCardLayout.evictAll();
+    await _prefs.setString(_emojiStyleKey, EmojiHandler.preference);
   }
 
   Future<void> setShowSignatures(bool enabled) async {

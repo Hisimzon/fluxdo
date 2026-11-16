@@ -1,10 +1,14 @@
 import 'dart:math' as math;
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
+
 import '../../../../models/topic.dart';
+
 import 'package:dio/dio.dart';
+
 import '../../../../services/app_error_handler.dart';
 import '../../../../services/discourse/discourse_service.dart';
 import '../../../../utils/time_utils.dart';
@@ -19,7 +23,18 @@ Widget buildPoll({
 }) {
   final pollTitle = _extractPollTitle(element);
   final pollName = element.attributes['data-poll-name'] ?? 'poll';
-  final poll = post.polls?.firstWhere((p) => p.name == pollName, orElse: () => Poll(id: 0, name: pollName, type: 'regular', status: 'open', results: 'always', options: [], voters: 0));
+  final poll = post.polls?.firstWhere(
+    (p) => p.name == pollName,
+    orElse: () => Poll(
+      id: 0,
+      name: pollName,
+      type: 'regular',
+      status: 'open',
+      results: 'always',
+      options: [],
+      voters: 0,
+    ),
+  );
 
   if (poll == null || poll.options.isEmpty) {
     return const SizedBox.shrink();
@@ -123,13 +138,15 @@ Widget buildPollStaticPreview({
   final scheme = theme.colorScheme;
   return Container(
     margin: const EdgeInsets.symmetric(vertical: 12),
-    decoration: BoxDecoration(
+    decoration: ShapeDecoration(
       color: scheme.surfaceContainerHighest.withValues(alpha: 0.2),
-      border: Border.all(
-        color: scheme.outline.withValues(alpha: 0.3),
-        width: 1,
+      shape: RoundedSuperellipseBorder(
+        borderRadius: context.shapes.borderRadius(8),
+        side: BorderSide(
+          color: scheme.outline.withValues(alpha: 0.3),
+          width: 1,
+        ),
       ),
-      borderRadius: BorderRadius.circular(8),
     ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -141,11 +158,12 @@ Widget buildPollStaticPreview({
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: ShapeDecoration(
                   color: scheme.primaryContainer.withValues(alpha: 0.6),
-                  borderRadius: BorderRadius.circular(10),
+                  shape: RoundedSuperellipseBorder(
+                    borderRadius: context.shapes.borderRadius(10),
+                  ),
                 ),
                 child: Text(
                   typeLabel,
@@ -180,13 +198,17 @@ Widget buildPollStaticPreview({
                     padding: EdgeInsets.only(top: i == 0 ? 0 : 8),
                     child: Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 10),
-                      decoration: BoxDecoration(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                      decoration: ShapeDecoration(
                         color: scheme.surface,
-                        border: Border.all(
-                          color: scheme.outline.withValues(alpha: 0.2),
+                        shape: RoundedSuperellipseBorder(
+                          borderRadius: context.shapes.borderRadius(6),
+                          side: BorderSide(
+                            color: scheme.outline.withValues(alpha: 0.2),
+                          ),
                         ),
-                        borderRadius: BorderRadius.circular(6),
                       ),
                       child: Row(
                         children: [
@@ -271,7 +293,9 @@ String _textWithEmojiAlt(dynamic el) {
 }
 
 String? _extractPollTitle(dynamic element) {
-  final attributeTitle = element.attributes['data-poll-question'] ?? element.attributes['data-poll-title'];
+  final attributeTitle =
+      element.attributes['data-poll-question'] ??
+      element.attributes['data-poll-title'];
   if (attributeTitle is String && attributeTitle.trim().isNotEmpty) {
     return attributeTitle.trim();
   }
@@ -464,13 +488,15 @@ class _PollWidgetState extends State<_PollWidget> {
 
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 12),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.2),
-        border: Border.all(
-          color: theme.colorScheme.outline.withValues(alpha: 0.3),
-          width: 1,
+        shape: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(8),
+          side: BorderSide(
+            color: theme.colorScheme.outline.withValues(alpha: 0.3),
+            width: 1,
+          ),
         ),
-        borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -485,10 +511,7 @@ class _PollWidgetState extends State<_PollWidget> {
                 ),
               ),
             ),
-          if (_showResults)
-            _buildResults(theme)
-          else
-            _buildOptions(theme),
+          if (_showResults) _buildResults(theme) else _buildOptions(theme),
 
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -558,26 +581,32 @@ class _PollWidgetState extends State<_PollWidget> {
                 // 切换显示模式按钮
                 if (_showResults && _poll.voters > 0)
                   TextButton(
-                    onPressed: () => setState(() => _showPercentage = !_showPercentage),
+                    onPressed: () =>
+                        setState(() => _showPercentage = !_showPercentage),
                     style: TextButton.styleFrom(
                       padding: const EdgeInsets.symmetric(horizontal: 8),
                       minimumSize: const Size(0, 32),
                     ),
                     child: Text(
-                      _showPercentage ? S.current.poll_count : S.current.poll_percentage,
+                      _showPercentage
+                          ? S.current.poll_count
+                          : S.current.poll_percentage,
                       style: theme.textTheme.bodySmall,
                     ),
                   ),
                 // 投票/查看结果切换按钮 - 当 results 为 always 或者用户已投票时显示
                 if (!isClosed && (hasVoted || _poll.results == 'always'))
                   TextButton(
-                    onPressed: () => setState(() => _showResults = !_showResults),
+                    onPressed: () =>
+                        setState(() => _showResults = !_showResults),
                     style: TextButton.styleFrom(
                       padding: const EdgeInsets.symmetric(horizontal: 8),
                       minimumSize: const Size(0, 32),
                     ),
                     child: Text(
-                      _showResults ? S.current.poll_vote : S.current.poll_viewResults,
+                      _showResults
+                          ? S.current.poll_vote
+                          : S.current.poll_viewResults,
                       style: theme.textTheme.bodySmall,
                     ),
                   ),
@@ -602,29 +631,39 @@ class _PollWidgetState extends State<_PollWidget> {
 
         return InkWell(
           onTap: _isVoting ? null : () => _vote(option.id),
-          borderRadius: BorderRadius.circular(6),
+          customBorder: RoundedSuperellipseBorder(
+            borderRadius: context.shapes.borderRadius(6),
+          ),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
+            decoration: ShapeDecoration(
               color: isUserVoted
                   ? theme.colorScheme.primaryContainer.withValues(alpha: 0.3)
                   : theme.colorScheme.surface,
-              border: Border.all(
-                color: isUserVoted
-                    ? theme.colorScheme.primary
-                    : theme.colorScheme.outline.withValues(alpha: 0.2),
+              shape: RoundedSuperellipseBorder(
+                borderRadius: context.shapes.borderRadius(6),
+                side: BorderSide(
+                  color: isUserVoted
+                      ? theme.colorScheme.primary
+                      : theme.colorScheme.outline.withValues(alpha: 0.2),
+                ),
               ),
-              borderRadius: BorderRadius.circular(6),
             ),
             child: Row(
               children: [
                 // 单选/多选图标
                 Icon(
                   _isMultiple
-                      ? (isUserVoted ? Symbols.check_box_rounded : Symbols.check_box_outline_blank_rounded)
-                      : (isUserVoted ? Symbols.radio_button_checked_rounded : Symbols.radio_button_unchecked_rounded),
+                      ? (isUserVoted
+                            ? Symbols.check_box_rounded
+                            : Symbols.check_box_outline_blank_rounded)
+                      : (isUserVoted
+                            ? Symbols.radio_button_checked_rounded
+                            : Symbols.radio_button_unchecked_rounded),
                   size: 20,
-                  color: isUserVoted ? theme.colorScheme.primary : theme.colorScheme.onSurfaceVariant,
+                  color: isUserVoted
+                      ? theme.colorScheme.primary
+                      : theme.colorScheme.onSurfaceVariant,
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -701,7 +740,9 @@ class _PollWidgetState extends State<_PollWidget> {
     final isUserVoted = _userVotes.contains(option.id);
     final hidden = _pieHidden.contains(index);
     return InkWell(
-      borderRadius: BorderRadius.circular(6),
+      customBorder: RoundedSuperellipseBorder(
+        borderRadius: context.shapes.borderRadius(6),
+      ),
       onTap: () => setState(() {
         // chart.js toggleDataVisibility 同款:点图例切换该项参与绘制
         if (!_pieHidden.remove(index)) _pieHidden.add(index);
@@ -717,13 +758,16 @@ class _PollWidgetState extends State<_PollWidget> {
               Container(
                 width: 12,
                 height: 12,
-                decoration: BoxDecoration(
+                decoration: ShapeDecoration(
                   color: color,
-                  borderRadius: BorderRadius.circular(3),
-                  border: Border.all(
-                    color:
-                        theme.colorScheme.outlineVariant.withValues(alpha: 0.6),
-                    width: 0.5,
+                  shape: RoundedSuperellipseBorder(
+                    borderRadius: context.shapes.borderRadius(3),
+                    side: BorderSide(
+                      color: theme.colorScheme.outlineVariant.withValues(
+                        alpha: 0.6,
+                      ),
+                      width: 0.5,
+                    ),
                   ),
                 ),
               ),
@@ -732,7 +776,7 @@ class _PollWidgetState extends State<_PollWidget> {
                 Icon(
                   Symbols.check_circle_rounded,
                   size: 14,
-                  color: theme.colorScheme.primary,
+                  color: context.emphasis.selected,
                 ),
                 const SizedBox(width: 2),
               ],
@@ -792,21 +836,25 @@ class _PollWidgetState extends State<_PollWidget> {
       separatorBuilder: (_, _) => const SizedBox(height: 8),
       itemBuilder: (context, index) {
         final option = _poll.options[index];
-        final percentage = _poll.voters > 0 ? (option.votes / _poll.voters * 100) : 0.0;
+        final percentage = _poll.voters > 0
+            ? (option.votes / _poll.voters * 100)
+            : 0.0;
         final isUserVoted = _userVotes.contains(option.id);
 
         return Container(
           padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
+          decoration: ShapeDecoration(
             color: isUserVoted
                 ? theme.colorScheme.primaryContainer.withValues(alpha: 0.3)
                 : theme.colorScheme.surface,
-            border: Border.all(
-              color: isUserVoted
-                  ? theme.colorScheme.primary
-                  : theme.colorScheme.outline.withValues(alpha: 0.2),
+            shape: RoundedSuperellipseBorder(
+              borderRadius: context.shapes.borderRadius(6),
+              side: BorderSide(
+                color: isUserVoted
+                    ? theme.colorScheme.primary
+                    : theme.colorScheme.outline.withValues(alpha: 0.2),
+              ),
             ),
-            borderRadius: BorderRadius.circular(6),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -820,7 +868,7 @@ class _PollWidgetState extends State<_PollWidget> {
                           Icon(
                             Symbols.check_circle_rounded,
                             size: 16,
-                            color: theme.colorScheme.primary,
+                            color: context.emphasis.selected,
                           ),
                           const SizedBox(width: 6),
                         ],
@@ -848,14 +896,16 @@ class _PollWidgetState extends State<_PollWidget> {
                 ],
               ),
               const SizedBox(height: 8),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(2),
+              ClipRSuperellipse(
+                borderRadius: context.shapes.borderRadius(2),
                 child: LinearProgressIndicator(
                   value: percentage / 100,
                   minHeight: 4,
                   backgroundColor: theme.colorScheme.surfaceContainerHighest,
                   valueColor: AlwaysStoppedAnimation(
-                    isUserVoted ? theme.colorScheme.primary : theme.colorScheme.primary.withValues(alpha: 0.6),
+                    isUserVoted
+                        ? theme.colorScheme.primary
+                        : theme.colorScheme.primary.withValues(alpha: 0.6),
                   ),
                 ),
               ),
@@ -959,9 +1009,11 @@ class _PieChartInteractiveState extends State<_PieChartInteractive> {
         : '';
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: Colors.black.withValues(alpha: 0.8),
-        borderRadius: BorderRadius.circular(6),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(6),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1062,9 +1114,7 @@ class _PieChartInteractiveState extends State<_PieChartInteractive> {
                 Positioned(
                   left: tipLeft,
                   top: tipTop,
-                  child: IgnorePointer(
-                    child: _tooltip(theme, active, total),
-                  ),
+                  child: IgnorePointer(child: _tooltip(theme, active, total)),
                 ),
             ],
           ),

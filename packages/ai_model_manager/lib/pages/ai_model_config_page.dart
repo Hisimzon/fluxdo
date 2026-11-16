@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -33,7 +34,8 @@ class AiModelConfigPage extends ConsumerWidget {
             title: AiL10n.current.defaultChatModel,
             current: textDefault,
             onPick: () => _showPicker(
-              context, ref,
+              context,
+              ref,
               allModels
                   .where((m) => m.model.output.contains(Modality.text))
                   .toList(),
@@ -52,7 +54,8 @@ class AiModelConfigPage extends ConsumerWidget {
             title: AiL10n.current.defaultImageModel,
             current: imageDefault,
             onPick: () => _showPicker(
-              context, ref,
+              context,
+              ref,
               allModels
                   .where((m) => m.model.output.contains(Modality.image))
                   .toList(),
@@ -72,7 +75,9 @@ class AiModelConfigPage extends ConsumerWidget {
             subtitle: AiL10n.current.autoGenerateTitleSubtitle,
             current: titleModel,
             onPick: () => _showPicker(
-              context, ref, allModels,
+              context,
+              ref,
+              allModels,
               current: titleModel,
               clearLabel: AiL10n.current.noAutoGenerateTitle,
               onSelect: (p, m) => setAiTitleModel(ref, p, m),
@@ -89,16 +94,15 @@ class AiModelConfigPage extends ConsumerWidget {
             subtitle: AiL10n.current.imagePromptOptimizerSubtitle,
             current: optimizer,
             onPick: () => _showPicker(
-              context, ref,
+              context,
+              ref,
               allModels
                   .where((m) => m.model.output.contains(Modality.text))
                   .toList(),
               current: optimizer,
               clearLabel: AiL10n.current.optimizerNotSet,
-              onSelect: (p, m) =>
-                  setAiImagePromptOptimizerModel(ref, p, m),
-              onClear: () =>
-                  setAiImagePromptOptimizerModel(ref, null, null),
+              onSelect: (p, m) => setAiImagePromptOptimizerModel(ref, p, m),
+              onClear: () => setAiImagePromptOptimizerModel(ref, null, null),
             ),
             onReset: optimizer != null
                 ? () => setAiImagePromptOptimizerModel(ref, null, null)
@@ -208,12 +212,14 @@ class _ModelCard extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Container(
-      decoration: BoxDecoration(
-        color: isDark ? Colors.white10 : Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: cs.outlineVariant.withValues(alpha: isDark ? 0.08 : 0.06),
-          width: 0.6,
+      decoration: ShapeDecoration(
+        color: cs.surfaceContainerLow,
+        shape: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(16),
+          side: BorderSide(
+            color: cs.outlineVariant.withValues(alpha: isDark ? 0.08 : 0.06),
+            width: 0.6,
+          ),
         ),
       ),
       padding: const EdgeInsets.all(14),
@@ -266,10 +272,12 @@ class _ModelCard extends StatelessWidget {
           const SizedBox(height: 10),
           // 模型选择行
           Material(
-            color: isDark ? Colors.white10 : const Color(0xFFF2F3F5),
-            borderRadius: BorderRadius.circular(12),
+            color: cs.surfaceContainerHigh,
+            shape: RoundedSuperellipseBorder(
+                borderRadius: context.shapes.borderRadius(12)),
             child: InkWell(
-              borderRadius: BorderRadius.circular(12),
+              customBorder: RoundedSuperellipseBorder(
+                  borderRadius: context.shapes.borderRadius(12)),
               onTap: onPick,
               child: Padding(
                 padding:
@@ -279,8 +287,7 @@ class _ModelCard extends StatelessWidget {
                     if (current != null) ...[
                       ModelIcon(
                         providerName: current!.provider.name,
-                        modelName:
-                            current!.model.name ?? current!.model.id,
+                        modelName: current!.model.name ?? current!.model.id,
                         size: 24,
                       ),
                       const SizedBox(width: 10),
@@ -312,8 +319,7 @@ class _ModelCard extends StatelessWidget {
                               AiL10n.current.notSet,
                               style: TextStyle(
                                 fontSize: 14,
-                                color:
-                                    cs.onSurface.withValues(alpha: 0.4),
+                                color: cs.onSurface.withValues(alpha: 0.4),
                               ),
                             ),
                     ),

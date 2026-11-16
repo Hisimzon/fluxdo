@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/scheduler.dart';
@@ -273,12 +274,13 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
 
     return ClipRect(
       child: Container(
-        decoration: BoxDecoration(
-          color: Theme.of(context).scaffoldBackgroundColor,
-          // 紧凑模式在弹层壳里,壳已裁圆角,自身不再画顶部圆角
-          borderRadius: widget.compact
-              ? null
-              : const BorderRadius.vertical(top: Radius.circular(16)),
+        decoration: ShapeDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          shape: RoundedSuperellipseBorder(
+            borderRadius: widget.compact
+                ? null
+                : BorderRadius.vertical(top: context.shapes.radius(16)),
+          ),
         ),
         child: subscribedGroups.isEmpty
             ? _buildEmptyState()
@@ -392,10 +394,12 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
                             bottom: 4,
                             width: tabWidth,
                             child: DecoratedBox(
-                              decoration: BoxDecoration(
+                              decoration: ShapeDecoration(
                                 color: theme.colorScheme.primaryContainer
                                     .withValues(alpha: 0.5),
-                                borderRadius: BorderRadius.circular(8),
+                                shape: RoundedSuperellipseBorder(
+                                  borderRadius: context.shapes.borderRadius(8),
+                                ),
                               ),
                             ),
                           );
@@ -451,11 +455,7 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
             color: theme.colorScheme.outlineVariant,
           ),
           IconButton(
-            icon: Icon(
-              Symbols.add_circle_rounded,
-              size: 20,
-              color: theme.colorScheme.primary,
-            ),
+            icon: const Icon(Symbols.add_circle_rounded, size: 20),
             visualDensity: compact ? VisualDensity.compact : null,
             onPressed: _openMarket,
             tooltip: S.current.sticker_addTooltip,
@@ -468,8 +468,8 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
   Widget _buildGroupTabIcon(StickerGroup group) {
     final icon = group.icon;
     if (icon.startsWith('http://') || icon.startsWith('https://')) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(4),
+      return ClipRSuperellipse(
+        borderRadius: context.shapes.borderRadius(4),
         child: CachedImage(
           url: icon,
           width: 24,
@@ -740,9 +740,11 @@ class _StickerItemWidget extends StatelessWidget {
               // 解码期占位:Telegram/微信 风格 — 灰色圆角骨架,不用 spinner
               // (每格一个 spinner 会让 grid 视觉吵)。配合 gaplessPlayback 平滑切到图。
               placeholder: (ctx) => DecoratedBox(
-                decoration: BoxDecoration(
+                decoration: ShapeDecoration(
                   color: Theme.of(ctx).colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(6),
+                  shape: RoundedSuperellipseBorder(
+                    borderRadius: context.shapes.borderRadius(6),
+                  ),
                 ),
               ),
               errorBuilder: (_, _, _) => Icon(
@@ -846,7 +848,9 @@ class _StickerPreviewPopup extends StatelessWidget {
           ),
           child: Material(
             elevation: 8,
-            borderRadius: BorderRadius.circular(16),
+            shape: RoundedSuperellipseBorder(
+              borderRadius: context.shapes.borderRadius(16),
+            ),
             color: theme.colorScheme.surfaceContainerHigh,
             child: Padding(
               padding: const EdgeInsets.all(_cardPadding),

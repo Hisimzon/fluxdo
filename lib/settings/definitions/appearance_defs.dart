@@ -9,55 +9,54 @@ import 'package:app_icons/app_icons.dart';
 import 'package:common_ui/common_ui.dart';
 import 'package:flutter_displaymode/flutter_displaymode.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:ai_model_manager/ai_model_manager.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
 import '../../l10n/s.dart';
 import '../../pages/topic_card_style_settings_page.dart';
 import '../../providers/app_icon_provider.dart';
-import '../../providers/locale_provider.dart';
+import '../../providers/font_provider.dart';
 import '../../providers/preferences_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../services/app_background_service.dart';
+import '../../services/discourse_cache_manager.dart'
+    show BlobImageCache, BlobImageProvider;
+import '../../services/data_management/cache_size_service.dart';
+import '../../services/emoji_handler.dart';
+import '../../services/fonts/font_catalog.dart';
+import '../../services/fonts/font_download_service.dart';
+import '../../services/fonts/font_sources.dart';
 import '../../services/toast_service.dart';
 import '../../theme/app_background.dart';
+import '../../theme/app_colors.dart' show AppHue;
 import '../../theme/app_palettes.dart';
+import '../../theme/color_contrast.dart';
+import '../../theme/custom_themes.dart';
+import '../../theme/festival_calendar.dart';
+import '../../theme/theme_registry.dart';
+import '../../theme/shape_presets.dart';
+import '../../theme/theme_preview_cache.dart';
 import '../../theme/theme_resolver.dart';
+import '../../theme/theme_spec.dart';
+import '../../theme/theme_style.dart';
 import '../../utils/dialog_utils.dart';
-import '../../widgets/common/app_bottom_sheet.dart';
-import '../../utils/platform_utils.dart';
+import '../../widgets/common/app_background_layer.dart';
+import '../../widgets/settings/settings_group_page.dart';
+import '../../widgets/common/emoji_text.dart';
+import '../../widgets/festival/festival_motif.dart';
 import '../../utils/seed_color_scheme.dart';
 import '../settings_model.dart';
 
-/// 外观设置数据声明
-List<SettingsGroup> buildAppearanceGroups(BuildContext context) {
+part 'appearance_custom_theme_editor.dart';
+part 'appearance_font_section.dart';
+part 'appearance_theme_section.dart';
+part 'appearance_layout.dart';
+part 'appearance_press_surface.dart';
+part 'appearance_choice_card.dart';
+
+/// 完整外观设置目录，供搜索索引、主页面和详情页面复用。
+List<SettingsGroup> buildAppearanceSearchGroups(BuildContext context) {
   final l10n = context.l10n;
   return [
-    // ── 语言 ──────────────────────────────────────────────────────
-    SettingsGroup(
-      title: l10n.appearance_language,
-      icon: Symbols.language_rounded,
-      items: [
-        CustomModel(
-          id: 'language',
-          title: l10n.appearance_language,
-          builder: (context, ref) {
-            final locale = ref.watch(localeProvider);
-            final label = _localeLabel(context.l10n, locale);
-            return ListTile(
-              leading: Icon(
-                Symbols.translate_rounded,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-              title: Text(label),
-              trailing: const Icon(Symbols.chevron_right_rounded),
-              onTap: () => _showLanguagePicker(context, ref, locale),
-            );
-          },
-        ),
-      ],
-    ),
-
     // ── 主题模式 ───────────────────────────────────────────────────
     SettingsGroup(
       title: l10n.appearance_themeMode,
@@ -65,20 +64,24 @@ List<SettingsGroup> buildAppearanceGroups(BuildContext context) {
       wrapInCard: false,
       items: [
         CustomModel(
+          id: 'themePreview',
+          title: l10n.appearance_theme,
+          builder: (context, ref) => const _ThemeLivePreview(),
+        ),
+        CustomModel(
           id: 'themeMode',
           title: l10n.appearance_themeMode,
           builder: (context, ref) {
             final themeState = ref.watch(themeProvider);
             final currentMode = themeState.mode;
-            final theme = Theme.of(context);
             final l10n = context.l10n;
 
-            // 卡片预览实时反映中性/纯黑开关（透明不影响卡片预览）
+            // 卡片预览实时反映主题与纯黑开关（透明不影响卡片预览）
             final preview = ThemeResolver.resolve(
+              spec: themeState.themeSpec,
+              accentId: themeState.accentFor(themeState.themeSpec),
               mode: currentMode,
-              neutral: themeState.neutralEnabled,
               black: themeState.blackEnabled,
-              transparent: false,
               seed: themeState.effectiveSeedColor,
               variant: themeState.schemeVariant,
             );
@@ -86,55 +89,130 @@ List<SettingsGroup> buildAppearanceGroups(BuildContext context) {
             final darkScheme = preview.dark;
 
             final modes = [
-              (
-                ThemeMode.system,
-                Symbols.auto_mode_rounded,
-                l10n.appearance_modeAuto,
-                null,
-              ),
-              (
-                ThemeMode.light,
-                Symbols.light_mode_rounded,
-                l10n.appearance_modeLight,
-                lightScheme,
-              ),
-              (
-                ThemeMode.dark,
-                Symbols.dark_mode_rounded,
-                l10n.appearance_modeDark,
-                darkScheme,
-              ),
+              (ThemeMode.system, l10n.appearance_modeAuto, null),
+              (ThemeMode.light, l10n.appearance_modeLight, lightScheme),
+              (ThemeMode.dark, l10n.appearance_modeDark, darkScheme),
             ];
 
-            return Align(
-              alignment: Alignment.centerLeft,
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 400),
-                child: Row(
-                  children: [
-                    for (int i = 0; i < modes.length; i++) ...[
-                      if (i > 0) const SizedBox(width: 12),
-                      Expanded(
-                        child: _ThemeModeCard(
-                          mode: modes[i].$1,
-                          icon: modes[i].$2,
-                          label: modes[i].$3,
-                          previewScheme: modes[i].$4,
-                          lightScheme: lightScheme,
-                          darkScheme: darkScheme,
-                          isSelected: modes[i].$1 == currentMode,
-                          currentTheme: theme,
-                          onTap: () => ref
-                              .read(themeProvider.notifier)
-                              .setThemeMode(modes[i].$1),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
+            return Row(
+              children: [
+                for (int i = 0; i < modes.length; i++) ...[
+                  if (i > 0) const SizedBox(width: 12),
+                  Expanded(
+                    child: _ThemeModeCard(
+                      mode: modes[i].$1,
+                      label: modes[i].$2,
+                      previewScheme: modes[i].$3,
+                      lightScheme: lightScheme,
+                      darkScheme: darkScheme,
+                      isSelected: modes[i].$1 == currentMode,
+                      onTap: () => ref
+                          .read(themeProvider.notifier)
+                          .setThemeMode(modes[i].$1),
+                    ),
+                  ),
+                ],
+              ],
             );
           },
+        ),
+      ],
+    ),
+
+    // ── 主题 ───────────────────────────────────────────────────────
+    SettingsGroup(
+      title: l10n.appearance_theme,
+      icon: Symbols.color_lens_rounded,
+      wrapInCard: false,
+      items: [
+        CustomModel(
+          id: 'festivalBanner',
+          title: l10n.appearance_festival,
+          builder: (context, ref) => const _FestivalBanner(),
+        ),
+        CustomModel(
+          id: 'themeGallery',
+          title: l10n.appearance_theme,
+          builder: (context, ref) => const _ThemeGallery(),
+        ),
+        CustomModel(
+          id: 'themeOptions',
+          title: l10n.appearance_themeAccent,
+          builder: (context, ref) => const Padding(
+            padding: EdgeInsets.only(top: 16),
+            child: _ThemeOptionsSection(),
+          ),
+        ),
+      ],
+    ),
+
+    // ── 节日主题 ───────────────────────────────────────────────────
+    SettingsGroup(
+      title: l10n.appearance_festival,
+      icon: Symbols.celebration_rounded,
+      items: [
+        SwitchModel(
+          id: 'festivalEnabled',
+          title: l10n.appearance_festival,
+          subtitle: l10n.appearance_festivalDesc,
+          icon: Symbols.festival_rounded,
+          getValue: (ref) => ref.watch(themeProvider).festivalEnabled,
+          onChanged: (ref, v) =>
+              ref.read(themeProvider.notifier).setFestivalEnabled(v),
+        ),
+        SwitchModel(
+          id: 'festivalGreeting',
+          title: l10n.appearance_festivalGreeting,
+          subtitle: l10n.appearance_festivalGreetingDesc,
+          icon: Symbols.waving_hand_rounded,
+          enabledWhen: (ref) => ref.watch(themeProvider).festivalEnabled,
+          getValue: (ref) => ref.watch(themeProvider).festivalGreetingEnabled,
+          onChanged: (ref, v) =>
+              ref.read(themeProvider.notifier).setFestivalGreetingEnabled(v),
+        ),
+        SwitchModel(
+          id: 'festivalDecor',
+          title: l10n.appearance_festivalDecor,
+          subtitle: l10n.appearance_festivalDecorDesc,
+          icon: Symbols.auto_awesome_rounded,
+          enabledWhen: (ref) => ref.watch(themeProvider).festivalEnabled,
+          getValue: (ref) => ref.watch(themeProvider).festivalDecorEnabled,
+          onChanged: (ref, v) =>
+              ref.read(themeProvider.notifier).setFestivalDecorEnabled(v),
+        ),
+        if (kDebugMode)
+          ActionModel(
+            id: 'festivalDebugPreview',
+            title: l10n.appearance_festivalDebugPreview,
+            icon: Symbols.bug_report_rounded,
+            getDynamicSubtitle: (ref) {
+              final id = ref.watch(themeProvider).debugFestivalId;
+              final festival = FestivalCalendar.all
+                  .where((f) => f.id == id)
+                  .firstOrNull;
+              return festival == null
+                  ? l10n.appearance_festivalDebugFollowDate
+                  : localizedName(
+                      festival.name,
+                      Localizations.localeOf(context),
+                      festival.id,
+                    );
+            },
+            onTap: _showFestivalDebugPicker,
+          ),
+      ],
+    ),
+
+    // ── 圆角风格 ───────────────────────────────────────────────────
+    SettingsGroup(
+      title: l10n.appearance_shape,
+      icon: Symbols.rounded_corner_rounded,
+      wrapInCard: false,
+      items: [
+        CustomModel(
+          id: 'shapePreset',
+          title: l10n.appearance_shape,
+          builder: (context, ref) => const _ShapeSelector(),
         ),
       ],
     ),
@@ -145,19 +223,13 @@ List<SettingsGroup> buildAppearanceGroups(BuildContext context) {
       icon: Symbols.contrast_rounded,
       items: [
         SwitchModel(
-          id: 'neutral',
-          title: l10n.appearance_neutral,
-          subtitle: l10n.appearance_neutralDesc,
-          icon: Symbols.format_color_reset_rounded,
-          getValue: (ref) => ref.watch(themeProvider).neutralEnabled,
-          onChanged: (ref, v) =>
-              ref.read(themeProvider.notifier).setNeutralEnabled(v),
-        ),
-        SwitchModel(
           id: 'black',
           title: l10n.appearance_modeBlack,
           subtitle: l10n.appearance_blackDesc,
           icon: Symbols.dark_mode_rounded,
+          // 固定配色主题的深色底往往就是主题特色，由主题声明是否支持
+          enabledWhen: (ref) =>
+              ref.watch(themeProvider).themeSpec.supportsPureBlack,
           getValue: (ref) => ref.watch(themeProvider).blackEnabled,
           onChanged: (ref, v) =>
               ref.read(themeProvider.notifier).setBlackEnabled(v),
@@ -175,20 +247,6 @@ List<SettingsGroup> buildAppearanceGroups(BuildContext context) {
           id: 'customBackground',
           title: l10n.appearance_customBackground,
           builder: (context, ref) => const _BackgroundSection(),
-        ),
-      ],
-    ),
-
-    // ── 主题色 ────────────────────────────────────────────────────
-    SettingsGroup(
-      title: l10n.appearance_themeColor,
-      icon: Symbols.color_lens_rounded,
-      wrapInCard: false,
-      items: [
-        CustomModel(
-          id: 'themeColor',
-          title: l10n.appearance_themeColor,
-          builder: (context, ref) => const _ThemeColorSection(),
         ),
       ],
     ),
@@ -227,16 +285,16 @@ List<SettingsGroup> buildAppearanceGroups(BuildContext context) {
                 ),
               ];
 
-              // 与主题模式卡片同宽（400 宽放 3 张 → 2 张为 264）
-              return Align(
-                alignment: Alignment.centerLeft,
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 264),
-                  child: Row(
+              // 沿用主题模式的三列宽度，两个图标选项靠左排列。
+              return LayoutBuilder(
+                builder: (context, constraints) {
+                  final width = (constraints.maxWidth - 24) / 3;
+                  return Row(
                     children: [
                       for (int i = 0; i < options.length; i++) ...[
                         if (i > 0) const SizedBox(width: 12),
-                        Expanded(
+                        SizedBox(
+                          width: width,
                           child: _AppIconCard(
                             label: options[i].$2,
                             assetPath: options[i].$3,
@@ -256,8 +314,8 @@ List<SettingsGroup> buildAppearanceGroups(BuildContext context) {
                         ),
                       ],
                     ],
-                  ),
-                ),
+                  );
+                },
               );
             },
           ),
@@ -271,41 +329,33 @@ List<SettingsGroup> buildAppearanceGroups(BuildContext context) {
       icon: Symbols.font_download_rounded,
       items: [
         CustomModel(
-          id: 'font',
-          title: l10n.appearance_font,
-          builder: (context, ref) {
-            final fontFamily = ref.watch(
-              themeProvider.select((s) => s.fontFamily),
-            );
-            final l10n = context.l10n;
-            final options = <(String, AppFontFamily)>[
-              (l10n.appearance_fontSystem, AppFontFamily.system),
-              ('MiSans', AppFontFamily.miSans),
-            ];
+          id: 'fontBody',
+          title: l10n.appearance_fontBody,
+          builder: (context, ref) => const _FontSlotSection(FontSlot.body),
+        ),
+        CustomModel(
+          id: 'fontMono',
+          title: l10n.appearance_fontMono,
+          builder: (context, ref) => const _FontSlotSection(FontSlot.mono),
+        ),
+        CustomModel(
+          id: 'fontSource',
+          title: l10n.appearance_fontSource,
+          builder: (context, ref) => const _FontSourceTile(),
+        ),
+      ],
+    ),
 
-            return RadioGroup<AppFontFamily>(
-              groupValue: fontFamily,
-              onChanged: (value) {
-                if (value != null) {
-                  ref.read(themeProvider.notifier).setFontFamily(value);
-                }
-              },
-              child: Column(
-                children: [
-                  for (final (label, ff) in options)
-                    RadioListTile<AppFontFamily>(
-                      title: Text(
-                        label,
-                        style: ff == AppFontFamily.miSans
-                            ? const TextStyle(fontFamily: 'MiSans')
-                            : null,
-                      ),
-                      value: ff,
-                    ),
-                ],
-              ),
-            );
-          },
+    // ── 表情风格 ──────────────────────────────────────────────────
+    SettingsGroup(
+      title: l10n.appearance_emojiStyle,
+      icon: Symbols.add_reaction_rounded,
+      items: [
+        CustomModel(
+          id: 'emojiStyle',
+          title: l10n.appearance_emojiStyle,
+          subtitle: l10n.appearance_emojiStyleDesc,
+          builder: (context, ref) => const _EmojiStyleSection(),
         ),
       ],
     ),
@@ -347,7 +397,7 @@ List<SettingsGroup> buildAppearanceGroups(BuildContext context) {
           icon: Symbols.view_agenda_rounded,
           onTap: (context, ref) => Navigator.push(
             context,
-            MaterialPageRoute(
+            InteractionPageRoute(
               builder: (_) => const TopicCardStyleSettingsPage(),
             ),
           ),
@@ -480,49 +530,91 @@ List<SettingsGroup> buildAppearanceGroups(BuildContext context) {
 
 // ── 语言选择器辅助函数 ───────────────────────────────────────────
 
-void _showLanguagePicker(
-  BuildContext context,
-  WidgetRef ref,
-  Locale? currentLocale,
-) {
-  final l10n = context.l10n;
-  final options = <(String, Locale?)>[
-    (l10n.appearance_languageSystem, null),
-    (l10n.appearance_languageZhCN, const Locale('zh', 'CN')),
-    (l10n.appearance_languageZhTW, const Locale('zh', 'TW')),
-    (l10n.appearance_languageZhHK, const Locale('zh', 'HK')),
-    (l10n.appearance_languageEn, const Locale('en', 'US')),
-  ];
+// ── 表情风格 ─────────────────────────────────────────────────────
 
-  AppBottomSheet.show<void>(
-    context: context,
-    contentPadding: EdgeInsets.zero,
-    builder: (sheetContext) {
-      return Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          for (final (label, locale) in options)
-            ListTile(
-              title: Text(label),
-              trailing: _localeKey(locale) == _localeKey(currentLocale)
-                  ? Icon(
-                      Symbols.check_rounded,
-                      color: Theme.of(sheetContext).colorScheme.primary,
-                    )
-                  : null,
-              onTap: () {
-                ref.read(localeProvider.notifier).setLocale(locale);
-                final effectiveLocale =
-                    locale ?? WidgetsBinding.instance.platformDispatcher.locale;
-                AiL10n.configureLocale(effectiveLocale);
-                Navigator.pop(sheetContext);
-              },
+/// 表情风格单选:每项右侧用该风格画几个示例表情,选之前就能看到画风。
+class _EmojiStyleSection extends ConsumerWidget {
+  const _EmojiStyleSection();
+
+  /// 预览用的示例表情(官方回应默认组里的几个,各表情集都有图)
+  static const _samples = ['heart', '+1', 'laughing'];
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = context.l10n;
+    final theme = Theme.of(context);
+    final current = ref.watch(preferencesProvider.select((p) => p.emojiStyle));
+    final options = <(String, String, String)>[
+      // (偏好值, 名称, 预览用的表情集)
+      (
+        EmojiHandler.followSite,
+        l10n.appearance_emojiStyleFollowSite,
+        EmojiHandler.siteSet,
+      ),
+      for (final set in EmojiHandler.selectableSets)
+        (set, _emojiSetLabel(l10n, set), set),
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+          child: Text(
+            l10n.appearance_emojiStyleDesc,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
             ),
-        ],
-      );
-    },
-  );
+          ),
+        ),
+        RadioGroup<String>(
+          groupValue: current,
+          onChanged: (value) {
+            if (value == null) return;
+            ref.read(preferencesProvider.notifier).setEmojiStyle(value);
+          },
+          child: Column(
+            children: [
+              for (final (value, label, set) in options)
+                RadioListTile<String>(
+                  value: value,
+                  title: Text(label),
+                  secondary: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      for (final name in _samples)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 6),
+                          child: Image(
+                            image: BlobImageProvider(
+                              EmojiHandler.urlForSet(name, set),
+                              bucket: BlobImageCache.emojiBucket,
+                            ),
+                            width: 22,
+                            height: 22,
+                            errorBuilder: (_, _, _) =>
+                                const SizedBox(width: 22, height: 22),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
 }
+
+String _emojiSetLabel(AppLocalizations l10n, String set) => switch (set) {
+  'noto' => 'Noto Emoji',
+  'twemoji' => 'Twemoji',
+  'fluentui' => 'Fluent Emoji',
+  'openmoji' => 'OpenMoji',
+  'unicode' => l10n.appearance_emojiStyleStandard,
+  _ => set,
+};
 
 // ── 屏幕帧率选择器（仅 Android）────────────────────────────────
 
@@ -692,29 +784,6 @@ class _DisplayModeData {
   _DisplayModeData({required this.modes, required this.active});
 }
 
-String _localeLabel(AppLocalizations l10n, Locale? locale) {
-  if (locale == null) return l10n.appearance_languageSystem;
-  switch ('${locale.languageCode}_${locale.countryCode}') {
-    case 'zh_CN':
-      return l10n.appearance_languageZhCN;
-    case 'zh_TW':
-      return l10n.appearance_languageZhTW;
-    case 'zh_HK':
-      return l10n.appearance_languageZhHK;
-    case 'en_US':
-      return l10n.appearance_languageEn;
-    default:
-      return l10n.appearance_languageSystem;
-  }
-}
-
-String _localeKey(Locale? locale) {
-  if (locale == null) return 'system';
-  return locale.countryCode != null
-      ? '${locale.languageCode}_${locale.countryCode}'
-      : locale.languageCode;
-}
-
 // ── 应用图标选择卡片 ─────────────────────────────────────────────
 
 /// 图标设计稿背景：细网格 + 中心十字线 + keyline 参考形状（圆 / 圆角方），
@@ -770,10 +839,10 @@ class _IconKeylinePainter extends CustomPainter {
     // 外接圆
     canvas.drawCircle(center, 27, paint);
     // 圆角方形
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
+    canvas.drawRSuperellipse(
+      RSuperellipse.fromRectAndRadius(
         Rect.fromCenter(center: center, width: 54, height: 54),
-        const Radius.circular(12),
+        UiShapes.current.radius(12),
       ),
       paint,
     );
@@ -797,15 +866,13 @@ class _IconKeylinePainter extends CustomPainter {
   }
 }
 
-/// 应用图标选择卡片，样式与 [_ThemeModeCard] 保持一致：
-/// 顶部为迷你"设计稿"预览（keyline 网格线稿 + 悬浮应用图标），
-/// 底部显示勾选 + 文字，选中态高亮边框 + 容器底色。
+/// 复用统一选择卡，保留网格线稿和完整的启动器图标预览。
 class _AppIconCard extends StatelessWidget {
   final String label;
   final String assetPath;
   final bool isSelected;
   final bool isChanging;
-  final VoidCallback onTap;
+  final FutureOr<void> Function() onTap;
 
   const _AppIconCard({
     required this.label,
@@ -817,112 +884,48 @@ class _AppIconCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final cs = theme.colorScheme;
+    final cs = Theme.of(context).colorScheme;
 
-    return GestureDetector(
+    return _AppearanceChoiceCard(
+      label: label,
+      selected: isSelected,
       onTap: isChanging ? null : onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.easeOutCubic,
-        decoration: BoxDecoration(
-          color: isSelected
-              ? cs.secondaryContainer.withValues(alpha: 0.5)
-              : cs.surfaceContainerLow,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: isSelected
-                ? cs.primary
-                : cs.outlineVariant.withValues(alpha: 0.3),
-            width: isSelected ? 2 : 1,
-          ),
-        ),
-        child: Column(
-          children: [
-            // 迷你设计稿：keyline 网格背景 + 悬浮图标
-            Padding(
-              padding: const EdgeInsets.fromLTRB(10, 10, 10, 0),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: SizedBox(
-                  height: 64,
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      CustomPaint(
-                        painter: _IconKeylinePainter(
-                          backgroundColor: cs.surfaceContainerHighest
-                              .withValues(alpha: 0.35),
-                          gridColor: cs.outline,
-                          accentColor: isSelected ? cs.primary : cs.outline,
-                        ),
-                      ),
-                      Center(
-                        child: AnimatedScale(
-                          scale: isSelected ? 1.0 : 0.88,
-                          duration: const Duration(milliseconds: 250),
-                          curve: Curves.easeOutBack,
-                          child: Container(
-                            width: 44,
-                            height: 44,
-                            clipBehavior: Clip.antiAlias,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(10),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withValues(
-                                    alpha: isSelected ? 0.25 : 0.15,
-                                  ),
-                                  blurRadius: 8,
-                                  offset: const Offset(0, 3),
-                                ),
-                              ],
-                            ),
-                            child: Image.asset(assetPath, fit: BoxFit.cover),
-                          ),
-                        ),
-                      ),
-                      if (isChanging && isSelected)
-                        Container(
-                          color: Colors.black26,
-                          child: const Center(
-                            child: LoadingSpinner(size: 24, color: Colors.white),
-                          ),
-                        ),
-                    ],
+      preview: ClipRSuperellipse(
+        borderRadius: context.shapes.borderRadius(10),
+        child: SizedBox(
+          height: 80,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              CustomPaint(
+                painter: _IconKeylinePainter(
+                  backgroundColor: cs.surfaceContainerHighest.withValues(
+                    alpha: 0.35,
+                  ),
+                  gridColor: cs.outline,
+                  accentColor: isSelected ? cs.primary : cs.outline,
+                ),
+              ),
+              Center(
+                // 启动器图标外沿不跟随应用圆角；选中前后保持同样的尺寸。
+                child: ClipOval(
+                  child: Image.asset(
+                    assetPath,
+                    width: 52,
+                    height: 52,
+                    fit: BoxFit.contain,
                   ),
                 ),
               ),
-            ),
-            const SizedBox(height: 8),
-            // 勾选 + 文字（与主题模式卡片同款底部行）
-            Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  if (isSelected) ...[
-                    Icon(
-                      Symbols.check_circle_rounded,
-                      size: 14,
-                      fill: 1,
-                      color: cs.primary,
-                    ),
-                    const SizedBox(width: 4),
-                  ],
-                  Text(
-                    label,
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: isSelected ? cs.primary : cs.onSurfaceVariant,
-                      fontWeight: isSelected
-                          ? FontWeight.w500
-                          : FontWeight.normal,
-                    ),
+              if (isChanging && isSelected)
+                Container(
+                  color: Colors.black26,
+                  child: const Center(
+                    child: LoadingSpinner(size: 24, color: Colors.white),
                   ),
-                ],
-              ),
-            ),
-          ],
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -935,7 +938,6 @@ class _AppIconCard extends StatelessWidget {
 
 class _ThemeModeCard extends StatelessWidget {
   final ThemeMode mode;
-  final IconData icon;
   final String label;
 
   /// 该模式对应的配色方案，system 模式为 null（需同时展示 light + dark）
@@ -943,88 +945,39 @@ class _ThemeModeCard extends StatelessWidget {
   final ColorScheme lightScheme;
   final ColorScheme darkScheme;
   final bool isSelected;
-  final ThemeData currentTheme;
   final VoidCallback onTap;
 
   const _ThemeModeCard({
     required this.mode,
-    required this.icon,
     required this.label,
     required this.previewScheme,
     required this.lightScheme,
     required this.darkScheme,
     required this.isSelected,
-    required this.currentTheme,
     required this.onTap,
   });
 
   @override
-  Widget build(BuildContext context) {
-    final cs = currentTheme.colorScheme;
-
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.easeOutCubic,
-        decoration: BoxDecoration(
-          color: isSelected
-              ? cs.secondaryContainer.withValues(alpha: 0.5)
-              : cs.surfaceContainerLow,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: isSelected
-                ? cs.primary
-                : cs.outlineVariant.withValues(alpha: 0.3),
-            width: isSelected ? 2 : 1,
-          ),
-        ),
-        child: Column(
-          children: [
-            // 迷你屏幕预览
-            Padding(
-              padding: const EdgeInsets.fromLTRB(10, 10, 10, 0),
-              child: _buildPreview(),
-            ),
-            const SizedBox(height: 8),
-            // 图标 + 文字
-            Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    icon,
-                    size: 14,
-                    color: isSelected ? cs.primary : cs.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    label,
-                    style: currentTheme.textTheme.labelSmall?.copyWith(
-                      color: isSelected ? cs.primary : cs.onSurfaceVariant,
-                      fontWeight: isSelected
-                          ? FontWeight.w500
-                          : FontWeight.normal,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => _AppearanceChoiceCard(
+    label: label,
+    labelIcon: switch (mode) {
+      ThemeMode.system => Symbols.auto_mode_rounded,
+      ThemeMode.light => Symbols.light_mode_rounded,
+      ThemeMode.dark => Symbols.dark_mode_rounded,
+    },
+    preview: _buildPreview(),
+    selected: isSelected,
+    onTap: onTap,
+  );
 
   /// 绘制迷你屏幕预览
   Widget _buildPreview() {
     if (mode == ThemeMode.system) {
       // 跟随系统：同一个屏幕，左半亮色右半暗色
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(10),
+      return ClipRSuperellipse(
+        borderRadius: UiShapes.current.borderRadius(10),
         child: SizedBox(
-          height: 64,
+          height: 56,
           child: CustomPaint(
             painter: _SplitThemePreviewPainter(
               lightScheme: lightScheme,
@@ -1036,9 +989,9 @@ class _ThemeModeCard extends StatelessWidget {
       );
     }
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(10),
-      child: SizedBox(height: 64, child: _buildMiniScreen(previewScheme!)),
+    return ClipRSuperellipse(
+      borderRadius: UiShapes.current.borderRadius(10),
+      child: SizedBox(height: 56, child: _buildMiniScreen(previewScheme!)),
     );
   }
 
@@ -1053,9 +1006,11 @@ class _ThemeModeCard extends StatelessWidget {
           // 模拟 app bar
           Container(
             height: 10,
-            decoration: BoxDecoration(
+            decoration: ShapeDecoration(
               color: scheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(3),
+              shape: RoundedSuperellipseBorder(
+                borderRadius: UiShapes.current.borderRadius(3),
+              ),
             ),
             child: Row(
               children: [
@@ -1063,9 +1018,11 @@ class _ThemeModeCard extends StatelessWidget {
                 Container(
                   width: 16,
                   height: 5,
-                  decoration: BoxDecoration(
+                  decoration: ShapeDecoration(
                     color: scheme.onSurface.withValues(alpha: 0.6),
-                    borderRadius: BorderRadius.circular(2),
+                    shape: RoundedSuperellipseBorder(
+                      borderRadius: UiShapes.current.borderRadius(2),
+                    ),
                   ),
                 ),
               ],
@@ -1076,16 +1033,18 @@ class _ThemeModeCard extends StatelessWidget {
           _buildContentLine(scheme, 0.7),
           const SizedBox(height: 2),
           _buildContentLine(scheme, 0.5),
-          const SizedBox(height: 2),
+          const Spacer(),
           // 模拟按钮
           Align(
             alignment: Alignment.centerRight,
             child: Container(
               width: 14,
               height: 6,
-              decoration: BoxDecoration(
+              decoration: ShapeDecoration(
                 color: scheme.primary,
-                borderRadius: BorderRadius.circular(3),
+                shape: RoundedSuperellipseBorder(
+                  borderRadius: UiShapes.current.borderRadius(3),
+                ),
               ),
             ),
           ),
@@ -1099,9 +1058,11 @@ class _ThemeModeCard extends StatelessWidget {
       widthFactor: widthFactor,
       child: Container(
         height: 4,
-        decoration: BoxDecoration(
+        decoration: ShapeDecoration(
           color: scheme.onSurface.withValues(alpha: 0.15),
-          borderRadius: BorderRadius.circular(2),
+          shape: RoundedSuperellipseBorder(
+            borderRadius: UiShapes.current.borderRadius(2),
+          ),
         ),
       ),
     );
@@ -1177,7 +1138,7 @@ class _SplitThemePreviewPainter extends CustomPainter {
     // ── 按钮 ──
     final btnW = 14.0;
     final btnH = 6.0;
-    final btnY = y2 + 8;
+    final btnY = size.height - pad - btnH;
     _drawSplitRRect(
       canvas,
       size,
@@ -1205,21 +1166,24 @@ class _SplitThemePreviewPainter extends CustomPainter {
     required Color darkColor,
   }) {
     final midX = size.width / 2;
-    final rrect = RRect.fromRectAndRadius(rect, Radius.circular(radius));
+    final rrect = RSuperellipse.fromRectAndRadius(
+      rect,
+      Radius.circular(radius),
+    );
     final paint = Paint();
 
     // 左半（亮色）
     canvas.save();
     canvas.clipRect(Rect.fromLTRB(0, 0, midX, size.height));
     paint.color = lightColor;
-    canvas.drawRRect(rrect, paint);
+    canvas.drawRSuperellipse(rrect, paint);
     canvas.restore();
 
     // 右半（暗色）
     canvas.save();
     canvas.clipRect(Rect.fromLTRB(midX, 0, size.width, size.height));
     paint.color = darkColor;
-    canvas.drawRRect(rrect, paint);
+    canvas.drawRSuperellipse(rrect, paint);
     canvas.restore();
   }
 
@@ -1236,28 +1200,41 @@ class _SplitThemePreviewPainter extends CustomPainter {
 
 /// 透明模式是独立功能：开启时若没有背景图先拉起选图，
 /// 用户取消则保持关闭；开启后展开背景控制项。
-class _BackgroundSection extends ConsumerWidget {
+class _BackgroundSection extends ConsumerStatefulWidget {
   const _BackgroundSection();
 
-  Future<void> _onTransparentChanged(WidgetRef ref, bool value) async {
-    final notifier = ref.read(themeProvider.notifier);
-    if (!value) {
-      await notifier.setTransparentEnabled(false);
-      return;
-    }
-    if (ref.read(themeProvider).background.hasImage) {
-      await notifier.setTransparentEnabled(true);
-      return;
-    }
-    final path = await AppBackgroundService.importFromGallery();
-    if (path != null) {
+  @override
+  ConsumerState<_BackgroundSection> createState() => _BackgroundSectionState();
+}
+
+class _BackgroundSectionState extends ConsumerState<_BackgroundSection> {
+  bool _changing = false;
+
+  Future<void> _onTransparentChanged(bool value) async {
+    if (_changing) return;
+    setState(() => _changing = true);
+    try {
+      final notifier = ref.read(themeProvider.notifier);
+      if (!value) {
+        await notifier.setTransparentEnabled(false);
+        return;
+      }
+      final background = ref.read(themeProvider).background;
+      if (background.hasImage && File(background.imagePath!).existsSync()) {
+        await notifier.setTransparentEnabled(true);
+        return;
+      }
+      final path = await AppBackgroundService.importFromGallery();
+      if (path == null || !mounted) return;
       await notifier.setBackgroundImage(path);
       await notifier.setTransparentEnabled(true);
+    } finally {
+      if (mounted) setState(() => _changing = false);
     }
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final l10n = context.l10n;
     final transparent = ref.watch(themeProvider).transparentEnabled;
@@ -1267,21 +1244,25 @@ class _BackgroundSection extends ConsumerWidget {
     return Material(
       color: cs.surfaceContainerLow,
       clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedSuperellipseBorder(
+        borderRadius: context.shapes.borderRadius(16),
+      ),
       child: Column(
         children: [
-          SwitchListTile(
+          M3eSwitchListTile(
             secondary: Icon(
-              Symbols.opacity_rounded,
-              color: transparent ? cs.primary : cs.onSurfaceVariant,
+              Symbols.wallpaper_rounded,
+              color: transparent ? context.emphasis.selected : cs.onSurfaceVariant,
             ),
             title: Text(l10n.appearance_styleTransparent),
             subtitle: Text(l10n.appearance_transparentDesc),
             value: transparent,
-            onChanged: (v) {
-              HapticFeedback.selectionClick();
-              _onTransparentChanged(ref, v);
-            },
+            onChanged: _changing
+                ? null
+                : (v) {
+                    HapticFeedback.selectionClick();
+                    _onTransparentChanged(v);
+                  },
           ),
           if (transparent)
             const Padding(
@@ -1298,9 +1279,9 @@ class _BackgroundSection extends ConsumerWidget {
 class _BackgroundControls extends ConsumerWidget {
   const _BackgroundControls();
 
-  Future<void> _changeImage(WidgetRef ref) async {
+  Future<void> _changeImage(BuildContext context, WidgetRef ref) async {
     final path = await AppBackgroundService.importFromGallery();
-    if (path == null) return;
+    if (path == null || !context.mounted) return;
     final old = ref.read(themeProvider).background.imagePath;
     await ref.read(themeProvider.notifier).setBackgroundImage(path);
     // 旧文件异步清理，失败也无碍
@@ -1323,8 +1304,8 @@ class _BackgroundControls extends ConsumerWidget {
         // ── 背景图：缩略图 + 更换按钮；文件丢失时给重选入口 ──
         Row(
           children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(10),
+            ClipRSuperellipse(
+              borderRadius: context.shapes.borderRadius(10),
               child: SizedBox(
                 width: 56,
                 height: 56,
@@ -1355,7 +1336,7 @@ class _BackgroundControls extends ConsumerWidget {
               ),
             ),
             TextButton(
-              onPressed: () => _changeImage(ref),
+              onPressed: () => _changeImage(context, ref),
               child: Text(l10n.appearance_bgChange),
             ),
           ],
@@ -1364,7 +1345,8 @@ class _BackgroundControls extends ConsumerWidget {
         // ── 遮罩透明度（按当前亮度调节，明暗分开记忆）──
         _SliderRow(
           icon: Symbols.opacity_rounded,
-          label: l10n.appearance_bgScrim,
+          label:
+              '${l10n.appearance_bgScrim} · ${brightness == Brightness.dark ? l10n.appearance_modeDark : l10n.appearance_modeLight}',
           value: background.scrimFor(brightness),
           max: 1,
           onChanged: (v) => ref
@@ -1403,17 +1385,30 @@ class _SliderRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, size: 20, color: cs.onSurfaceVariant),
-        const SizedBox(width: 12),
-        Text(label, style: Theme.of(context).textTheme.bodyMedium),
-        Expanded(
-          child: Slider(
-            value: value.clamp(0.0, max),
-            max: max,
-            onChanged: onChanged,
-          ),
+        Row(
+          children: [
+            Icon(icon, size: 20, color: cs.onSurfaceVariant),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(label, style: Theme.of(context).textTheme.bodyMedium),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              max == 1 ? '${(value * 100).round()}%' : value.toStringAsFixed(0),
+              style: Theme.of(context).textTheme.labelMedium,
+            ),
+          ],
+        ),
+        Slider(
+          value: value.clamp(0.0, max),
+          max: max,
+          label: max == 1
+              ? '${(value * 100).round()}%'
+              : value.toStringAsFixed(0),
+          onChanged: onChanged,
         ),
       ],
     );
@@ -1425,14 +1420,13 @@ class _SliderRow extends StatelessWidget {
 // ══════════════════════════════════════════════════════════════════
 
 class _ThemeColorSection extends ConsumerStatefulWidget {
-  const _ThemeColorSection();
+  const _ThemeColorSection({super.key});
 
   @override
   ConsumerState<_ThemeColorSection> createState() => _ThemeColorSectionState();
 }
 
 class _ThemeColorSectionState extends ConsumerState<_ThemeColorSection> {
-  Color? _removableColor;
   final ScrollController _variantScrollCtrl = ScrollController();
   bool _didInitialScroll = false;
 
@@ -1474,6 +1468,12 @@ class _ThemeColorSectionState extends ConsumerState<_ThemeColorSection> {
     final variant = themeState.schemeVariant;
     final customColors = themeState.customColors;
     final dynamicPrimary = themeState.dynamicPrimary;
+    // 色点显示种子色在当前配色风格下实际得到的强调色
+    Color primaryOf(Color seed) => SeedColorScheme.from(
+      seedColor: seed,
+      variant: variant,
+      brightness: theme.brightness,
+    ).primary;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1534,359 +1534,45 @@ class _ThemeColorSectionState extends ConsumerState<_ThemeColorSection> {
           const SizedBox(height: 24),
         ],
 
-        // ── 颜色网格 ──
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final maxWidth = constraints.maxWidth;
-            // 列数随宽度增长，保持色卡尺寸基本恒定，避免大屏上被拉得过大
-            final columns = math.max(3, (maxWidth / 88).floor());
-            const spacing = 14.0;
-            final itemWidth = (maxWidth - (columns - 1) * spacing) / columns;
-
-            return Wrap(
-              spacing: spacing,
-              runSpacing: spacing,
-              children: [
-                // 动态色
-                _ColorSwatchCard(
-                  size: itemWidth,
-                  isSelected: isDynamic,
-                  isDynamic: true,
-                  dynamicPrimary: dynamicPrimary,
-                  variant: variant,
-                  onTap: () {
-                    setState(() => _removableColor = null);
-                    ref.read(themeProvider.notifier).selectDynamicColor();
-                  },
-                ),
-                // 内置调色板
-                for (final palette in AppPalettes.builtins)
-                  _ColorSwatchCard(
-                    size: itemWidth,
-                    seedColor: palette.seedColor,
-                    tooltip: _paletteLabel(context, palette.id),
-                    isSelected:
-                        source == AccentSource.palette &&
-                        themeState.paletteId == palette.id,
-                    variant: variant,
-                    onTap: () {
-                      setState(() => _removableColor = null);
-                      ref
-                          .read(themeProvider.notifier)
-                          .selectPalette(palette.id);
-                    },
-                  ),
-                // 自定义色
-                for (final color in customColors)
-                  SizedBox(
-                    width: itemWidth,
-                    height: itemWidth,
-                    child: Stack(
-                      alignment: Alignment.center,
-                      clipBehavior: Clip.none,
-                      children: [
-                        _ColorSwatchCard(
-                          size: itemWidth,
-                          seedColor: color,
-                          isSelected:
-                              isCustom &&
-                              color.toARGB32() == currentColor.toARGB32(),
-                          variant: variant,
-                          onTap: () {
-                            setState(() => _removableColor = null);
-                            ref
-                                .read(themeProvider.notifier)
-                                .selectCustomColor(color);
-                          },
-                          onLongPress: () =>
-                              setState(() => _removableColor = color),
-                        ),
-                        if (_removableColor?.toARGB32() == color.toARGB32())
-                          Container(
-                            decoration: BoxDecoration(
-                              color: Colors.black45,
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: IconButton.filledTonal(
-                              onPressed: () {
-                                ref
-                                    .read(themeProvider.notifier)
-                                    .removeCustomColor(color);
-                                setState(() => _removableColor = null);
-                              },
-                              iconSize: 28,
-                              icon: Icon(Symbols.delete_rounded, color: cs.primary),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                // 添加按钮
-                if (_removableColor == null)
-                  SizedBox(
-                    width: itemWidth,
-                    height: itemWidth,
-                    child: Padding(
-                      padding: const EdgeInsets.all(4),
-                      child: IconButton.filledTonal(
-                        onPressed: () => _showColorPicker(context),
-                        iconSize: 28,
-                        icon: Icon(Symbols.add_rounded, color: cs.primary),
-                      ),
-                    ),
-                  ),
-              ],
-            );
-          },
+        // ── 强调色 ──
+        _AccentPanel(
+          children: [
+            _AccentDot(
+              color: primaryOf(dynamicPrimary ?? cs.primary),
+              tooltip: context.l10n.appearance_modeAuto,
+              systemBadge: true,
+              selected: isDynamic,
+              onTap: () => ref.read(themeProvider.notifier).selectDynamicColor(),
+            ),
+            for (final palette in AppPalettes.builtins)
+              _AccentDot(
+                color: primaryOf(palette.seedColor),
+                tooltip: _paletteLabel(context, palette.id),
+                selected:
+                    source == AccentSource.palette &&
+                    themeState.paletteId == palette.id,
+                onTap: () =>
+                    ref.read(themeProvider.notifier).selectPalette(palette.id),
+              ),
+            for (final color in customColors)
+              _AccentDot(
+                color: primaryOf(color),
+                tooltip: context.l10n.appearance_themeCustomAccent,
+                selected:
+                    isCustom && color.toARGB32() == currentColor.toARGB32(),
+                onTap: () =>
+                    ref.read(themeProvider.notifier).selectCustomColor(color),
+                onEdit: () => _editCustomColor(context, ref, color),
+                onDelete: () =>
+                    ref.read(themeProvider.notifier).removeCustomColor(color),
+              ),
+            _AccentAddButton(
+              tooltip: context.l10n.appearance_themeCustomAccent,
+              onTap: () => _addCustomColor(context, ref),
+            ),
+          ],
         ),
       ],
-    );
-  }
-
-  // ── 自定义取色弹框 ──
-
-  void _showColorPicker(BuildContext context) {
-    double hue = 0;
-    double saturation = 0.8;
-    double value = 0.9;
-    final hexController = TextEditingController(text: 'E57373');
-
-    void syncHex() {
-      final color = HSVColor.fromAHSV(1.0, hue, saturation, value).toColor();
-      hexController.text = color
-          .toARGB32()
-          .toRadixString(16)
-          .substring(2)
-          .toUpperCase();
-    }
-
-    syncHex();
-
-    showAppBottomSheet<Color>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (sheetContext) {
-        return StatefulBuilder(
-          builder: (context, setSheetState) {
-            final color = HSVColor.fromAHSV(
-              1.0,
-              hue,
-              saturation,
-              value,
-            ).toColor();
-            final variant = ref.read(themeProvider).schemeVariant;
-            // 拖动滑块会连续产生一次性种子色，刻意不走 SeedColorScheme 缓存，
-            // 免得把色卡网格常用的那些配色挤出去。
-            final scheme = ColorScheme.fromSeed(
-              seedColor: color,
-              dynamicSchemeVariant: variant,
-              brightness: Theme.of(context).brightness,
-            );
-
-            return SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // 配色预览 + HEX
-                    Row(
-                      children: [
-                        // 迷你色卡（与网格色卡完全一致的比例和样式）
-                        Container(
-                          width: 60,
-                          height: 60,
-                          clipBehavior: Clip.antiAlias,
-                          decoration: BoxDecoration(
-                            color: scheme.surfaceContainerLow,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: scheme.primary, width: 2),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              Expanded(
-                                flex: 7,
-                                child: ColoredBox(color: scheme.primary),
-                              ),
-                              Expanded(
-                                flex: 3,
-                                child: Center(
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      _miniDot(scheme.primary),
-                                      const SizedBox(width: 5),
-                                      _miniDot(scheme.secondary),
-                                      const SizedBox(width: 5),
-                                      _miniDot(scheme.tertiary),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              // HEX 输入
-                              Row(
-                                children: [
-                                  Text(
-                                    '#',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .titleMedium
-                                        ?.copyWith(
-                                          fontWeight: FontWeight.w500,
-                                          color: Theme.of(
-                                            context,
-                                          ).colorScheme.onSurfaceVariant,
-                                        ),
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Expanded(
-                                    child: TextField(
-                                      controller: hexController,
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .titleMedium
-                                          ?.copyWith(
-                                            fontWeight: FontWeight.w500,
-                                            fontFamily: 'monospace',
-                                          ),
-                                      decoration: const InputDecoration(
-                                        isDense: true,
-                                        border: InputBorder.none,
-                                        contentPadding: EdgeInsets.zero,
-                                      ),
-                                      onSubmitted: (hex) {
-                                        final parsed = int.tryParse(
-                                          'FF$hex',
-                                          radix: 16,
-                                        );
-                                        if (parsed != null) {
-                                          final c = Color(parsed);
-                                          final hsv = HSVColor.fromColor(c);
-                                          setSheetState(() {
-                                            hue = hsv.hue;
-                                            saturation = hsv.saturation;
-                                            value = hsv.value;
-                                          });
-                                        }
-                                      },
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'H:${hue.round()}\u00B0  '
-                                'S:${(saturation * 100).round()}%  '
-                                'B:${(value * 100).round()}%',
-                                style: Theme.of(context).textTheme.bodySmall
-                                    ?.copyWith(
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.onSurfaceVariant,
-                                    ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 24),
-
-                    // 色相条
-                    _HueBar(
-                      hue: hue,
-                      onChanged: (h) {
-                        setSheetState(() => hue = h);
-                        syncHex();
-                      },
-                    ),
-                    const SizedBox(height: 16),
-
-                    // 饱和度
-                    _GradientSlider(
-                      label: 'S',
-                      value: saturation,
-                      thumbColor: HSVColor.fromAHSV(
-                        1,
-                        hue,
-                        saturation,
-                        1,
-                      ).toColor(),
-                      gradientColors: [
-                        HSVColor.fromAHSV(1, hue, 0, value).toColor(),
-                        HSVColor.fromAHSV(1, hue, 1, value).toColor(),
-                      ],
-                      onChanged: (s) {
-                        setSheetState(() => saturation = s);
-                        syncHex();
-                      },
-                    ),
-                    const SizedBox(height: 12),
-
-                    // 明度
-                    _GradientSlider(
-                      label: 'B',
-                      value: value,
-                      thumbColor: HSVColor.fromAHSV(
-                        1,
-                        hue,
-                        saturation,
-                        value,
-                      ).toColor(),
-                      gradientColors: [
-                        HSVColor.fromAHSV(1, hue, saturation, 0).toColor(),
-                        HSVColor.fromAHSV(1, hue, saturation, 1).toColor(),
-                      ],
-                      onChanged: (v) {
-                        setSheetState(() => value = v);
-                        syncHex();
-                      },
-                    ),
-                    const SizedBox(height: 24),
-
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton(
-                        onPressed: () => Navigator.pop(sheetContext, color),
-                        child: Text(context.l10n.common_confirm),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    ).then((color) {
-      if (color != null) {
-        ref.read(themeProvider.notifier).addCustomColor(color);
-        ref.read(themeProvider.notifier).selectCustomColor(color);
-      }
-      // 延迟释放 controller，等待退场动画结束
-      // （.then 在 didPop 时触发，此时退场动画仍在进行，
-      //  主题重建会导致弹窗中的 TextField 重建并访问 controller）
-      Future.delayed(const Duration(milliseconds: 350), () {
-        hexController.dispose();
-      });
-    });
-  }
-
-  static Widget _miniDot(Color color) {
-    return Container(
-      width: 8,
-      height: 8,
-      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
     );
   }
 
@@ -1904,6 +1590,253 @@ class _ThemeColorSectionState extends ConsumerState<_ThemeColorSection> {
       DynamicSchemeVariant.fruitSalad => l10n.schemeVariant_fruitSalad,
     };
   }
+}
+
+// ── 自定义取色弹框（返回所选颜色，用途由调用方决定）──
+
+Future<Color?> _showSeedColorPicker(
+  BuildContext context,
+  WidgetRef ref, {
+  Color? initial,
+}) {
+  final start = initial == null ? null : HSVColor.fromColor(initial);
+  double hue = start?.hue ?? 0;
+  double saturation = start?.saturation ?? 0.8;
+  double value = start?.value ?? 0.9;
+  final hexController = TextEditingController(text: 'E57373');
+
+  void syncHex() {
+    final color = HSVColor.fromAHSV(1.0, hue, saturation, value).toColor();
+    hexController.text = color
+        .toARGB32()
+        .toRadixString(16)
+        .substring(2)
+        .toUpperCase();
+  }
+
+  syncHex();
+
+  return showAppBottomSheet<Color>(
+    context: context,
+    showDragHandle: true,
+    isScrollControlled: true,
+    builder: (sheetContext) {
+      return StatefulBuilder(
+        builder: (context, setSheetState) {
+          final color = HSVColor.fromAHSV(
+            1.0,
+            hue,
+            saturation,
+            value,
+          ).toColor();
+          final variant = ref.read(themeProvider).schemeVariant;
+          // 拖动滑块会连续产生一次性种子色，刻意不走 SeedColorScheme 缓存，
+          // 免得把色卡网格常用的那些配色挤出去。
+          final scheme = ColorScheme.fromSeed(
+            seedColor: color,
+            dynamicSchemeVariant: variant,
+            brightness: Theme.of(context).brightness,
+          );
+
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // 配色预览 + HEX
+                  Row(
+                    children: [
+                      // 迷你色卡（与网格色卡完全一致的比例和样式）
+                      Container(
+                        width: 60,
+                        height: 60,
+                        clipBehavior: Clip.antiAlias,
+                        decoration: ShapeDecoration(
+                          color: scheme.surfaceContainerLow,
+                          shape: RoundedSuperellipseBorder(
+                            borderRadius: context.shapes.borderRadius(16),
+                            side: BorderSide(color: scheme.primary, width: 2),
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Expanded(
+                              flex: 7,
+                              child: ColoredBox(color: scheme.primary),
+                            ),
+                            Expanded(
+                              flex: 3,
+                              child: Center(
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    _miniDot(scheme.primary),
+                                    const SizedBox(width: 5),
+                                    _miniDot(scheme.secondary),
+                                    const SizedBox(width: 5),
+                                    _miniDot(scheme.tertiary),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // HEX 输入
+                            Row(
+                              children: [
+                                Text(
+                                  '#',
+                                  style: Theme.of(context).textTheme.titleMedium
+                                      ?.copyWith(
+                                        fontWeight: FontWeight.w500,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSurfaceVariant,
+                                      ),
+                                ),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: TextField(
+                                    controller: hexController,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleMedium
+                                        ?.copyWith(
+                                          fontWeight: FontWeight.w500,
+                                          fontFamily: 'monospace',
+                                        ),
+                                    decoration: const InputDecoration(
+                                      isDense: true,
+                                      contentPadding: EdgeInsets.zero,
+                                    ).withoutBorder(),
+                                    onSubmitted: (hex) {
+                                      final parsed = int.tryParse(
+                                        'FF$hex',
+                                        radix: 16,
+                                      );
+                                      if (parsed != null) {
+                                        final c = Color(parsed);
+                                        final hsv = HSVColor.fromColor(c);
+                                        setSheetState(() {
+                                          hue = hsv.hue;
+                                          saturation = hsv.saturation;
+                                          value = hsv.value;
+                                        });
+                                      }
+                                    },
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'H:${hue.round()}\u00B0  '
+                              'S:${(saturation * 100).round()}%  '
+                              'B:${(value * 100).round()}%',
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant,
+                                  ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+
+                  // 色相条
+                  _HueBar(
+                    hue: hue,
+                    onChanged: (h) {
+                      setSheetState(() => hue = h);
+                      syncHex();
+                    },
+                  ),
+                  const SizedBox(height: 16),
+
+                  // 饱和度
+                  _GradientSlider(
+                    label: 'S',
+                    value: saturation,
+                    thumbColor: HSVColor.fromAHSV(
+                      1,
+                      hue,
+                      saturation,
+                      1,
+                    ).toColor(),
+                    gradientColors: [
+                      HSVColor.fromAHSV(1, hue, 0, value).toColor(),
+                      HSVColor.fromAHSV(1, hue, 1, value).toColor(),
+                    ],
+                    onChanged: (s) {
+                      setSheetState(() => saturation = s);
+                      syncHex();
+                    },
+                  ),
+                  const SizedBox(height: 12),
+
+                  // 明度
+                  _GradientSlider(
+                    label: 'B',
+                    value: value,
+                    thumbColor: HSVColor.fromAHSV(
+                      1,
+                      hue,
+                      saturation,
+                      value,
+                    ).toColor(),
+                    gradientColors: [
+                      HSVColor.fromAHSV(1, hue, saturation, 0).toColor(),
+                      HSVColor.fromAHSV(1, hue, saturation, 1).toColor(),
+                    ],
+                    onChanged: (v) {
+                      setSheetState(() => value = v);
+                      syncHex();
+                    },
+                  ),
+                  const SizedBox(height: 24),
+
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: () => Navigator.pop(sheetContext, color),
+                      child: Text(context.l10n.common_confirm),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+    },
+  ).whenComplete(() {
+    // 延迟释放 controller，等待退场动画结束
+    // （完成回调在 didPop 时触发，此时退场动画仍在进行，
+    //  主题重建会导致弹窗中的 TextField 重建并访问 controller）
+    Future.delayed(const Duration(milliseconds: 350), () {
+      hexController.dispose();
+    });
+  });
+}
+
+Widget _miniDot(Color color) {
+  return Container(
+    width: 8,
+    height: 8,
+    decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+  );
 }
 
 /// 调色板名字（色卡 tooltip 用）。
@@ -1956,23 +1889,30 @@ class _VariantChip extends StatelessWidget {
       brightness: Theme.of(context).brightness,
     );
 
-    return GestureDetector(
+    return _AppearancePressSurface(
+      shape: RoundedSuperellipseBorder(
+        borderRadius: context.shapes.borderRadius(12),
+      ),
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         width: 96,
         clipBehavior: Clip.antiAlias,
-        decoration: BoxDecoration(
+        decoration: ShapeDecoration(
           color: scheme.surfaceContainerLow,
-          borderRadius: BorderRadius.circular(12),
+          shape: RoundedSuperellipseBorder(
+            borderRadius: context.shapes.borderRadius(12),
+          ),
         ),
-        foregroundDecoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: isSelected
-                ? scheme.primary
-                : cs.outlineVariant.withValues(alpha: 0.3),
-            width: isSelected ? 1.5 : 1,
+        foregroundDecoration: ShapeDecoration(
+          shape: RoundedSuperellipseBorder(
+            borderRadius: context.shapes.borderRadius(12),
+            side: BorderSide(
+              color: isSelected
+                  ? scheme.primary
+                  : cs.outlineVariant.withValues(alpha: 0.3),
+              width: isSelected ? 1.5 : 1,
+            ),
           ),
         ),
         child: Column(
@@ -2024,137 +1964,6 @@ class _VariantChip extends StatelessWidget {
 }
 
 // ══════════════════════════════════════════════════════════════════
-// 色卡（选色网格中的单张色卡，上方 primary 填充，下方 3 配色圆点）
-// ══════════════════════════════════════════════════════════════════
-
-class _ColorSwatchCard extends StatelessWidget {
-  final double size;
-  final Color? seedColor;
-  final bool isSelected;
-  final bool isDynamic;
-  final Color? dynamicPrimary;
-  final DynamicSchemeVariant variant;
-  final String? tooltip;
-  final VoidCallback onTap;
-  final VoidCallback? onLongPress;
-
-  const _ColorSwatchCard({
-    required this.size,
-    this.seedColor,
-    required this.isSelected,
-    this.isDynamic = false,
-    this.dynamicPrimary,
-    required this.variant,
-    this.tooltip,
-    required this.onTap,
-    this.onLongPress,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final effectiveSeed = isDynamic
-        ? (dynamicPrimary ?? Theme.of(context).colorScheme.primary)
-        : seedColor!;
-    final tileScheme = SeedColorScheme.from(
-      seedColor: effectiveSeed,
-      variant: variant,
-      brightness: Theme.of(context).brightness,
-    );
-
-    final card = GestureDetector(
-      onTap: onTap,
-      onLongPress: onLongPress,
-      onSecondaryTap: PlatformUtils.isDesktop ? onLongPress : null,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        width: size,
-        height: size,
-        clipBehavior: Clip.antiAlias,
-        decoration: BoxDecoration(
-          color: tileScheme.surfaceContainerLow,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        foregroundDecoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: isSelected
-                ? tileScheme.primary
-                : tileScheme.outlineVariant.withValues(alpha: 0.3),
-            width: isSelected ? 2 : 1,
-          ),
-        ),
-        child: Column(
-          children: [
-            // 上方 ~70%: primary 色填充
-            Expanded(
-              flex: 7,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  ColoredBox(color: tileScheme.primary),
-                  if (isSelected)
-                    Container(
-                      color: Colors.black.withValues(alpha: 0.12),
-                      alignment: Alignment.center,
-                      child: Icon(
-                        Symbols.check_circle_rounded,
-                        color: tileScheme.onPrimary,
-                        size: 26,
-                      ),
-                    ),
-                  // 动态色标识（右上角）
-                  if (isDynamic)
-                    Positioned(
-                      top: 5,
-                      right: 5,
-                      child: Icon(
-                        Symbols.auto_awesome_rounded,
-                        size: 14,
-                        color: tileScheme.onPrimary.withValues(alpha: 0.85),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            // 下方 ~30%: 配色圆点（所有色卡样式统一）
-            Expanded(
-              flex: 3,
-              child: Center(
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _colorDot(tileScheme.primary),
-                    const SizedBox(width: 5),
-                    _colorDot(tileScheme.secondary),
-                    const SizedBox(width: 5),
-                    _colorDot(tileScheme.tertiary),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-
-    // 调色板色卡带名字提示；其余色卡无 tooltip 时直接返回
-    final tip = tooltip;
-    if (tip != null) {
-      return Tooltip(message: tip, child: card);
-    }
-    return card;
-  }
-
-  static Widget _colorDot(Color color) {
-    return Container(
-      width: 8,
-      height: 8,
-      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-    );
-  }
-}
-
-// ══════════════════════════════════════════════════════════════════
 // 色相条（彩虹渐变 + 滑块）
 // ══════════════════════════════════════════════════════════════════
 
@@ -2168,8 +1977,7 @@ class _HueBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       height: 36,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(18),
+      decoration: ShapeDecoration(
         gradient: const LinearGradient(
           colors: [
             Color(0xFFFF0000),
@@ -2180,6 +1988,9 @@ class _HueBar extends StatelessWidget {
             Color(0xFFFF00FF),
             Color(0xFFFF0000),
           ],
+        ),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(18),
         ),
       ),
       child: SliderTheme(
@@ -2274,9 +2085,11 @@ class _GradientSlider extends StatelessWidget {
         Expanded(
           child: Container(
             height: 28,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(14),
+            decoration: ShapeDecoration(
               gradient: LinearGradient(colors: gradientColors),
+              shape: RoundedSuperellipseBorder(
+                borderRadius: context.shapes.borderRadius(14),
+              ),
             ),
             child: SliderTheme(
               data: SliderTheme.of(context).copyWith(

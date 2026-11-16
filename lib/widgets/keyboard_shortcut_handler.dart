@@ -1,9 +1,11 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fluxdo_render/editor.dart' show FluxdoEditor;
 
 import '../models/shortcut_binding.dart';
+import '../navigation/nav_action_bus.dart';
 import '../pages/create_topic_page.dart';
 import '../pages/search_page.dart';
 import '../providers/topic_list/tab_state_provider.dart';
@@ -289,7 +291,7 @@ class _KeyboardShortcutHandlerState
       case ShortcutAction.openSearch:
         return _pushOrRevealRoute(
           context: navContext,
-          route: MaterialPageRoute(
+          route: InteractionPageRoute(
             settings: const RouteSettings(name: 'search'),
             builder: (_) => const SearchPage(),
           ),
@@ -304,7 +306,7 @@ class _KeyboardShortcutHandlerState
       case ShortcutAction.openSettings:
         return _pushOrRevealRoute(
           context: navContext,
-          route: MaterialPageRoute(
+          route: InteractionPageRoute(
             settings: const RouteSettings(name: 'settings'),
             builder: (_) => const SettingsPage(),
           ),
@@ -347,15 +349,15 @@ class _KeyboardShortcutHandlerState
         }
         return true;
       case ShortcutAction.switchToTopics:
-        ref.read(switchTabProvider.notifier).state = 0;
+        ref.requestNavDestination(NavEntryIds.home);
         return true;
       case ShortcutAction.switchToProfile:
-        ref.read(switchTabProvider.notifier).state = 1;
+        ref.requestNavDestination(NavEntryIds.profile);
         return true;
       case ShortcutAction.createTopic:
         return _pushOrRevealRoute(
           context: navContext,
-          route: MaterialPageRoute(
+          route: InteractionPageRoute(
             builder: (_) => CreateTopicPage(
               initialCategoryId: ref.read(currentTabCategoryIdProvider),
             ),

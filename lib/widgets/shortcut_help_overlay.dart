@@ -1,6 +1,8 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../l10n/s.dart';
 import '../models/shortcut_binding.dart';
 import '../providers/shortcut_provider.dart';
@@ -60,7 +62,7 @@ class _ShortcutHelpDialogState extends State<_ShortcutHelpDialog> {
       insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
       clipBehavior: Clip.antiAlias,
       backgroundColor: theme.colorScheme.surface,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(16)),
       child: SizedBox(
         width: dialogWidth,
         height: dialogHeight,
@@ -183,19 +185,19 @@ class _ShortcutSearchField extends StatelessWidget {
           vertical: 12,
         ),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: context.shapes.borderRadius(12),
           borderSide: BorderSide(
             color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
           ),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: context.shapes.borderRadius(12),
           borderSide: BorderSide(
             color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
           ),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: context.shapes.borderRadius(12),
           borderSide: BorderSide(
             color: theme.colorScheme.primary.withValues(alpha: 0.65),
           ),
@@ -304,19 +306,21 @@ class _ShortcutCategoryCard extends StatelessWidget {
 
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.6),
-        ),
-        boxShadow: [
+        shadows: [
           BoxShadow(
             color: theme.colorScheme.shadow.withValues(alpha: 0.03),
             blurRadius: 6,
             offset: const Offset(0, 2),
           ),
         ],
+        shape: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(12),
+          side: BorderSide(
+            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.6),
+          ),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -484,12 +488,11 @@ List<_ShortcutEntry> _filterEntries(
   return List.unmodifiable(
     entries.where((entry) {
       final actionLabel = entry.label.toLowerCase();
-      final keyLabel = ShortcutBinding.formatActivator(
-        entry.activator,
-      ).toLowerCase();
-      final keyParts = ShortcutBinding.formatActivatorParts(
-        entry.activator,
-      ).join(' ').toLowerCase();
+      final keyLabel = ShortcutBinding.formatActivator(entry.activator)
+          .toLowerCase();
+      final keyParts = ShortcutBinding.formatActivatorParts(entry.activator)
+          .join(' ')
+          .toLowerCase();
       return actionLabel.contains(query) ||
           keyLabel.contains(query) ||
           keyParts.contains(query);

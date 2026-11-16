@@ -16,6 +16,7 @@ library;
 
 import 'dart:math' as math;
 
+import 'package:common_ui/common_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/material.dart';
 
@@ -145,9 +146,8 @@ class ContentActionsButton extends StatelessWidget {
     if (items.isEmpty) return;
 
     final width = composerActionMenuWidth(context);
-    final labelStyle = Theme.of(
-      context,
-    ).textTheme.labelLarge!.copyWith(height: 1.25);
+    final labelStyle = Theme.of(context).textTheme.labelLarge!
+        .copyWith(height: 1.25);
     var rowHeight = 76.0;
     for (final item in items) {
       final painter = TextPainter(
@@ -233,9 +233,9 @@ class _ContentActionsGridEntryState extends State<_ContentActionsGridEntry> {
                                       'composer-content-action-${row * 3 + col}',
                                     ),
                                     onPressed: items[row * 3 + col].enabled
-                                        ? () => Navigator.of(
-                                            context,
-                                          ).pop(row * 3 + col)
+                                        ? () =>
+                                              Navigator.of(context)
+                                                  .pop(row * 3 + col)
                                         : null,
                                     style: TextButton.styleFrom(
                                       foregroundColor: colors.onSurface,
@@ -244,8 +244,8 @@ class _ContentActionsGridEntryState extends State<_ContentActionsGridEntry> {
                                         horizontal: 6,
                                         vertical: 8,
                                       ),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(18),
+                                      shape: RoundedSuperellipseBorder(
+                                        borderRadius: context.shapes.borderRadius(18),
                                       ),
                                       textStyle: widget.labelStyle,
                                     ),

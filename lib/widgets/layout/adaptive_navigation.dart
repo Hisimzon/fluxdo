@@ -206,44 +206,51 @@ class _NavigationRailItem extends StatelessWidget {
         ? colorScheme.onSecondaryContainer
         : colorScheme.onSurfaceVariant;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      child: Material(
-        color: backgroundColor,
-        borderRadius: BorderRadius.circular(16),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: onTap,
-          child: SizedBox(
-            height: 56,
-            child: extended
-                ? Row(
-                    children: [
-                      const SizedBox(width: 16),
-                      IconTheme(
+    return Tooltip(
+      message: extended ? '' : label,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        child: Material(
+          color: backgroundColor,
+          shape: RoundedSuperellipseBorder(
+            borderRadius: context.shapes.borderRadius(16),
+          ),
+          child: InkWell(
+            customBorder: RoundedSuperellipseBorder(
+              borderRadius: context.shapes.borderRadius(16),
+            ),
+            onTap: onTap,
+            child: SizedBox(
+              height: 56,
+              child: extended
+                  ? Row(
+                      children: [
+                        const SizedBox(width: 16),
+                        IconTheme(
+                          data: IconThemeData(color: iconColor, size: 24),
+                          child: icon,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            label,
+                            style: TextStyle(
+                              color: iconColor,
+                              fontWeight: selected
+                                  ? FontWeight.w500
+                                  : FontWeight.normal,
+                            ),
+                          ),
+                        ),
+                      ],
+                    )
+                  : Center(
+                      child: IconTheme(
                         data: IconThemeData(color: iconColor, size: 24),
                         child: icon,
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          label,
-                          style: TextStyle(
-                            color: iconColor,
-                            fontWeight: selected
-                                ? FontWeight.w500
-                                : FontWeight.normal,
-                          ),
-                        ),
-                      ),
-                    ],
-                  )
-                : Center(
-                    child: IconTheme(
-                      data: IconThemeData(color: iconColor, size: 24),
-                      child: icon,
                     ),
-                  ),
+            ),
           ),
         ),
       ),
@@ -514,9 +521,8 @@ abstract final class _CapsuleMetrics {
   /// 行高补偿。缩放 ≤1 时恒为基准值，不影响默认观感。
   static double itemHeight(BuildContext context, {required bool labelless}) {
     if (labelless) return itemHeightLabelless;
-    final scaled = MediaQuery.textScalerOf(
-      context,
-    ).scale(labelSize * labelHeight);
+    final scaled = MediaQuery.textScalerOf(context)
+        .scale(labelSize * labelHeight);
     final natural = iconTop + iconSize + iconGap + scaled + labelBottom;
     return math.max(itemHeightLabeled, natural);
   }
@@ -606,8 +612,8 @@ class _FloatingBottomBarShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final barHeight = itemHeight + _CapsuleMetrics.innerInset * 2;
-    final radius = barHeight / 2;
+    // 与内部选中胶囊使用相同的 full token；方正主题一并收角。
+    const radius = 9999.0;
 
     // 内容留白（最内层，玻璃/实色两种底色共用）
     final content = Padding(
@@ -619,7 +625,7 @@ class _FloatingBottomBarShell extends StatelessWidget {
     // 不支持 shader 时才使用均匀模糊与降级描边。
     // 材质统一遵循全局玻璃策略；关闭时直接出实色，不建离屏层。
     //
-    // 外壳 ClipRRect 只限制可见范围，不保证背景纹理原点归零。
+    // 外壳 ClipRSuperellipse 只限制可见范围，不保证背景纹理原点归零。
     // tintColor 不传：用配方里的中性灰阶（浅 0.99 / 深 0.12）。传
     // surfaceContainer 会被主题色染成彩色塑料板，失去玻璃的中性感。
     final body = GlassSurfaceFrame(
@@ -793,7 +799,11 @@ class _CapsuleNavBarState extends State<_CapsuleNavBar>
                           child: DecoratedBox(
                             decoration: ShapeDecoration(
                               color: pillColor,
-                              shape: const StadiumBorder(),
+                              shape: RoundedSuperellipseBorder(
+                                borderRadius: BorderRadius.all(
+                                  context.shapes.radius(9999),
+                                ),
+                              ),
                             ),
                           ),
                         ),
@@ -868,7 +878,9 @@ class _CapsuleNavItem extends StatelessWidget {
         message: dest.label,
         child: InkWell(
           // 墨水跟随 pill 的 stadium 造型（pill 铺满整个条目）
-          customBorder: const StadiumBorder(),
+          customBorder: RoundedSuperellipseBorder(
+            borderRadius: BorderRadius.all(context.shapes.radius(9999)),
+          ),
           onTap: onTap,
           child: labelless
               // 无字态：图标在条目内居中

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:common_ui/common_ui.dart';
 import 'package:ai_model_manager/ai_model_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
@@ -109,7 +110,8 @@ class AiPostReviewButton extends ConsumerStatefulWidget {
     BuildContext anchorContext,
     bool isReviewing,
     VoidCallback? trigger,
-  )? builder;
+  )?
+  builder;
 
   @override
   ConsumerState<AiPostReviewButton> createState() => _AiPostReviewButtonState();
@@ -559,10 +561,12 @@ class _LevelHeader extends StatelessWidget {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: tone.color.withValues(alpha: 0.10),
-        border: Border.all(color: tone.color.withValues(alpha: 0.35)),
-        borderRadius: BorderRadius.circular(8),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(8),
+          side: BorderSide(color: tone.color.withValues(alpha: 0.35)),
+        ),
       ),
       child: Row(
         children: [
@@ -577,9 +581,11 @@ class _LevelHeader extends StatelessWidget {
           const Spacer(),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
+            decoration: ShapeDecoration(
               color: tone.color,
-              borderRadius: BorderRadius.circular(999),
+              shape: RoundedSuperellipseBorder(
+                borderRadius: context.shapes.borderRadius(999),
+              ),
             ),
             child: Text(
               levelText,
@@ -662,9 +668,11 @@ class _NoticeBox extends StatelessWidget {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: theme.colorScheme.secondaryContainer.withValues(alpha: 0.6),
-        borderRadius: BorderRadius.circular(8),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(8),
+        ),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,

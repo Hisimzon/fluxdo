@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/material.dart';
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../l10n/s.dart';
@@ -68,7 +69,7 @@ class _SeekingPageState extends ConsumerState<SeekingPage> {
 
   Future<void> _showAddUserDialog() async {
     final controller = TextEditingController();
-    final username = await showDialog<String>(
+    final username = await showInteractionDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(ctx.l10n.seeking_addUser),
@@ -134,7 +135,7 @@ class _SeekingPageState extends ConsumerState<SeekingPage> {
       return;
     }
     Navigator.of(context).push(
-      MaterialPageRoute(
+      InteractionPageRoute(
         builder: (_) => TopicDetailPage(
           topicId: activity.topicId,
           initialTitle: activity.title,
@@ -152,7 +153,7 @@ class _SeekingPageState extends ConsumerState<SeekingPage> {
       return;
     }
     Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => UserProfilePage(username: username)),
+      InteractionPageRoute(builder: (_) => UserProfilePage(username: username)),
     );
   }
 
@@ -556,9 +557,11 @@ class _UserChip extends StatelessWidget {
           ? const EdgeInsets.only(right: 10)
           : const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       child: InkWell(
-        borderRadius: BorderRadius.circular(10),
+        customBorder: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(10),
+        ),
         onTap: onTap,
-        onLongPress: () => showDialog<void>(
+        onLongPress: () => showInteractionDialog<void>(
           context: context,
           builder: (ctx) => AlertDialog(
             title: Text(ctx.l10n.seeking_removeUser),
@@ -586,11 +589,13 @@ class _UserChip extends StatelessWidget {
               ? const EdgeInsets.symmetric(horizontal: 6, vertical: 4)
               : const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           decoration: focused
-              ? BoxDecoration(
+              ? ShapeDecoration(
                   color: theme.colorScheme.primaryContainer.withValues(
                     alpha: 0.5,
                   ),
-                  borderRadius: BorderRadius.circular(10),
+                  shape: RoundedSuperellipseBorder(
+                    borderRadius: context.shapes.borderRadius(10),
+                  ),
                 )
               : null,
           child: compact
@@ -684,9 +689,11 @@ class _AllUsersChip extends StatelessWidget {
             top: -4,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-              decoration: BoxDecoration(
+              decoration: ShapeDecoration(
                 color: theme.colorScheme.error,
-                borderRadius: BorderRadius.circular(8),
+                shape: RoundedSuperellipseBorder(
+                  borderRadius: context.shapes.borderRadius(8),
+                ),
               ),
               child: Text(
                 unread > 99 ? '99+' : '$unread',
@@ -701,18 +708,22 @@ class _AllUsersChip extends StatelessWidget {
           ? const EdgeInsets.only(right: 10)
           : const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       child: InkWell(
-        borderRadius: BorderRadius.circular(10),
+        customBorder: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(10),
+        ),
         onTap: onTap,
         child: Container(
           padding: compact
               ? const EdgeInsets.symmetric(horizontal: 6, vertical: 4)
               : const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           decoration: focused
-              ? BoxDecoration(
+              ? ShapeDecoration(
                   color: theme.colorScheme.primaryContainer.withValues(
                     alpha: 0.5,
                   ),
-                  borderRadius: BorderRadius.circular(10),
+                  shape: RoundedSuperellipseBorder(
+                    borderRadius: context.shapes.borderRadius(10),
+                  ),
                 )
               : null,
           child: compact
@@ -779,9 +790,11 @@ class _UserAvatar extends StatelessWidget {
             top: -4,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-              decoration: BoxDecoration(
+              decoration: ShapeDecoration(
                 color: theme.colorScheme.error,
-                borderRadius: BorderRadius.circular(8),
+                shape: RoundedSuperellipseBorder(
+                  borderRadius: context.shapes.borderRadius(8),
+                ),
               ),
               child: Text(
                 unread > 99 ? '99+' : '$unread',

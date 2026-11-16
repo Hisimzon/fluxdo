@@ -1,11 +1,19 @@
+import 'package:common_ui/common_ui.dart';
+
 import 'dart:async';
+
 import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
+
 import '../pages/topic_detail_page/topic_detail_page.dart';
 import '../pages/user_profile_page.dart';
+import '../pages/group_page.dart';
+import '../pages/groups_page.dart';
+import '../utils/category_navigation.dart';
 import '../pages/webview_login_page.dart';
 import '../pages/webview_page.dart';
 import '../constants.dart';
+import '../modules/mini_apps/mini_app_navigation.dart';
 import '../utils/discourse_url_parser.dart';
 import 'discourse/discourse_service.dart';
 import 'user_api_key_login_flow.dart';
@@ -73,7 +81,7 @@ class DeepLinkService {
   bool canHandleUri(Uri uri) => _canHandleUri(uri);
 
   /// 处理链接
-  void _handleLink(Uri uri) {
+  Future<void> _handleLink(Uri uri) async {
     if (_navigatorContext == null) {
       debugPrint('DeepLinkService: 导航 context 未就绪');
       return;
@@ -113,11 +121,50 @@ class DeepLinkService {
       return;
     }
 
+    if (await openMiniAppLink(context, uri.toString())) return;
+    if (!context.mounted) return;
+
+    final directoryInfo = DiscourseUrlParser.parseGroupDirectory(url);
+    if (directoryInfo != null) {
+      Navigator.of(context).push(
+        InteractionPageRoute(
+          builder: (_) => GroupsPage(
+            initialFilter: directoryInfo.filter,
+            initialType: directoryInfo.type,
+            initialOrder: directoryInfo.order,
+            initialAscending: directoryInfo.ascending,
+            username: directoryInfo.username,
+          ),
+        ),
+      );
+      return;
+    }
+
+    final groupInfo = DiscourseUrlParser.parseGroup(url);
+    if (groupInfo != null) {
+      Navigator.of(context).push(
+        InteractionPageRoute(
+          builder: (_) => GroupPage(
+            name: groupInfo.name,
+            initialSection: groupInfo.section,
+            initialActivityFilter: groupInfo.activityFilter,
+            initialCategoryId: groupInfo.categoryId,
+          ),
+        ),
+      );
+      return;
+    }
+    final categoryInfo = DiscourseUrlParser.parseCategory(url);
+    if (categoryInfo != null) {
+      await openCategoryPage(context, categoryInfo.categoryId);
+      return;
+    }
+
     // 尝试匹配用户链接 /u/username
     final userInfo = DiscourseUrlParser.parseUser(uri.path);
     if (userInfo != null) {
       Navigator.of(context).push(
-        MaterialPageRoute(
+        InteractionPageRoute(
           builder: (_) => UserProfilePage(username: userInfo.username),
         ),
       );
@@ -128,7 +175,7 @@ class DeepLinkService {
     final topicInfo = DiscourseUrlParser.parseTopic(uri.path);
     if (topicInfo != null) {
       Navigator.of(context).push(
-        MaterialPageRoute(
+        InteractionPageRoute(
           builder: (_) => TopicDetailPage(
             topicId: topicInfo.topicId,
             scrollToPostNumber: topicInfo.postNumber,
@@ -184,7 +231,7 @@ class DeepLinkService {
 
           if (topicId != null) {
             Navigator.of(context).push(
-              MaterialPageRoute(
+              InteractionPageRoute(
                 builder: (_) => TopicDetailPage(
                   topicId: topicId,
                   scrollToPostNumber: postNumber,
@@ -200,7 +247,7 @@ class DeepLinkService {
         if (pathSegments.length >= 2) {
           final username = pathSegments[1];
           Navigator.of(context).push(
-            MaterialPageRoute(
+            InteractionPageRoute(
               builder: (_) => UserProfilePage(username: username),
             ),
           );
@@ -218,7 +265,7 @@ class DeepLinkService {
   Future<void> _handleEmailLogin(BuildContext context, String url) async {
     debugPrint('DeepLinkService: 处理邮箱链接登录: $url');
     final result = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(builder: (_) => WebViewLoginPage(initialUrl: url)),
+      InteractionPageRoute(builder: (_) => WebViewLoginPage(initialUrl: url)),
     );
     if (result == true) {
       onEmailLoginSuccess?.call();
@@ -234,7 +281,7 @@ class DeepLinkService {
 
       if (context.mounted) {
         Navigator.of(context).push(
-          MaterialPageRoute(
+          InteractionPageRoute(
             builder: (_) =>
                 TopicDetailPage(topicId: detail.id, initialTitle: detail.title),
           ),

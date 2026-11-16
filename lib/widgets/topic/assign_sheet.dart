@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
@@ -14,13 +15,13 @@ import '../../utils/dialog_utils.dart';
 import '../common/smart_avatar.dart';
 import '../markdown_editor/markdown_editor.dart';
 import '../../services/preloaded_data_service.dart';
+import '../../theme/app_colors.dart';
 
 /// 状态下拉的可选值——assign_statuses 是 client:true 的站点设置,
 /// 随预加载 siteSettings 下发(官方 Web 端就是读
 /// siteSettings.assign_statuses.split("|")),这里同源读取,不硬编码。
 /// enable_assign_status 关闭时官方不显示状态下拉,同样照做。
-List<String> get _assignStatusOptions =>
-    PreloadedDataService().assignStatuses;
+List<String> get _assignStatusOptions => PreloadedDataService().assignStatuses;
 
 bool get _assignStatusEnabled =>
     PreloadedDataService().assignStatusEnabled &&
@@ -67,7 +68,7 @@ Future<void> showPostAssignDialog(
   required int postId,
   PostAssignmentInfo? current,
 }) async {
-  final result = await showDialog<_AssignDialogResult>(
+  final result = await showInteractionDialog<_AssignDialogResult>(
     context: context,
     builder: (ctx) => _AssignDetailsDialog(
       presetUser: current?.assignedToUser,
@@ -268,7 +269,7 @@ class _AssignSheetState extends ConsumerState<_AssignSheet> {
     String? initialNote,
     String? initialStatus,
   }) async {
-    final result = await showDialog<_AssignDialogResult>(
+    final result = await showInteractionDialog<_AssignDialogResult>(
       context: context,
       builder: (ctx) => _AssignDetailsDialog(
         presetUser: presetUser,
@@ -324,7 +325,7 @@ class _AssignSheetState extends ConsumerState<_AssignSheet> {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Row(
                 children: [
-                  Icon(Icons.assignment_ind_outlined, color: scheme.primary),
+                  Icon(Icons.assignment_ind_outlined, color: context.emphasis.accent),
                   const SizedBox(width: 8),
                   Text('指定', style: Theme.of(context).textTheme.titleMedium),
                 ],
@@ -377,9 +378,12 @@ class _AssignSheetState extends ConsumerState<_AssignSheet> {
                 ),
               )
             else
-              const Padding(
+              Padding(
                 padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: Text('尚未指定给任何人', style: TextStyle(color: Colors.grey)),
+                child: Text(
+                  '尚未指定给任何人',
+                  style: TextStyle(color: context.appColors.grey),
+                ),
               ),
             const Divider(height: 1),
             ListTile(
@@ -412,7 +416,9 @@ class _AssignSheetState extends ConsumerState<_AssignSheet> {
                     return Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 4),
                       child: InkWell(
-                        borderRadius: BorderRadius.circular(20),
+                        customBorder: RoundedSuperellipseBorder(
+                          borderRadius: context.shapes.borderRadius(20),
+                        ),
                         onTap: _busy ? null : () => _assignToUser(user),
                         child: Padding(
                           padding: const EdgeInsets.all(4),
@@ -497,7 +503,7 @@ class _AssignDetailsDialogState extends State<_AssignDetailsDialog> {
   /// 官方 Web 端编辑它用的就是标准帖子编辑器。
   Future<void> _editNote() async {
     final result = await Navigator.of(context).push<String>(
-      MaterialPageRoute(
+      InteractionPageRoute(
         builder: (_) => _AssignNoteEditorPage(initialText: _noteText),
         fullscreenDialog: true,
       ),
@@ -556,7 +562,7 @@ class _AssignDetailsDialogState extends State<_AssignDetailsDialog> {
                     controller: controller,
                     focusNode: focusNode,
                     autofocus: true,
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       labelText: '受理人',
                       hintText: '搜索用户名/昵称',
                       suffixIcon: Icon(Icons.search_rounded),
@@ -569,7 +575,9 @@ class _AssignDetailsDialogState extends State<_AssignDetailsDialog> {
                     alignment: Alignment.topLeft,
                     child: Material(
                       elevation: 4,
-                      borderRadius: BorderRadius.circular(8),
+                      shape: RoundedSuperellipseBorder(
+                        borderRadius: context.shapes.borderRadius(8),
+                      ),
                       child: ConstrainedBox(
                         constraints: const BoxConstraints(
                           maxHeight: 240,
@@ -614,7 +622,7 @@ class _AssignDetailsDialogState extends State<_AssignDetailsDialog> {
             if (_assignStatusEnabled) ...[
               DropdownButtonFormField<String>(
                 initialValue: _status,
-                decoration: const InputDecoration(labelText: '状态(可选)'),
+                decoration: InputDecoration(labelText: '状态(可选)'),
                 items: [
                   const DropdownMenuItem(value: null, child: Text('不设置')),
                   // 现有指定的状态值可能已被站点从配置里删掉——仍要出现在
@@ -632,11 +640,15 @@ class _AssignDetailsDialogState extends State<_AssignDetailsDialog> {
             ],
             InkWell(
               onTap: _editNote,
-              borderRadius: BorderRadius.circular(4),
+              customBorder: RoundedSuperellipseBorder(
+                borderRadius: context.shapes.borderRadius(4),
+              ),
               child: InputDecorator(
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: '备注(可选)',
-                  border: OutlineInputBorder(),
+                  border: OutlineInputBorder(
+                    borderRadius: context.shapes.borderRadius(4),
+                  ),
                   suffixIcon: Icon(Icons.edit_note_rounded),
                 ),
                 child: Text(

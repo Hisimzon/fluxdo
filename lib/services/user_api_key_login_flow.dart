@@ -1,5 +1,6 @@
 import 'dart:io' show Platform;
 
+import 'package:common_ui/common_ui.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -9,6 +10,7 @@ import 'local_notification_service.dart' show navigatorKey;
 import 'network/cookie/cookie_jar_service.dart';
 import 'toast_service.dart';
 import 'user_api_key_service.dart';
+
 import 'package:m3e_ui/m3e_ui.dart';
 
 /// 浏览器授权登录流程编排
@@ -17,13 +19,13 @@ import 'package:m3e_ui/m3e_ui.dart';
 /// 回程:系统浏览器授权后 302 到 discourse://auth_redirect,OS 深链拉回 App,
 /// DeepLinkService 分发到 [handleCallback]:
 /// 1. 解密 payload,校验 nonce(key 先暂存,供本流程兑换)
-/// 2. App 无登录态时,用随行 OTP 兑换 _t(纯 dio,走主 dio 的 rhttp 通道过 CF),
+/// 2. App 无登录态时,用随行 OTP 兑换 _t(纯 dio,走主 dio 的网络核心过 CF),
 ///    再走 finalizeNativeLoginSuccess 完成与密码登录一致的收口(预加载 → 广播)
 /// 3. 收口后 key 用完即焚(burnAfterLoginIfUseless):scopes 无 write 时该 key
 ///    是永久零权限凭据,立即 revoke+清除;开了 write 的站点则保留作 _t 自愈
 ///
 /// 全程无可见 WebView / WebView 适配器:OTP 兑换的 CSRF 与 POST 都走主 dio,
-/// 过 CF 靠 rhttp 的 Chrome TLS 指纹 + CfChallengeInterceptor 失效兜底。
+/// 过 CF 靠网络核心复刻的浏览器指纹 + CfChallengeInterceptor 失效兜底。
 ///
 /// 冷启动回调(App 被杀后从浏览器深链拉起)同样成立——流程不依赖登录页存活。
 class UserApiKeyLoginFlow {
@@ -181,9 +183,11 @@ class _AuthLoadingOverlay extends StatelessWidget {
         child: Center(
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
-            decoration: BoxDecoration(
+            decoration: ShapeDecoration(
               color: theme.colorScheme.surface,
-              borderRadius: BorderRadius.circular(16),
+              shape: RoundedSuperellipseBorder(
+                borderRadius: context.shapes.borderRadius(16),
+              ),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,

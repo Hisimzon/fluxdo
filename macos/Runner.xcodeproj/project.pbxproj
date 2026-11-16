@@ -28,11 +28,14 @@
 		33CC10F32044A3C60003C045 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 33CC10F22044A3C60003C045 /* Assets.xcassets */; };
 		33CC10F62044A3C60003C045 /* MainMenu.xib in Resources */ = {isa = PBXBuildFile; fileRef = 33CC10F42044A3C60003C045 /* MainMenu.xib */; };
 		33CC11132044BFA00003C045 /* MainFlutterWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33CC11122044BFA00003C045 /* MainFlutterWindow.swift */; };
+		A1B2C3D400000001000NET01 /* NetCoreLibraryHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D400000002000NET01 /* NetCoreLibraryHost.swift */; };
 		A1B2C3D400000001000CERT0 /* DohProxyCertHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D400000002000CERT0 /* DohProxyCertHandler.swift */; };
 		A1B2C3D400000001000PASTE /* SyntheticPasteFix.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D400000002000PASTE /* SyntheticPasteFix.swift */; };
 		A1B2C3D400000001000AC001 /* MediaTranscodeHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D400000002000AC001 /* MediaTranscodeHandler.swift */; };
 		64ECB773246C7D295B20DA98 /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C3B821E2474ED1A6E7625611 /* Pods_Runner.framework */; };
 		78A318202AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage in Frameworks */ = {isa = PBXBuildFile; productRef = 78A3181F2AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage */; };
+		DA46BA4986314091A380A001 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = DA46BA4986314091A380A002 /* Sparkle */; };
+		DA46BA4986314091A380A004 /* MacOSUpdateHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA46BA4986314091A380A005 /* MacOSUpdateHandler.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -64,6 +67,7 @@
 		33CC10F52044A3C60003C045 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/MainMenu.xib; sourceTree = "<group>"; };
 		33CC10F72044A3C60003C045 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; name = Info.plist; path = Runner/Info.plist; sourceTree = "<group>"; };
 		33CC11122044BFA00003C045 /* MainFlutterWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainFlutterWindow.swift; sourceTree = "<group>"; };
+		A1B2C3D400000002000NET01 /* NetCoreLibraryHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetCoreLibraryHost.swift; sourceTree = "<group>"; };
 		A1B2C3D400000002000CERT0 /* DohProxyCertHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DohProxyCertHandler.swift; sourceTree = "<group>"; };
 		A1B2C3D400000002000PASTE /* SyntheticPasteFix.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyntheticPasteFix.swift; sourceTree = "<group>"; };
 		A1B2C3D400000002000AC001 /* MediaTranscodeHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaTranscodeHandler.swift; sourceTree = "<group>"; };
@@ -84,6 +88,7 @@
 		C6F9F4ACF8DF0AB27FB299D8 /* Pods-Runner.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.profile.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.profile.xcconfig"; sourceTree = "<group>"; };
 		D1D9E374B50F7E2752E362F8 /* Pods-RunnerTests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.debug.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.debug.xcconfig"; sourceTree = "<group>"; };
 		78E0A7A72DC9AD7400C4905E /* FlutterGeneratedPluginSwiftPackage */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = FlutterGeneratedPluginSwiftPackage; path = ephemeral/Packages/FlutterGeneratedPluginSwiftPackage; sourceTree = "<group>"; };
+		DA46BA4986314091A380A005 /* MacOSUpdateHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSUpdateHandler.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -100,6 +105,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				78A318202AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage in Frameworks */,
+				DA46BA4986314091A380A001 /* Sparkle in Frameworks */,
 				64ECB773246C7D295B20DA98 /* Pods_Runner.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -176,9 +182,11 @@
 			children = (
 				33CC10F02044A3C60003C045 /* AppDelegate.swift */,
 				33CC11122044BFA00003C045 /* MainFlutterWindow.swift */,
+				A1B2C3D400000002000NET01 /* NetCoreLibraryHost.swift */,
 				A1B2C3D400000002000CERT0 /* DohProxyCertHandler.swift */,
 				A1B2C3D400000002000PASTE /* SyntheticPasteFix.swift */,
 				A1B2C3D400000002000AC001 /* MediaTranscodeHandler.swift */,
+				DA46BA4986314091A380A005 /* MacOSUpdateHandler.swift */,
 				33E51913231747F40026EE4D /* DebugProfile.entitlements */,
 				33E51914231749380026EE4D /* Release.entitlements */,
 				33CC11242044D66E0003C045 /* Resources */,
@@ -234,6 +242,7 @@
 		33CC10EC2044A3C60003C045 /* Runner */ = {
 			packageProductDependencies = (
 				78A3181F2AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage */,
+				DA46BA4986314091A380A002 /* Sparkle */,
 			);
 			isa = PBXNativeTarget;
 			buildConfigurationList = 33CC10FB2044A3C60003C045 /* Build configuration list for PBXNativeTarget "Runner" */;
@@ -262,6 +271,7 @@
 		33CC10E52044A3C60003C045 /* Project object */ = {
 			packageReferences = (
 				781AD8BC2B33823900A9FFBB /* XCLocalSwiftPackageReference "Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage" */,
+				DA46BA4986314091A380A003 /* XCRemoteSwiftPackageReference "Sparkle" */,
 			);
 			isa = PBXProject;
 			attributes = {
@@ -338,19 +348,17 @@
 			inputFileListPaths = (
 			);
 			inputPaths = (
-				"${PROJECT_DIR}/Runner/native/libdoh_proxy.dylib",
-				"${PROJECT_DIR}/Runner/native/doh_proxy_bin",
+				"${PROJECT_DIR}/Runner/native/libfluxdo_net.dylib",
 			);
 			name = "Stage Native Runtime";
 			outputFileListPaths = (
 			);
 			outputPaths = (
-				"${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Frameworks/libdoh_proxy.dylib",
-				"${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Resources/native/doh_proxy_bin",
+				"${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Frameworks/libfluxdo_net.dylib",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -e\nSTAGED_DIR=\"${PROJECT_DIR}/Runner/native\"\nLIB_SRC=\"${STAGED_DIR}/libdoh_proxy.dylib\"\nBIN_SRC=\"${STAGED_DIR}/doh_proxy_bin\"\nFRAMEWORKS_DIR=\"${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Frameworks\"\nRESOURCES_NATIVE_DIR=\"${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Resources/native\"\n\nif [ ! -f \"$LIB_SRC\" ]; then\n  echo \"error: Missing staged native library: $LIB_SRC\" >&2\n  echo \"Run dart tool/project_tasks.dart native:prepare macos before building.\" >&2\n  exit 1\nfi\n\nif [ ! -f \"$BIN_SRC\" ]; then\n  echo \"error: Missing staged native executable: $BIN_SRC\" >&2\n  echo \"Run dart tool/project_tasks.dart native:prepare macos before building.\" >&2\n  exit 1\nfi\n\nmkdir -p \"$FRAMEWORKS_DIR\" \"$RESOURCES_NATIVE_DIR\"\nrm -f \"$RESOURCES_NATIVE_DIR/libdoh_proxy.dylib\"\ncp \"$LIB_SRC\" \"$FRAMEWORKS_DIR/libdoh_proxy.dylib\"\ncp \"$BIN_SRC\" \"$RESOURCES_NATIVE_DIR/doh_proxy_bin\"\nchmod 755 \"$FRAMEWORKS_DIR/libdoh_proxy.dylib\" \"$RESOURCES_NATIVE_DIR/doh_proxy_bin\"\ninstall_name_tool -id @rpath/libdoh_proxy.dylib \"$FRAMEWORKS_DIR/libdoh_proxy.dylib\" || true\n\nSIGN_IDENTITY=\"${EXPANDED_CODE_SIGN_IDENTITY:--}\"\ncodesign --force --sign \"$SIGN_IDENTITY\" --timestamp=none \"$FRAMEWORKS_DIR/libdoh_proxy.dylib\"\ncodesign --force --sign \"$SIGN_IDENTITY\" --timestamp=none \"$RESOURCES_NATIVE_DIR/doh_proxy_bin\"\n";
+			shellScript = "set -e\nSTAGED_DIR=\"${PROJECT_DIR}/Runner/native\"\nLIB_SRC=\"${STAGED_DIR}/libfluxdo_net.dylib\"\nFRAMEWORKS_DIR=\"${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Frameworks\"\n\nif [ ! -f \"$LIB_SRC\" ]; then\n  echo \"error: Missing staged native library: $LIB_SRC\" >&2\n  echo \"Run dart tool/project_tasks.dart native:prepare macos before building.\" >&2\n  exit 1\nfi\n\nmkdir -p \"$FRAMEWORKS_DIR\"\n# 旧核心的产物不再随包分发\nrm -f \"$FRAMEWORKS_DIR/libdoh_proxy.dylib\"\nrm -rf \"${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Resources/native\"\ncp \"$LIB_SRC\" \"$FRAMEWORKS_DIR/libfluxdo_net.dylib\"\nchmod 755 \"$FRAMEWORKS_DIR/libfluxdo_net.dylib\"\ninstall_name_tool -id @rpath/libfluxdo_net.dylib \"$FRAMEWORKS_DIR/libfluxdo_net.dylib\" || true\n\nSIGN_IDENTITY=\"${EXPANDED_CODE_SIGN_IDENTITY:--}\"\ncodesign --force --sign \"$SIGN_IDENTITY\" --timestamp=none \"$FRAMEWORKS_DIR/libfluxdo_net.dylib\"\n";
 			showEnvVarsInLog = 0;
 		};
 		3399D490228B24CF009A79C7 /* ShellScript */ = {
@@ -468,11 +476,13 @@
 			buildActionMask = 2147483647;
 			files = (
 				33CC11132044BFA00003C045 /* MainFlutterWindow.swift in Sources */,
+				A1B2C3D400000001000NET01 /* NetCoreLibraryHost.swift in Sources */,
 				33CC10F12044A3C60003C045 /* AppDelegate.swift in Sources */,
 				335BBD1B22A9A15E00E9071D /* GeneratedPluginRegistrant.swift in Sources */,
 				A1B2C3D400000001000CERT0 /* DohProxyCertHandler.swift in Sources */,
 				A1B2C3D400000001000PASTE /* SyntheticPasteFix.swift in Sources */,
 				A1B2C3D400000001000AC001 /* MediaTranscodeHandler.swift in Sources */,
+				DA46BA4986314091A380A004 /* MacOSUpdateHandler.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -844,7 +854,19 @@
 			relativePath = Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage;
 		};
 /* End XCLocalSwiftPackageReference section */
+/* Begin XCRemoteSwiftPackageReference section */
+		DA46BA4986314091A380A003 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = { kind = exactVersion; version = 2.10.1; };
+		};
+/* End XCRemoteSwiftPackageReference section */
 /* Begin XCSwiftPackageProductDependency section */
+		DA46BA4986314091A380A002 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = DA46BA4986314091A380A003 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
+		};
 		78A3181F2AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = FlutterGeneratedPluginSwiftPackage;

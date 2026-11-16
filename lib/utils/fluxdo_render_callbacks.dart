@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'dart:async';
 import 'dart:convert';
 
@@ -18,6 +19,9 @@ import 'package:visibility_detector/visibility_detector.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
 import '../l10n/s.dart';
+import '../constants.dart';
+import '../modules/mini_apps/mini_app_url.dart';
+import '../modules/mini_apps/mini_app_embed_card.dart';
 import '../pages/image_viewer_page.dart';
 import '../pages/mermaid_viewer_page.dart';
 import '../pages/topic_detail_page/topic_detail_page.dart';
@@ -28,6 +32,7 @@ import '../services/discourse/discourse_service.dart';
 import '../services/discourse_cache_manager.dart';
 import '../services/emoji_handler.dart';
 import '../services/highlighter_service.dart';
+import '../theme/app_colors.dart';
 import '../services/media_compat_service.dart';
 import '../services/toast_service.dart';
 import '../utils/discourse_url_parser.dart';
@@ -283,13 +288,15 @@ class FluxdoRenderCallbacks {
     )) {
       return;
     }
-    Navigator.of(ctx).push(MaterialPageRoute(
-      builder: (_) => TopicDetailPage(
-        topicId: topicId,
-        initialTitle: topicSlug,
-        scrollToPostNumber: postNumber,
+    Navigator.of(ctx).push(
+      InteractionPageRoute(
+        builder: (_) => TopicDetailPage(
+          topicId: topicId,
+          initialTitle: topicSlug,
+          scrollToPostNumber: postNumber,
+        ),
       ),
-    ));
+    );
   }
 
   // ==========================================================================
@@ -332,6 +339,10 @@ class FluxdoRenderCallbacks {
   /// Mention chip 点击 → 在当前平行视界栈或普通导航中打开用户资料。
   static MentionTapHandler get _mentionTapHandler => (ctx, username, href) {
     // 优先 href 解析(group/user 路由不同);兜底走 username
+    if (DiscourseUrlParser.parseGroup(href) != null) {
+      launchContentLink(ctx, href);
+      return;
+    }
     final user = DiscourseUrlParser.parseUser(href);
     EmbeddedStackScope.openProfile(ctx, user?.username ?? username);
   };
@@ -387,9 +398,8 @@ class FluxdoRenderCallbacks {
               node.latex,
               style: TextStyle(
                 fontFamily: 'monospace',
-                color: Theme.of(
-                  ctx,
-                ).colorScheme.onSurface.withValues(alpha: 0.7),
+                color: Theme.of(ctx).colorScheme.onSurface
+                    .withValues(alpha: 0.7),
               ),
             ),
           ),
@@ -453,8 +463,8 @@ class FluxdoRenderCallbacks {
         node.height! > 0;
     Widget playerFor(String resolvedSrc) => Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(8),
+      child: ClipRSuperellipse(
+        borderRadius: UiShapes.current.borderRadius(8),
         child: DiscourseVideoPlayer(
           resolvedSrc,
           aspectRatio: dimensOk ? node.width! / node.height! : 16 / 9,
@@ -482,9 +492,7 @@ class FluxdoRenderCallbacks {
           errorBuilder: (c, failedUrl, error) =>
               _VideoErrorFallback(url: failedUrl, error: error),
           loadingBuilder: (c, _, child) => Center(
-            child: posterUrl != null
-                ? child
-                : const LoadingSpinner(size: 24),
+            child: posterUrl != null ? child : const LoadingSpinner(size: 24),
           ),
         ),
       ),
@@ -595,6 +603,10 @@ class FluxdoRenderCallbacks {
   /// 嵌入 iframe:用 IframeNode 结构化字段直接构造 IframeWidget(webview),
   /// 不再反构造 DOM。web 平台无 InAppWebView,返回 null 走子包内置占位卡。
   static IframeBuilder get _iframeBuilder => (ctx, node) {
+    final appUri = MiniAppUrl.parse(node.src, AppConstants.baseUrl);
+    if (appUri != null && MiniAppUrl.appId(appUri) != null) {
+      return MiniAppEmbedCard(url: appUri.toString(), title: node.title);
+    }
     if (kIsWeb) return null; // web 走子包内置占位卡
     if (node.src.isEmpty) return null;
     return IframeWidget(
@@ -752,7 +764,8 @@ class FluxdoRenderCallbacks {
   /// 端渲染等价;解码纹理量不变(ResizeImage 仍按显示宽 × dpr cap)。
   static String? _pickSrcsetUrl(ImageRun image, double dpr) {
     if (image.srcset.isEmpty) return null;
-    final sorted = [...image.srcset]..sort((a, b) => a.scale.compareTo(b.scale));
+    final sorted = [...image.srcset]
+      ..sort((a, b) => a.scale.compareTo(b.scale));
     for (final c in sorted) {
       if (c.scale >= dpr - 0.01) return c.url;
     }
@@ -1200,6 +1213,8 @@ class FluxdoRenderCallbacks {
           // 支持长按/右键菜单(对齐 legacy buildGalleryImage 的 SVG 分支)。
           return Builder(
             builder: (svgCtx) => GestureDetector(
+              // 链接内 SVG(如外链卡片图):单击打开外层链接
+              onTap: ImageLinkScope.maybeOf(svgCtx),
               onLongPress: () => _showImageContextMenu(
                 svgCtx,
                 image: image,
@@ -1280,8 +1295,7 @@ class FluxdoRenderCallbacks {
               // 档位影响。
               final srcsetUrl = DiscourseImageUtils.isUploadUrl(image.src)
                   ? null
-                  : _pickSrcsetUrl(
-                      image, MediaQuery.devicePixelRatioOf(ctx));
+                  : _pickSrcsetUrl(image, MediaQuery.devicePixelRatioOf(ctx));
               final displayUrl = srcsetUrl == null
                   ? resolvedUrl
                   : UrlHelper.resolveUrlWithCdn(srcsetUrl);
@@ -1296,7 +1310,7 @@ class FluxdoRenderCallbacks {
                       ),
                 width: dispW,
                 height: dispH,
-                // 瓦片内 cover 填满(裁切由瓦片 ClipRRect 完成);
+                // 瓦片内 cover 填满(裁切由瓦片 ClipRSuperellipse 完成);
                 // 文档流保持 contain
                 fit: inGridTile ? BoxFit.cover : BoxFit.contain,
                 coverFlight: inGridTile,
@@ -1313,20 +1327,27 @@ class FluxdoRenderCallbacks {
                   // 打开大图前清掉自研选区:图片 tap 被 HeroImage 手势赢走,
                   // 选区层收不到不会自动清(否则返回后选区还残留)。
                   SelectionScope.clearAt(ctx);
+                  // 链接内图片(`<a href><img></a>`):单击打开外层链接,
+                  // 对齐网页端,不放大图片。
+                  final linkTap = ImageLinkScope.maybeOf(ctx);
+                  if (linkTap != null) {
+                    linkTap();
+                    return;
+                  }
                   // Discourse 契约:a.lightbox[href] 就是原图 URL,直接用;
                   // 只有裸 <img>(无 lightbox 包装)才用 /optimized/→
                   // /original/ 正则反推兜底(正则对 CDN 变体路径有漏配
                   // 风险,能不用就不用)。
                   final hasLightbox = image.lightboxUrl != null;
                   final fullUrl = image.lightboxUrl ?? resolvedUrl;
-                  var resolvedFullUrl =
-                      DiscourseImageUtils.isUploadUrl(fullUrl)
+                  var resolvedFullUrl = DiscourseImageUtils.isUploadUrl(fullUrl)
                       ? (DiscourseImageUtils.getCachedUploadUrl(fullUrl) ??
                             fullUrl)
                       : UrlHelper.resolveUrlWithCdn(fullUrl);
                   if (!hasLightbox) {
-                    resolvedFullUrl =
-                        DiscourseImageUtils.getOriginalUrl(resolvedFullUrl);
+                    resolvedFullUrl = DiscourseImageUtils.getOriginalUrl(
+                      resolvedFullUrl,
+                    );
                   }
                   // 画廊数据在点击时才解析(长帖懒解析场景首次点图会触发
                   // 全 chunk parse,离散动作可接受;之后命中缓存)。
@@ -1351,7 +1372,9 @@ class FluxdoRenderCallbacks {
                     galleryImages: hasGallery ? gallery.urls : null,
                     thumbnailUrls: hasGallery ? gallery.thumbs : null,
                     heroTags: hasGallery ? gallery.heroTags : null,
-                    filenames: hasGallery ? gallery.filenames : [image.filename],
+                    filenames: hasGallery
+                        ? gallery.filenames
+                        : [image.filename],
                     initialIndex: hasGallery ? galleryIndex : 0,
                     heroSourceFit: inGridTile ? BoxFit.cover : null,
                     heroSourceRadius: inGridTile ? 4 : 0,
@@ -1495,7 +1518,8 @@ class FluxdoRenderCallbacks {
     final base62Sha1 = image.base62Sha1;
     if (base62Sha1 != null && base62Sha1.isNotEmpty) {
       src = 'upload://$base62Sha1';
-      final ext = HtmlToMarkdown.extensionFromUrl(image.src) ??
+      final ext =
+          HtmlToMarkdown.extensionFromUrl(image.src) ??
           HtmlToMarkdown.extensionFromUrl(image.lightboxUrl) ??
           HtmlToMarkdown.extensionFromUrl(image.origSrc);
       if (ext != null) src = '$src.$ext';
@@ -1600,10 +1624,10 @@ class _AsyncHighlightedCode extends StatefulWidget {
 
 class _AsyncHighlightedCodeState extends State<_AsyncHighlightedCode> {
   List<HighlightToken>? _tokens;
-  // memoize:span 树只在 tokens / 明暗切换时重建,普通 build 直接复用。
+  // memoize:span 树只在 tokens / 高亮表切换时重建,普通 build 直接复用。
   // 大代码块 tokensToSpan 是主线程大头,不能每帧重算。
   TextSpan? _span;
-  bool? _spanIsDark;
+  Map<String, TextStyle>? _spanSyntax;
 
   @override
   void initState() {
@@ -1649,7 +1673,7 @@ class _AsyncHighlightedCodeState extends State<_AsyncHighlightedCode> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
+    final syntax = context.appColors.syntax;
     final baseStyle = TextStyle(
       fontFamily: 'FiraCode',
       fontFamilyFallback: const ['monospace', 'Menlo', 'Courier'],
@@ -1660,13 +1684,14 @@ class _AsyncHighlightedCodeState extends State<_AsyncHighlightedCode> {
     if (_tokens == null) {
       return Text(widget.code, style: baseStyle);
     }
-    if (_span == null || _spanIsDark != isDark) {
+    // 高亮表是主题级常量，同一主题下引用不变，按引用比较即可
+    if (_span == null || !identical(_spanSyntax, syntax)) {
       _span = HighlighterService.instance.tokensToSpan(
         _tokens!,
-        isDark: isDark,
+        syntax: syntax,
         baseStyle: baseStyle,
       );
-      _spanIsDark = isDark;
+      _spanSyntax = syntax;
     }
     return Text.rich(_span!);
   }
@@ -1674,7 +1699,7 @@ class _AsyncHighlightedCodeState extends State<_AsyncHighlightedCode> {
 
 /// Mermaid 图表块(纯主项目侧,经子包 CodeBlockBuilder 整块接管,UI 照搬
 /// legacy `code_block_builder.dart` 的 `_MermaidWidget`):
-/// 灰底容器(282a36/f6f8fa)+ 顶栏「图表⇄代码」切换 + 复制按钮;
+/// 灰底容器(主题代码块底色)+ 顶栏「图表⇄代码」切换 + 复制按钮;
 /// 图表态 mermaid.ink 服务端出图(懒加载 shimmer / 错误重试 / 点开高清
 /// width=2000),代码态 HighlighterService 高亮源码。
 ///
@@ -1762,13 +1787,14 @@ class _MermaidBlockState extends State<_MermaidBlock> {
     return 'https://kroki.io/mermaid/$format/$encoded?theme=$theme';
   }
 
-  /// mermaid.ink 出图 URL(备源 + 高清):逐字照搬 legacy
-  /// _buildMermaidInkUrl:base64url(utf8) + theme(dark/default)+
-  /// bgColor(282a36/f6f8fa)+ 可选 width。
+  /// mermaid.ink 出图 URL(备源 + 高清):base64url(utf8) + theme
+  /// (dark/default)+ bgColor(当前主题代码块底色)+ 可选 width。
   String _buildMermaidInkUrl(String code, bool isDark, {int? width}) {
     final encoded = base64Url.encode(utf8.encode(code));
     final theme = isDark ? 'dark' : 'default';
-    final bgColor = isDark ? '282a36' : 'f6f8fa';
+    final bgColor = (context.appColors.codeBackground.toARGB32() & 0xFFFFFF)
+        .toRadixString(16)
+        .padLeft(6, '0');
     var url = 'https://mermaid.ink/img/$encoded?theme=$theme&bgColor=$bgColor';
     if (width != null) url += '&width=$width';
     return url;
@@ -1784,14 +1810,13 @@ class _MermaidBlockState extends State<_MermaidBlock> {
 
   /// 代码态:HighlighterService 高亮 mermaid 源码,在固定内容框内双向滚动。
   /// 截图模式不滚动、自动换行(块高仍由外层固定框决定)。
-  Widget _buildCodeView(bool isDark, Color thumbColor, bool screenshotMode) {
+  Widget _buildCodeView(Color thumbColor, bool screenshotMode) {
     if (screenshotMode) {
       return Padding(
         padding: const EdgeInsets.all(12),
         child: HighlighterService.instance.buildHighlightView(
           widget.code,
           language: 'mermaid',
-          isDark: isDark,
           backgroundColor: Colors.transparent,
           padding: EdgeInsets.zero,
         ),
@@ -1803,7 +1828,7 @@ class _MermaidBlockState extends State<_MermaidBlock> {
         controller: _vController,
         thumbVisibility: false,
         thickness: 4,
-        radius: const Radius.circular(2),
+        radius: UiShapes.current.radius(2),
         thumbColor: thumbColor,
         child: SingleChildScrollView(
           controller: _vController,
@@ -1818,7 +1843,6 @@ class _MermaidBlockState extends State<_MermaidBlock> {
               child: HighlighterService.instance.buildHighlightView(
                 widget.code,
                 language: 'mermaid',
-                isDark: isDark,
                 backgroundColor: Colors.transparent,
                 padding: const EdgeInsets.all(12),
               ),
@@ -1927,7 +1951,7 @@ class _MermaidBlockState extends State<_MermaidBlock> {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final screenshotMode = ScreenshotMode.of(context);
-    final bgColor = isDark ? const Color(0xff282a36) : const Color(0xfff6f8fa);
+    final bgColor = context.appColors.codeBackground;
     final borderColor = theme.colorScheme.outlineVariant.withValues(alpha: 0.3);
     final thumbColor = (isDark ? Colors.white : Colors.black).withValues(
       alpha: 0.15,
@@ -1935,10 +1959,12 @@ class _MermaidBlockState extends State<_MermaidBlock> {
 
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 8),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(8),
+      decoration: ShapeDecoration(
         color: bgColor,
-        border: Border.all(color: borderColor),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(8),
+          side: BorderSide(color: borderColor),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1953,7 +1979,9 @@ class _MermaidBlockState extends State<_MermaidBlock> {
               children: [
                 InkWell(
                   onTap: () => setState(() => _showCode = !_showCode),
-                  borderRadius: BorderRadius.circular(4),
+                  customBorder: RoundedSuperellipseBorder(
+                    borderRadius: context.shapes.borderRadius(4),
+                  ),
                   child: Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 8,
@@ -2005,7 +2033,9 @@ class _MermaidBlockState extends State<_MermaidBlock> {
                             : _buildKrokiUrl(widget.code, isDark),
                       );
                     },
-                    borderRadius: BorderRadius.circular(4),
+                    customBorder: RoundedSuperellipseBorder(
+                      borderRadius: context.shapes.borderRadius(4),
+                    ),
                     child: Padding(
                       padding: const EdgeInsets.all(6),
                       child: Icon(
@@ -2022,7 +2052,9 @@ class _MermaidBlockState extends State<_MermaidBlock> {
                     Clipboard.setData(ClipboardData(text: widget.code));
                     ToastService.showSuccess(S.current.common_codeCopied);
                   },
-                  borderRadius: BorderRadius.circular(4),
+                  customBorder: RoundedSuperellipseBorder(
+                    borderRadius: context.shapes.borderRadius(4),
+                  ),
                   child: Padding(
                     padding: const EdgeInsets.all(6),
                     child: Icon(
@@ -2038,15 +2070,15 @@ class _MermaidBlockState extends State<_MermaidBlock> {
           // 内容区域:16:9 固定高度框(对齐官方 mermaid 主题组件
           // .mermaid-wrapper 的 aspect-ratio: 16/9)。shimmer / 出图 /
           // 错误 / 代码态共用同一个框 → 加载完成或切视图块高不变,页面不抖。
-          ClipRRect(
-            borderRadius: const BorderRadius.only(
-              bottomLeft: Radius.circular(8),
-              bottomRight: Radius.circular(8),
+          ClipRSuperellipse(
+            borderRadius: BorderRadius.only(
+              bottomLeft: context.shapes.radius(8),
+              bottomRight: context.shapes.radius(8),
             ),
             child: AspectRatio(
               aspectRatio: 16 / 9,
               child: _showCode
-                  ? _buildCodeView(isDark, thumbColor, screenshotMode)
+                  ? _buildCodeView(thumbColor, screenshotMode)
                   : _buildChartView(theme, isDark),
             ),
           ),
@@ -2096,8 +2128,7 @@ class _MermaidShimmerState extends State<_MermaidShimmer>
         builder: (context, child) {
           return Container(
             margin: widget.withMargin ? const EdgeInsets.all(12) : null,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(8),
+            decoration: ShapeDecoration(
               gradient: LinearGradient(
                 begin: Alignment(-1.0 + 2.0 * _controller.value, 0),
                 end: Alignment(-0.5 + 2.0 * _controller.value, 0),
@@ -2113,6 +2144,9 @@ class _MermaidShimmerState extends State<_MermaidShimmer>
                   ),
                 ],
                 stops: const [0.0, 0.5, 1.0],
+              ),
+              shape: RoundedSuperellipseBorder(
+                borderRadius: context.shapes.borderRadius(8),
               ),
             ),
           );

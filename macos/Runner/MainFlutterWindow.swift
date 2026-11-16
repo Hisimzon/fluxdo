@@ -2,6 +2,34 @@ import Cocoa
 import FlutterMacOS
 import WebKit
 import window_manager
+import desktop_multi_window
+
+/// Flutter 会同步等待此钩子结束，再销毁旧 isolate。
+/// Dart 的 dispose/main 都无法覆盖回调地址失效前的这个窗口。
+class NetworkFlutterViewController: FlutterViewController {
+  override func onPreEngineRestart() {
+    NetCoreLibraryHost.shared.detachHost()
+    super.onPreEngineRestart()
+  }
+}
+
+/// NSWindow.close 不保证停止子引擎；遗留 isolate 会在热重启时再次 show。
+/// 监听真实关闭通知，同时覆盖系统按钮和 Dart 关闭入口。
+class MiniAppWindowLifetime {
+  private var closeObserver: NSObjectProtocol?
+
+  init(window: NSWindow, shutdown: @escaping () -> Void) {
+    closeObserver = NotificationCenter.default.addObserver(
+      forName: NSWindow.willCloseNotification, object: window, queue: .main
+    ) { [self] _ in
+      guard let observer = closeObserver else { return }
+      NotificationCenter.default.removeObserver(observer)
+      closeObserver = nil
+      // 等窗口关闭通知和当前平台通道回调返回，避免在调用栈内销毁引擎。
+      DispatchQueue.main.async(execute: shutdown)
+    }
+  }
+}
 
 class MainFlutterWindow: NSWindow {
   /// CGEvent 注入式 Cmd+V 的粘贴补丁(语音输入法/剪贴板管理器兼容)。
@@ -20,12 +48,25 @@ class MainFlutterWindow: NSWindow {
   }
 
   override func awakeFromNib() {
-    let flutterViewController = FlutterViewController()
+    // 必须先加载为全局符号，再创建会启动 Dart 的 FlutterViewController。
+    _ = NetCoreLibraryHost.shared
+    let flutterViewController = NetworkFlutterViewController()
     let windowFrame = self.frame
     self.contentViewController = flutterViewController
     self.setFrame(windowFrame, display: true)
 
     RegisterGeneratedPlugins(registry: flutterViewController)
+    MacOSUpdateHandler.shared.register(messenger: flutterViewController.engine.binaryMessenger)
+    FlutterMultiWindowPlugin.setOnWindowCreatedCallback { controller in
+      RegisterGeneratedPlugins(registry: controller)
+      if let window = controller.view.window {
+        // 观察器持有生命周期对象至关闭，异步任务持有 controller 至销毁结束。
+        _ = MiniAppWindowLifetime(window: window) {
+          controller.engine.shutDownEngine()
+          window.contentViewController = nil
+        }
+      }
+    }
 
     // CGEvent 注入的 Cmd+V(语音输入法/剪贴板管理器)在 Flutter macOS 上会被
     // 框架吞掉,这里装一层只接管该形态的兜底。上游修复后可连同文件一并删除。
@@ -155,6 +196,25 @@ class MainFlutterWindow: NSWindow {
       // v0.4.0 Cookie 引擎新增原语
       // 设计依据: docs/cookie-sync-design-v0.4.0.md §5.4
       // 与 iOS AppDelegate.swift 实现一致 (WKHTTPCookieStore + HTTPCookieStorage.shared 跨 Apple 平台共享)
+
+      case "clearSharedAuthCookieCopies":
+        guard let args = call.arguments as? [String: Any],
+              let urlString = args["url"] as? String,
+              let url = URL(string: urlString),
+              let names = args["names"] as? [String] else {
+          result(FlutterError(code: "invalid_arguments", message: "Missing cookie scope", details: nil))
+          return
+        }
+        let authNames = Set(names).intersection(["_t", "_forum_session"])
+        let host = (url.host ?? "").lowercased()
+        let storage = HTTPCookieStorage.shared
+        for cookie in storage.cookies ?? [] where authNames.contains(cookie.name) {
+          let domain = (cookie.domain.hasPrefix(".") ? String(cookie.domain.dropFirst()) : cookie.domain).lowercased()
+          if host == domain || (cookie.domain.hasPrefix(".") && host.hasSuffix("." + domain)) {
+            storage.deleteCookie(cookie)
+          }
+        }
+        result(nil)
 
       case "nukeAllVariants":
         guard let args = call.arguments as? [String: Any],
@@ -317,7 +377,7 @@ class MainFlutterWindow: NSWindow {
         let cookieDomain = (cookie.domain.hasPrefix(".")
           ? String(cookie.domain.dropFirst())
           : cookie.domain).lowercased()
-        return host == cookieDomain || host.hasSuffix("." + cookieDomain)
+        return host == cookieDomain || (cookie.domain.hasPrefix(".") && host.hasSuffix("." + cookieDomain))
       }
 
       CookieStoreObserverHandler.shared.beginInternalWrite()
@@ -341,7 +401,7 @@ class MainFlutterWindow: NSWindow {
           let cookieDomain = (cookie.domain.hasPrefix(".")
             ? String(cookie.domain.dropFirst())
             : cookie.domain).lowercased()
-          if host == cookieDomain || host.hasSuffix("." + cookieDomain) {
+          if host == cookieDomain || (cookie.domain.hasPrefix(".") && host.hasSuffix("." + cookieDomain)) {
             storage.deleteCookie(cookie)
           }
         }
@@ -408,7 +468,7 @@ class MainFlutterWindow: NSWindow {
         let cookieDomain = (cookie.domain.hasPrefix(".")
           ? String(cookie.domain.dropFirst())
           : cookie.domain).lowercased()
-        return host == cookieDomain || host.hasSuffix("." + cookieDomain)
+        return host == cookieDomain || (cookie.domain.hasPrefix(".") && host.hasSuffix("." + cookieDomain))
       }
 
       let infos: [[String: Any?]] = applicable.map { cookie in
@@ -440,7 +500,7 @@ class MainFlutterWindow: NSWindow {
         let cookieDomain = (cookie.domain.hasPrefix(".")
           ? String(cookie.domain.dropFirst())
           : cookie.domain).lowercased()
-        return host == cookieDomain || host.hasSuffix("." + cookieDomain)
+        return host == cookieDomain || (cookie.domain.hasPrefix(".") && host.hasSuffix("." + cookieDomain))
       }.count
 
       DispatchQueue.main.async {

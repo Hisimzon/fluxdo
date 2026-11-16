@@ -1,3 +1,5 @@
+import 'package:common_ui/common_ui.dart';
+
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
@@ -64,9 +66,9 @@ class MorphingDialogShell extends StatelessWidget {
               theme.cardTheme.color ??
               theme.colorScheme.surfaceContainerLow,
           color: theme.colorScheme.surface,
-          sourceBackground: theme.scaffoldBackgroundColor,
-          anchorRadius: anchorRadius,
-          targetRadius: targetRadius,
+          sourceBackground: theme.colorScheme.surface,
+          anchorRadius: context.shapes.resolve(anchorRadius),
+          targetRadius: context.shapes.resolve(targetRadius),
           dialogWidth: dialogWidth,
           spatialCurve: M3eFlags.of(context).enabled
               ? Curves.easeInOutCubicEmphasized
@@ -164,7 +166,7 @@ class _RenderDialogSurface extends RenderShiftedBox {
   double _contentScale = 1;
   double _openness = 0;
   bool _orphaned = false;
-  final _clipLayer = LayerHandle<ClipRRectLayer>();
+  final _clipLayer = LayerHandle<ClipRSuperellipseLayer>();
   final _opacityLayer = LayerHandle<OpacityLayer>();
   final _transformLayer = LayerHandle<TransformLayer>();
 
@@ -318,9 +320,9 @@ class _RenderDialogSurface extends RenderShiftedBox {
         curve: Curves.easeInOutCubic,
       ).transform(_openness);
 
-  RRect _shape(Offset offset) {
+  RSuperellipse _shape(Offset offset) {
     final t = Curves.easeOutCubic.transform(_openness);
-    return RRect.fromRectAndRadius(
+    return RSuperellipse.fromRectAndRadius(
       offset & size,
       Radius.circular(
         ui.lerpDouble(
@@ -343,7 +345,7 @@ class _RenderDialogSurface extends RenderShiftedBox {
     final shape = _shape(offset);
     final effects = Curves.easeOutCubic.transform(_openness);
     context.canvas.drawShadow(
-      Path()..addRRect(shape),
+      Path()..addRSuperellipse(shape),
       Colors.black.withValues(alpha: 0.22 * _surfaceOpacity),
       12 * effects,
       true,
@@ -355,12 +357,12 @@ class _RenderDialogSurface extends RenderShiftedBox {
         : config.anchorRect != null
         ? Color.lerp(config.anchorColor, config.color, effects)!
         : config.color.withValues(alpha: opacity);
-    context.canvas.drawRRect(
+    context.canvas.drawRSuperellipse(
       shape,
       Paint()
         ..color = background.withValues(alpha: background.a * _surfaceOpacity),
     );
-    _clipLayer.layer = context.pushClipRRect(
+    _clipLayer.layer = context.pushClipRSuperellipse(
       needsCompositing,
       offset,
       Offset.zero & size,

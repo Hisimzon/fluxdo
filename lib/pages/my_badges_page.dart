@@ -1,8 +1,10 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:m3e_ui/m3e_ui.dart';
+
 import '../models/badge.dart';
 import '../providers/discourse_providers.dart';
 import '../services/discourse_cache_manager.dart';
@@ -13,6 +15,7 @@ import '../utils/font_awesome_helper.dart';
 import '../widgets/badge/badge_ui_utils.dart';
 import 'badge_page.dart';
 import '../l10n/s.dart';
+import '../theme/app_colors.dart';
 
 /// 我的徽章页面
 class MyBadgesPage extends ConsumerStatefulWidget {
@@ -95,42 +98,48 @@ class _MyBadgesPageState extends ConsumerState<MyBadgesPage> {
       body: _isLoading
           ? const MyBadgesSkeleton()
           : _error != null
-              ? ErrorView(
-                  error: _error!,
-                  stackTrace: _errorStack,
-                  onRetry: _loadBadges,
-                )
-              : M3eRefreshIndicator(
-                  onRefresh: _loadBadges,
-                  child: CustomScrollView(
-                    slivers: [
-                      _buildAppBar(context, totalCount),
-                      if (_groupedBadges == null || _groupedBadges!.isEmpty)
-                        SliverFillRemaining(
-                          child: Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Symbols.military_tech_rounded,
-                                    size: 64, color: Colors.grey[400]),
-                                const SizedBox(height: 16),
-                                Text(context.l10n.myBadges_empty,
-                                    style: TextStyle(color: Colors.grey[600])),
-                              ],
+          ? ErrorView(
+              error: _error!,
+              stackTrace: _errorStack,
+              onRetry: _loadBadges,
+            )
+          : M3eRefreshIndicator(
+              onRefresh: _loadBadges,
+              child: CustomScrollView(
+                slivers: [
+                  _buildAppBar(context, totalCount),
+                  if (_groupedBadges == null || _groupedBadges!.isEmpty)
+                    SliverFillRemaining(
+                      child: Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Symbols.military_tech_rounded,
+                              size: 64,
+                              color: context.appColors.grey[400],
                             ),
-                          ),
-                        )
-                      else ...[
-                        const SliverPadding(padding: EdgeInsets.only(top: 16)),
-                        _buildBadgeSection(BadgeType.gold),
-                        _buildBadgeSection(BadgeType.silver),
-                        _buildBadgeSection(BadgeType.bronze),
-                        const SliverPadding(
-                            padding: EdgeInsets.only(bottom: 48)),
-                      ],
-                    ],
-                  ),
-                ),
+                            const SizedBox(height: 16),
+                            Text(
+                              context.l10n.myBadges_empty,
+                              style: TextStyle(
+                                color: context.appColors.grey[600],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  else ...[
+                    const SliverPadding(padding: EdgeInsets.only(top: 16)),
+                    _buildBadgeSection(BadgeType.gold),
+                    _buildBadgeSection(BadgeType.silver),
+                    _buildBadgeSection(BadgeType.bronze),
+                    const SliverPadding(padding: EdgeInsets.only(bottom: 48)),
+                  ],
+                ],
+              ),
+            ),
     );
   }
 
@@ -147,7 +156,8 @@ class _MyBadgesPageState extends ConsumerState<MyBadgesPage> {
               end: Alignment.bottomRight,
               colors: [
                 Theme.of(context).colorScheme.surface,
-                Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                Theme.of(context).colorScheme.surfaceContainerHighest
+                    .withValues(alpha: 0.5),
               ],
             ),
           ),
@@ -159,7 +169,7 @@ class _MyBadgesPageState extends ConsumerState<MyBadgesPage> {
                 child: FaIcon(
                   FontAwesomeIcons.medal,
                   size: 200,
-                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.05),
+                  color: context.emphasis.accent.withValues(alpha: 0.05),
                 ),
               ),
               Positioned(
@@ -225,18 +235,22 @@ class _MyBadgesPageState extends ConsumerState<MyBadgesPage> {
                 Text(
                   sectionTitle,
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: sectionColor,
-                        fontSize: 18,
-                      ),
+                    fontWeight: FontWeight.w600,
+                    color: sectionColor,
+                    fontSize: 18,
+                  ),
                 ),
                 const Spacer(),
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                  decoration: ShapeDecoration(
                     color: sectionColor.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(20),
+                    shape: RoundedSuperellipseBorder(
+                      borderRadius: context.shapes.borderRadius(20),
+                    ),
                   ),
                   child: Text(
                     '${badges.length}',
@@ -260,12 +274,9 @@ class _MyBadgesPageState extends ConsumerState<MyBadgesPage> {
               crossAxisSpacing: 16,
               mainAxisSpacing: 16,
             ),
-            delegate: SliverChildBuilderDelegate(
-              (context, index) {
-                return _buildBadgeItem(badges[index], type);
-              },
-              childCount: badges.length,
-            ),
+            delegate: SliverChildBuilderDelegate((context, index) {
+              return _buildBadgeItem(badges[index], type);
+            }, childCount: badges.length),
           ),
         ),
       ],
@@ -282,7 +293,7 @@ class _MyBadgesPageState extends ConsumerState<MyBadgesPage> {
         final user = ref.read(currentUserProvider).value;
         if (user != null) {
           Navigator.of(context).push(
-            MaterialPageRoute(
+            InteractionPageRoute(
               builder: (context) => BadgePage(
                 badgeId: badge.id,
                 badgeSlug: badge.slug,
@@ -292,7 +303,9 @@ class _MyBadgesPageState extends ConsumerState<MyBadgesPage> {
           );
         }
       },
-      borderRadius: BorderRadius.circular(20),
+      customBorder: RoundedSuperellipseBorder(
+        borderRadius: context.shapes.borderRadius(20),
+      ),
       child: Container(
         decoration: BadgeUIUtils.getCardDecoration(context, type),
         child: Stack(
@@ -304,13 +317,19 @@ class _MyBadgesPageState extends ConsumerState<MyBadgesPage> {
                 top: 10,
                 right: 10,
                 child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: ShapeDecoration(
                     color: iconColor.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                        color: iconColor.withValues(alpha: 0.3), width: 1),
+                    shape: RoundedSuperellipseBorder(
+                      borderRadius: context.shapes.borderRadius(12),
+                      side: BorderSide(
+                        color: iconColor.withValues(alpha: 0.3),
+                        width: 1,
+                      ),
+                    ),
                   ),
                   child: Text(
                     '×${userBadge.count}',
@@ -326,27 +345,30 @@ class _MyBadgesPageState extends ConsumerState<MyBadgesPage> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
               child: Column(
-                mainAxisAlignment: MainAxisAlignment.center, // Center the rigid block
+                mainAxisAlignment:
+                    MainAxisAlignment.center, // Center the rigid block
                 children: [
-                   // Large Central Icon
+                  // Large Central Icon
                   Container(
                     width: 48,
                     height: 48,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
+                    decoration: ShapeDecoration(
                       color: theme.colorScheme.surface,
-                      boxShadow: [
+                      shadows: [
                         BoxShadow(
                           color: iconColor.withValues(alpha: 0.2),
                           blurRadius: 10,
                           offset: const Offset(0, 4),
-                        )
+                        ),
                       ],
+                      shape: context.shapes.circle(),
                     ),
-                    padding: const EdgeInsets.all(8), // Padding to prevent image touching edges
+                    padding: const EdgeInsets.all(
+                      8,
+                    ), // Padding to prevent image touching edges
                     child: Center(
-                      child: badge.imageUrl != null &&
-                              badge.imageUrl!.isNotEmpty
+                      child:
+                          badge.imageUrl != null && badge.imageUrl!.isNotEmpty
                           ? Image(
                               image: discourseImageProvider(
                                 UrlHelper.resolveUrlWithCdn(badge.imageUrl!),
@@ -354,12 +376,11 @@ class _MyBadgesPageState extends ConsumerState<MyBadgesPage> {
                               fit: BoxFit.contain,
                               errorBuilder: (context, error, stackTrace) =>
                                   FaIcon(
-                                    badge.icon != null &&
-                                            badge.icon!.isNotEmpty
+                                    badge.icon != null && badge.icon!.isNotEmpty
                                         ? (FontAwesomeHelper.getIcon(
-                                              badge.icon!,
-                                            ) ??
-                                            BadgeUIUtils.getBadgeIcon(type))
+                                                badge.icon!,
+                                              ) ??
+                                              BadgeUIUtils.getBadgeIcon(type))
                                         : BadgeUIUtils.getBadgeIcon(type),
                                     size: 24,
                                     color: iconColor,
@@ -367,7 +388,8 @@ class _MyBadgesPageState extends ConsumerState<MyBadgesPage> {
                             )
                           : FaIcon(
                               badge.icon != null && badge.icon!.isNotEmpty
-                                  ? (FontAwesomeHelper.getIcon(badge.icon!) ?? BadgeUIUtils.getBadgeIcon(type))
+                                  ? (FontAwesomeHelper.getIcon(badge.icon!) ??
+                                        BadgeUIUtils.getBadgeIcon(type))
                                   : BadgeUIUtils.getBadgeIcon(type),
                               size: 24,
                               color: iconColor,

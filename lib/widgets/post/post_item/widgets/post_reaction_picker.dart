@@ -3,15 +3,11 @@ import 'dart:math' as math;
 import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/material.dart';
-import 'package:app_icons/app_icons.dart';
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/services.dart';
-import '../../../../models/topic.dart';
-import '../../../../services/discourse_cache_manager.dart';
-import '../../../../services/emoji_handler.dart';
 
-String _getEmojiUrl(String emojiName) {
-  return EmojiHandler().getEmojiUrl(emojiName);
-}
+import '../../../../models/topic.dart';
+import 'reaction_emoji.dart';
 
 // ============================== 布局常量 ==============================
 
@@ -52,8 +48,7 @@ const Duration _kDesktopHoverLeaveDelay = Duration(milliseconds: 120);
 ///
 /// 低于框架默认的 kLongPressTimeout(500ms)保持跟手,但也不宜太短:
 /// 阈值内位移未超过 touch slop 的慢速滚动起手会被判成长按。
-const Duration kReactionPickerLongPressDuration =
-    Duration(milliseconds: 350);
+const Duration kReactionPickerLongPressDuration = Duration(milliseconds: 350);
 
 // ============================== 控制器 ==============================
 
@@ -107,29 +102,30 @@ class ReactionPickerController {
 
   /// 展开/收回主进度:面板形变与表情错峰弹出都由它驱动
   AnimationController get enter => _enter ??= AnimationController(
-        vsync: vsync,
-        duration: _kEnterDuration,
-        reverseDuration: _kExitDuration,
-      );
+    vsync: vsync,
+    duration: _kEnterDuration,
+    reverseDuration: _kExitDuration,
+  );
 
   CurvedAnimation? _morph;
 
   /// 面板形变进度:展开 easeOutCubic 干脆落定,收回 easeInCubic 被吸回去
   Animation<double> get morph => _morph ??= CurvedAnimation(
-        parent: enter,
-        curve: Curves.easeOutCubic,
-        reverseCurve: Curves.easeInCubic,
-      );
+    parent: enter,
+    curve: Curves.easeOutCubic,
+    reverseCurve: Curves.easeInCubic,
+  );
 
   AnimationController? _flightAnim;
   AnimationController get flightAnim => _flightAnim ??= AnimationController(
-        vsync: vsync,
-        duration: _kFlightDuration,
-      );
+    vsync: vsync,
+    duration: _kFlightDuration,
+  );
 
   OverlayEntry? _entry;
   Timer? _desktopLeaveTimer;
   bool _closing = false;
+  final _acceptsInput = ValueNotifier(false);
   bool _disposed = false;
 
   /// 监听祖先 Scrollable 的位置变化，滚动时立刻关闭 picker
@@ -208,6 +204,7 @@ class ReactionPickerController {
     // 如果正在收回，直接复用：取消收回，重新正向播放
     if (_entry != null && _closing) {
       _closing = false;
+      _acceptsInput.value = true;
       enter.forward();
       return;
     }
@@ -226,13 +223,20 @@ class ReactionPickerController {
     _computeGeometry(context);
 
     final overlay = Overlay.of(context, rootOverlay: true);
+    _acceptsInput.value = true;
     _entry = OverlayEntry(
-      builder: (_) => _ReactionPickerOverlay(controller: this),
+      builder: (_) => InteractionGate(
+        enabled: _acceptsInput,
+        child: _ReactionPickerOverlay(controller: this),
+      ),
     );
     overlay.insert(_entry!);
 
     _attachScrollListeners(context);
     _attachLifecycleObserver();
+    if (!MediaQuery.disableAnimationsOf(context)) {
+      prefetchReactionAnimations(_reactions);
+    }
 
     enter.forward(from: 0);
   }
@@ -403,12 +407,19 @@ class ReactionPickerController {
     double dismiss = 0;
     if (_mode == ReactionPickerMode.touch && newIndex == null) {
       final r = _pickerRect.expandToInclude(_buttonRect);
-      final dx = math.max(math.max(r.left - globalPos.dx, globalPos.dx - r.right), 0.0);
-      final dy = math.max(math.max(r.top - globalPos.dy, globalPos.dy - r.bottom), 0.0);
+      final dx = math.max(
+        math.max(r.left - globalPos.dx, globalPos.dx - r.right),
+        0.0,
+      );
+      final dy = math.max(
+        math.max(r.top - globalPos.dy, globalPos.dy - r.bottom),
+        0.0,
+      );
       final distance = math.sqrt(dx * dx + dy * dy);
-      dismiss = ((distance - _kDismissStartDistance) /
-              (_kDismissFullDistance - _kDismissStartDistance))
-          .clamp(0.0, 1.0);
+      dismiss =
+          ((distance - _kDismissStartDistance) /
+                  (_kDismissFullDistance - _kDismissStartDistance))
+              .clamp(0.0, 1.0);
     }
 
     var changed = false;
@@ -473,6 +484,7 @@ class ReactionPickerController {
     _desktopLeaveTimer?.cancel();
     _desktopLeaveTimer = null;
     _closing = true;
+    _acceptsInput.value = false;
     enter.reverse().whenCompleteOrCancel(_disposeEntryIfNeeded);
     flightAnim.forward(from: 0).whenCompleteOrCancel(_onFlightDone);
   }
@@ -492,6 +504,7 @@ class ReactionPickerController {
     if (_disposed) return;
     if (_entry == null || _closing) return;
     _closing = true;
+    _acceptsInput.value = false;
     _highlightIndex = null;
     _dismissT = 0;
     _touchPinned = false;
@@ -532,7 +545,8 @@ class ReactionPickerController {
   /// 鼠标位置变化：判断是否在安全区内，并相应地启动/取消延迟关闭
   void onDesktopPointerHover(Offset globalPos) {
     if (!isOpen || _mode != ReactionPickerMode.desktop) return;
-    final inSafe = _pickerRect.inflate(8).contains(globalPos) ||
+    final inSafe =
+        _pickerRect.inflate(8).contains(globalPos) ||
         _buttonRect.inflate(12).contains(globalPos);
     if (inSafe) {
       onDesktopHoverEnterSafeZone();
@@ -557,6 +571,7 @@ class ReactionPickerController {
     _morph?.dispose();
     _enter?.dispose();
     _flightAnim?.dispose();
+    _acceptsInput.dispose();
   }
 }
 
@@ -594,8 +609,10 @@ class _ReactionPickerOverlayState extends State<_ReactionPickerOverlay> {
 
   ReactionPickerController get ctrl => widget.controller;
 
-  late final Listenable _animations =
-      Listenable.merge([ctrl.enter, ctrl.flightAnim]);
+  late final Listenable _animations = Listenable.merge([
+    ctrl.enter,
+    ctrl.flightAnim,
+  ]);
 
   bool get _interactive =>
       !ctrl.isClosing &&
@@ -649,7 +666,9 @@ class _ReactionPickerOverlayState extends State<_ReactionPickerOverlay> {
     // 面板:从按钮胶囊形变到面板胶囊,起点与按钮重合所以先透明再显形
     final panelRect = Rect.lerp(ctrl.buttonRect, ctrl.pickerRect, m)!;
     final finalRadius = ctrl.rows == 1 ? 26.0 : 24.0;
-    final radius = lerpDouble(ctrl.buttonRect.height / 2, finalRadius, m)!;
+    final radius = context.shapes.resolve(
+      lerpDouble(ctrl.buttonRect.height / 2, finalRadius, m)!,
+    );
     final panelOpacity = (m / 0.35).clamp(0.0, 1.0);
 
     final items = <Widget>[];
@@ -658,7 +677,8 @@ class _ReactionPickerOverlayState extends State<_ReactionPickerOverlay> {
       // 飞行层接过原表情，避免槽位与飞回动画同时画出两份。
       if (ctrl._flight?.id == ctrl.reactions[i]) continue;
       final isHighlighted = highlight == i;
-      final isNeighbor = highlight != null &&
+      final isNeighbor =
+          highlight != null &&
           !isHighlighted &&
           (i - highlight).abs() == 1 &&
           i ~/ ctrl.columns == highlight ~/ ctrl.columns;
@@ -669,8 +689,11 @@ class _ReactionPickerOverlayState extends State<_ReactionPickerOverlay> {
       } else {
         final rank = ctrl.popRank[i];
         final start = 0.08 + 0.22 * (count > 1 ? rank / (count - 1) : 0);
-        pop = Interval(start, start + 0.7, curve: Curves.easeOutBack)
-            .transform(t);
+        pop = Interval(
+          start,
+          start + 0.7,
+          curve: Curves.easeOutBack,
+        ).transform(t);
       }
       if (pop <= 0) continue;
       // 槽位跟着面板形变走:从按钮中心衍生到最终位置,收回时原路吸回
@@ -797,9 +820,11 @@ class _ReactionPickerOverlayState extends State<_ReactionPickerOverlay> {
               duration: _kHighlightDuration,
               curve: Curves.easeOutBack,
               child: DecoratedBox(
-                decoration: BoxDecoration(
+                decoration: ShapeDecoration(
                   color: theme.colorScheme.inverseSurface,
-                  borderRadius: BorderRadius.circular(12),
+                  shape: RoundedSuperellipseBorder(
+                    borderRadius: context.shapes.borderRadius(12),
+                  ),
                 ),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
@@ -825,23 +850,22 @@ class _ReactionPickerOverlayState extends State<_ReactionPickerOverlay> {
     );
   }
 
-  /// 选中的表情沿弧线飞回按钮:起飞时是高亮放大态,落地前缩到图标大小并淡出
+  /// 选中的表情沿弧线飞回按钮:起飞时是高亮放大态,落地时缩到按钮里
+  /// 表情的大小、正好落在它的位置上,由按钮接着显示(不淡出,否则落地
+  /// 那一下会先消失再出现)。途中持续播放动态表情,与槽位、按钮共用
+  /// 同一个解码流,动画不断档。
   Widget _buildFlight(_Flight flight) {
     final ft = Curves.easeInOutCubic.transform(ctrl.flightAnim.value);
     final p = flight.at(ft);
     final scale = lerpDouble(flight.startScale, 20 / _kIconSize, ft)!;
     final size = _kIconSize * scale;
-    final opacity = ft < 0.85 ? 1.0 : 1 - (ft - 0.85) / 0.15;
     return Positioned(
       left: p.dx - size / 2,
       top: p.dy - size / 2,
       width: size,
       height: size,
       child: IgnorePointer(
-        child: Opacity(
-          opacity: opacity.clamp(0.0, 1.0),
-          child: _EmojiImage(reactionId: flight.id, size: size),
-        ),
+        child: ReactionEmoji(reactionId: flight.id, size: size, loop: true),
       ),
     );
   }
@@ -858,10 +882,9 @@ class _PanelSurface extends StatelessWidget {
   Widget build(BuildContext context) {
     final dark = theme.brightness == Brightness.dark;
     return DecoratedBox(
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(radius),
-        boxShadow: [
+        shadows: [
           BoxShadow(
             color: Colors.black.withValues(alpha: dark ? 0.28 : 0.09),
             blurRadius: 24,
@@ -873,11 +896,14 @@ class _PanelSurface extends StatelessWidget {
             offset: const Offset(0, 2),
           ),
         ],
-        border: Border.all(
-          color: theme.colorScheme.outlineVariant.withValues(
-            alpha: dark ? 0.4 : 0.2,
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(radius),
+          side: BorderSide(
+            color: theme.colorScheme.outlineVariant.withValues(
+              alpha: dark ? 0.4 : 0.2,
+            ),
+            width: 0.5,
           ),
-          width: 0.5,
         ),
       ),
       child: const SizedBox.expand(),
@@ -965,45 +991,51 @@ class _ReactionItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final primary = theme.colorScheme.primary;
-    final borderRadius = BorderRadius.circular(14);
+    final borderRadius = context.shapes.borderRadius(14);
     final highlightScale = isHighlighted
         ? _kHighlightScale
         : isNeighbor
-            ? _kNeighborScale
-            : 1.0;
+        ? _kNeighborScale
+        : 1.0;
 
     final background = isCurrent
         ? theme.colorScheme.primaryContainer
         : isHighlighted
-            ? primary.withValues(alpha: 0.1)
-            : primary.withValues(alpha: 0);
+        ? primary.withValues(alpha: 0.1)
+        : primary.withValues(alpha: 0);
 
-    Widget content = AnimatedContainer(
+    final Widget content = AnimatedContainer(
       duration: _kHighlightDuration,
       curve: Curves.easeOutCubic,
       margin: const EdgeInsets.all(2),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: background,
-        borderRadius: borderRadius,
+        shape: RoundedSuperellipseBorder(borderRadius: borderRadius),
       ),
       child: Center(
-        child: _EmojiImage(reactionId: reactionId, size: _kIconSize),
+        // 面板开着就一直循环:Noto 动画起止姿势与静态图不同,播一遍
+        // 停下来总有一下跳变;面板收起时表情随之缩没,不存在「停下」
+        child: ReactionEmoji(
+          reactionId: reactionId,
+          size: _kIconSize,
+          loop: true,
+        ),
       ),
     );
 
-    if (onTap != null) {
-      // 按压反馈与选中底色保持相同圆角，整个槽位均可点击。
-      content = Material(
-        type: MaterialType.transparency,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: borderRadius,
-          splashFactory: NoSplash.splashFactory,
-          highlightColor: primary.withValues(alpha: 0.08),
-          child: content,
-        ),
-      );
-    }
+    // 按压反馈与选中底色保持相同圆角，整个槽位均可点击。
+    // InkWell 恒在、不可点时 onTap 为 null:拖选 → 停驻点选 → 收回切换
+    // 交互态时树结构不变,否则底下的表情被重新挂载,动画从头再播。
+    final tappable = Material(
+      type: MaterialType.transparency,
+      child: InkWell(
+        onTap: onTap,
+        customBorder: RoundedSuperellipseBorder(borderRadius: borderRadius),
+        splashFactory: NoSplash.splashFactory,
+        highlightColor: primary.withValues(alpha: 0.08),
+        child: content,
+      ),
+    );
 
     return Semantics(
       button: true,
@@ -1019,29 +1051,10 @@ class _ReactionItem extends StatelessWidget {
             scale: highlightScale,
             duration: _kHighlightDuration,
             curve: Curves.easeOutCubic,
-            child: content,
+            child: tappable,
           ),
         ),
       ),
-    );
-  }
-}
-
-class _EmojiImage extends StatelessWidget {
-  const _EmojiImage({required this.reactionId, required this.size});
-
-  final String reactionId;
-  final double size;
-
-  @override
-  Widget build(BuildContext context) {
-    return Image(
-      image: emojiImageProvider(_getEmojiUrl(reactionId)),
-      width: size,
-      height: size,
-      gaplessPlayback: true,
-      errorBuilder: (_, _, _) =>
-          Icon(Symbols.emoji_emotions_rounded, size: size * 0.9),
     );
   }
 }

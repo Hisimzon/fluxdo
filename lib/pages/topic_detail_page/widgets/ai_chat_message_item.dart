@@ -2,12 +2,14 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:common_ui/common_ui.dart';
 import 'package:ai_model_manager/ai_model_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
 import 'package:super_clipboard/super_clipboard.dart';
 import 'package:m3e_ui/m3e_ui.dart';
+
 import '../../../l10n/s.dart';
 import '../../../pages/image_viewer_page.dart';
 import '../../../services/toast_service.dart';
@@ -51,7 +53,9 @@ class AiChatMessageItem extends StatelessWidget {
       return _buildSelectableMessage(context, isUser);
     }
 
-    return isUser ? _buildUserMessage(context) : _buildAssistantMessage(context);
+    return isUser
+        ? _buildUserMessage(context)
+        : _buildAssistantMessage(context);
   }
 
   /// 多选模式下的消息
@@ -86,7 +90,10 @@ class AiChatMessageItem extends StatelessWidget {
     );
   }
 
-  Widget _buildUserMessage(BuildContext context, {bool inSelectionMode = false}) {
+  Widget _buildUserMessage(
+    BuildContext context, {
+    bool inSelectionMode = false,
+  }) {
     final theme = Theme.of(context);
     final attachments = message.attachments ?? const [];
 
@@ -102,13 +109,15 @@ class AiChatMessageItem extends StatelessWidget {
             ? const EdgeInsets.only(top: 4, bottom: 4)
             : const EdgeInsets.only(left: 48, right: 16, top: 4, bottom: 4),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
+        decoration: ShapeDecoration(
           color: theme.colorScheme.primaryContainer,
-          borderRadius: const BorderRadius.only(
-            topLeft: Radius.circular(16),
-            topRight: Radius.circular(16),
-            bottomLeft: Radius.circular(16),
-            bottomRight: Radius.circular(4),
+          shape: RoundedSuperellipseBorder(
+            borderRadius: BorderRadius.only(
+              topLeft: context.shapes.radius(16),
+              topRight: context.shapes.radius(16),
+              bottomLeft: context.shapes.radius(16),
+              bottomRight: context.shapes.radius(4),
+            ),
           ),
         ),
         child: Column(
@@ -132,7 +141,10 @@ class AiChatMessageItem extends StatelessWidget {
     );
   }
 
-  Widget _buildAssistantMessage(BuildContext context, {bool inSelectionMode = false}) {
+  Widget _buildAssistantMessage(
+    BuildContext context, {
+    bool inSelectionMode = false,
+  }) {
     final theme = Theme.of(context);
     final isStreaming = message.status == MessageStatus.streaming;
     final isError = message.status == MessageStatus.error;
@@ -155,13 +167,15 @@ class AiChatMessageItem extends StatelessWidget {
             ? const EdgeInsets.only(top: 4, bottom: 4)
             : const EdgeInsets.only(left: 16, right: 48, top: 4, bottom: 4),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
+        decoration: ShapeDecoration(
           color: theme.colorScheme.surfaceContainerLow,
-          borderRadius: const BorderRadius.only(
-            topLeft: Radius.circular(16),
-            topRight: Radius.circular(16),
-            bottomLeft: Radius.circular(4),
-            bottomRight: Radius.circular(16),
+          shape: RoundedSuperellipseBorder(
+            borderRadius: BorderRadius.only(
+              topLeft: context.shapes.radius(16),
+              topRight: context.shapes.radius(16),
+              bottomLeft: context.shapes.radius(4),
+              bottomRight: context.shapes.radius(16),
+            ),
           ),
         ),
         child: Column(
@@ -182,7 +196,9 @@ class AiChatMessageItem extends StatelessWidget {
                   const SizedBox(height: 8),
               ],
               if (message.content.isNotEmpty)
-                MarkdownBody(data: '${message.content}${isStreaming ? ' ▊' : ''}'),
+                MarkdownBody(
+                  data: '${message.content}${isStreaming ? ' ▊' : ''}',
+                ),
               // 纯文本流式开始时的小光标占位（图像生成走下面的 placeholder）
               if (message.content.isEmpty &&
                   isStreaming &&
@@ -193,7 +209,8 @@ class AiChatMessageItem extends StatelessWidget {
                 _buildStreamingIndicator(context),
               // 模型生成的图片（gpt-image / DALL-E 等）
               // 图像生成模式即使 attachments 还为空，也要显示占位
-              if (hasAttachments || (isStreaming && message.isImageGeneration)) ...[
+              if (hasAttachments ||
+                  (isStreaming && message.isImageGeneration)) ...[
                 if (hasContent) const SizedBox(height: 8),
                 _GeneratedImagesGrid(
                   attachments: attachments,
@@ -238,10 +255,7 @@ class AiChatMessageItem extends StatelessWidget {
     final theme = Theme.of(context);
     return Text(
       '▊',
-      style: TextStyle(
-        color: theme.colorScheme.primary,
-        fontSize: 16,
-      ),
+      style: TextStyle(color: theme.colorScheme.primary, fontSize: 16),
     );
   }
 
@@ -254,7 +268,11 @@ class AiChatMessageItem extends StatelessWidget {
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Symbols.error_rounded, size: 16, color: theme.colorScheme.error),
+            Icon(
+              Symbols.error_rounded,
+              size: 16,
+              color: theme.colorScheme.error,
+            ),
             const SizedBox(width: 6),
             Flexible(
               child: Text(
@@ -274,10 +292,17 @@ class AiChatMessageItem extends StatelessWidget {
             height: 28,
             child: TextButton.icon(
               onPressed: onRetry,
-              icon: Icon(Symbols.refresh_rounded, size: 14, color: theme.colorScheme.primary),
+              icon: Icon(
+                Symbols.refresh_rounded,
+                size: 14,
+                color: context.emphasis.accent,
+              ),
               label: Text(
                 context.l10n.ai_retryLabel,
-                style: TextStyle(fontSize: 12, color: theme.colorScheme.primary),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: context.emphasis.accent,
+                ),
               ),
               style: TextButton.styleFrom(
                 padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -321,8 +346,9 @@ class AiChatMessageItem extends StatelessWidget {
     final hasContent = message.content.isNotEmpty;
     final attachments = message.attachments ?? const [];
     // 仅取已 finalize 的图片（partial 草图不允许操作）
-    final finalAttachments =
-        attachments.where((a) => !a.isPartial).toList(growable: false);
+    final finalAttachments = attachments
+        .where((a) => !a.isPartial)
+        .toList(growable: false);
     final isImageOnly = !hasContent && finalAttachments.isNotEmpty;
 
     if (isImageOnly) {
@@ -510,8 +536,8 @@ class _TappableImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(10),
+    return ClipRSuperellipse(
+      borderRadius: context.shapes.borderRadius(10),
       child: Material(
         color: Colors.transparent,
         child: Stack(
@@ -528,21 +554,33 @@ class _TappableImage extends StatelessWidget {
                 // partial 帧降低饱和度提示「草图」
                 colorFilter: attachment.isPartial
                     ? const ColorFilter.matrix([
-                        0.6, 0.3, 0.1, 0, 0,
-                        0.3, 0.6, 0.1, 0, 0,
-                        0.3, 0.3, 0.4, 0, 0,
-                        0,   0,   0,   1, 0,
+                        0.6,
+                        0.3,
+                        0.1,
+                        0,
+                        0,
+                        0.3,
+                        0.6,
+                        0.1,
+                        0,
+                        0,
+                        0.3,
+                        0.3,
+                        0.4,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        0,
                       ])
                     : const ColorFilter.mode(Colors.transparent, BlendMode.dst),
                 child: _imageWidget(attachment),
               ),
             ),
             if (attachment.isPartial)
-              Positioned(
-                top: 8,
-                left: 8,
-                child: _PartialBadge(),
-              ),
+              Positioned(top: 8, left: 8, child: _PartialBadge()),
           ],
         ),
       ),
@@ -574,11 +612,11 @@ class _TappableImage extends StatelessWidget {
   }
 
   Widget _brokenPlaceholder() => Container(
-        height: 120,
-        color: Colors.black12,
-        alignment: Alignment.center,
-        child: const Icon(Symbols.broken_image_rounded),
-      );
+    height: 120,
+    color: Colors.black12,
+    alignment: Alignment.center,
+    child: const Icon(Symbols.broken_image_rounded),
+  );
 }
 
 /// 折叠展示「优化后的 image prompt」
@@ -606,12 +644,14 @@ class _OptimizedPromptBlockState extends State<_OptimizedPromptBlock> {
     final color = theme.colorScheme.onSurfaceVariant;
 
     return Container(
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
-          width: 0.5,
+        shape: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(8),
+          side: BorderSide(
+            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
+            width: 0.5,
+          ),
         ),
       ),
       child: Column(
@@ -620,7 +660,9 @@ class _OptimizedPromptBlockState extends State<_OptimizedPromptBlock> {
         children: [
           InkWell(
             onTap: () => setState(() => _expanded = !_expanded),
-            borderRadius: BorderRadius.circular(8),
+            customBorder: RoundedSuperellipseBorder(
+              borderRadius: context.shapes.borderRadius(8),
+            ),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               child: Row(
@@ -636,7 +678,9 @@ class _OptimizedPromptBlockState extends State<_OptimizedPromptBlock> {
                   ),
                   const SizedBox(width: 4),
                   Icon(
-                    _expanded ? Symbols.expand_less_rounded : Symbols.expand_more_rounded,
+                    _expanded
+                        ? Symbols.expand_less_rounded
+                        : Symbols.expand_more_rounded,
                     size: 16,
                     color: color,
                   ),
@@ -645,16 +689,23 @@ class _OptimizedPromptBlockState extends State<_OptimizedPromptBlock> {
                     InkWell(
                       onTap: () async {
                         await Clipboard.setData(
-                            ClipboardData(text: widget.prompt));
+                          ClipboardData(text: widget.prompt),
+                        );
                         if (!context.mounted) return;
                         ToastService.showSuccess(
-                            context.l10n.ai_copiedToClipboard);
+                          context.l10n.ai_copiedToClipboard,
+                        );
                       },
-                      borderRadius: BorderRadius.circular(4),
+                      customBorder: RoundedSuperellipseBorder(
+                        borderRadius: context.shapes.borderRadius(4),
+                      ),
                       child: Padding(
                         padding: const EdgeInsets.all(2),
-                        child: Icon(Symbols.content_copy_rounded,
-                            size: 14, color: color),
+                        child: Icon(
+                          Symbols.content_copy_rounded,
+                          size: 14,
+                          color: color,
+                        ),
                       ),
                     ),
                   ],
@@ -687,9 +738,11 @@ class _PartialBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: Colors.black54,
-        borderRadius: BorderRadius.circular(10),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(10),
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -786,8 +839,8 @@ class _ImageGenerationPlaceholderState
     // 主占位 280×280（接近常见的 1024×1024 缩略尺寸），compact 80×80
     final size = widget.compact ? 80.0 : 280.0;
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(10),
+    return ClipRSuperellipse(
+      borderRadius: context.shapes.borderRadius(10),
       child: SizedBox(
         height: size,
         width: size,
@@ -827,8 +880,9 @@ class _ImageGenerationPlaceholderState
                         ? Symbols.psychology_alt_rounded
                         : Symbols.auto_awesome_rounded,
                     size: 32,
-                    color: theme.colorScheme.onSurfaceVariant
-                        .withValues(alpha: 0.7),
+                    color: theme.colorScheme.onSurfaceVariant.withValues(
+                      alpha: 0.7,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   Text(
@@ -846,8 +900,9 @@ class _ImageGenerationPlaceholderState
                       return Text(
                         '${seconds}s',
                         style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant
-                              .withValues(alpha: 0.6),
+                          color: theme.colorScheme.onSurfaceVariant.withValues(
+                            alpha: 0.6,
+                          ),
                           fontFeatures: const [FontFeature.tabularFigures()],
                         ),
                       );
@@ -888,12 +943,14 @@ class _ThinkingBlockState extends State<_ThinkingBlock> {
     final color = theme.colorScheme.onSurfaceVariant;
 
     return Container(
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
-          width: 0.5,
+        shape: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(8),
+          side: BorderSide(
+            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
+            width: 0.5,
+          ),
         ),
       ),
       child: Column(
@@ -902,18 +959,15 @@ class _ThinkingBlockState extends State<_ThinkingBlock> {
         children: [
           InkWell(
             onTap: () => setState(() => _userExpanded = !_expanded),
-            borderRadius: BorderRadius.circular(8),
+            customBorder: RoundedSuperellipseBorder(
+              borderRadius: context.shapes.borderRadius(8),
+            ),
             child: Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(
-                    Symbols.psychology_alt_rounded,
-                    size: 14,
-                    color: color,
-                  ),
+                  Icon(Symbols.psychology_alt_rounded, size: 14, color: color),
                   const SizedBox(width: 6),
                   Text(
                     context.l10n.ai_thinkingLabel,
@@ -921,7 +975,9 @@ class _ThinkingBlockState extends State<_ThinkingBlock> {
                   ),
                   const SizedBox(width: 4),
                   Icon(
-                    _expanded ? Symbols.expand_less_rounded : Symbols.expand_more_rounded,
+                    _expanded
+                        ? Symbols.expand_less_rounded
+                        : Symbols.expand_more_rounded,
                     size: 16,
                     color: color,
                   ),
@@ -964,8 +1020,8 @@ class _AttachmentThumbnails extends StatelessWidget {
         separatorBuilder: (_, _) => const SizedBox(width: 6),
         itemBuilder: (context, index) {
           final att = attachments[index];
-          return ClipRRect(
-            borderRadius: BorderRadius.circular(6),
+          return ClipRSuperellipse(
+            borderRadius: context.shapes.borderRadius(6),
             child: _attachmentImage(att, size: 80),
           );
         },
@@ -1012,11 +1068,11 @@ class _AttachmentThumbnails extends StatelessWidget {
   }
 
   Widget _placeholder(double size) => Container(
-        width: size,
-        height: size,
-        color: Colors.black12,
-        child: const Icon(Symbols.image_rounded, size: 24),
-      );
+    width: size,
+    height: size,
+    color: Colors.black12,
+    child: const Icon(Symbols.image_rounded, size: 24),
+  );
 }
 
 /// 紧凑的操作按钮
@@ -1037,7 +1093,9 @@ class _ActionButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(4),
+      customBorder: RoundedSuperellipseBorder(
+        borderRadius: context.shapes.borderRadius(4),
+      ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
         child: Row(
@@ -1045,10 +1103,7 @@ class _ActionButton extends StatelessWidget {
           children: [
             Icon(icon, size: 14, color: color),
             const SizedBox(width: 3),
-            Text(
-              label,
-              style: TextStyle(fontSize: 11, color: color),
-            ),
+            Text(label, style: TextStyle(fontSize: 11, color: color)),
           ],
         ),
       ),

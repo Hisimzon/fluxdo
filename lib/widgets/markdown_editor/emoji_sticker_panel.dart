@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 
@@ -153,8 +154,9 @@ class _EmojiStickerPanelState extends State<EmojiStickerPanel> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final safeBottom = MediaQuery.viewPaddingOf(context).bottom;
-    final tabHeight =
-        widget.compact ? floatingTabHeightCompact : floatingTabHeight;
+    final tabHeight = widget.compact
+        ? floatingTabHeightCompact
+        : floatingTabHeight;
     final totalBottomPadding = tabHeight + safeBottom;
 
     return Stack(
@@ -204,11 +206,15 @@ class _EmojiStickerPanelState extends State<EmojiStickerPanel> {
               curve: Curves.easeInOut,
               child: Material(
                 color: theme.colorScheme.surface.withValues(alpha: 0.95),
-                shape: const CircleBorder(),
+                shape: RoundedSuperellipseBorder(
+                  borderRadius: context.shapes.borderRadius(9999),
+                ),
                 elevation: 2,
                 shadowColor: Colors.black.withValues(alpha: 0.1),
                 child: InkWell(
-                  customBorder: const CircleBorder(),
+                  customBorder: RoundedSuperellipseBorder(
+                    borderRadius: context.shapes.borderRadius(9999),
+                  ),
                   onTap: widget.onBackspace,
                   child: SizedBox(
                     width: 42,
@@ -242,22 +248,25 @@ class _EmojiStickerPanelState extends State<EmojiStickerPanel> {
 
     return Container(
       padding: EdgeInsets.all(compact ? 3 : 4),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: theme.colorScheme.surface.withValues(alpha: 0.95),
-        borderRadius: BorderRadius.circular(24),
-        // 紧凑模式在弹层里,弹层自带边框阴影,胶囊影收轻 + 加细边
-        border: compact
-            ? Border.all(
-                color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
-              )
-            : null,
-        boxShadow: [
+        shadows: [
           BoxShadow(
             color: Colors.black.withValues(alpha: compact ? 0.06 : 0.1),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
         ],
+        shape: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(24),
+          side: compact
+              ? BorderSide(
+                  color: theme.colorScheme.outlineVariant.withValues(
+                    alpha: 0.5,
+                  ),
+                )
+              : BorderSide.none,
+        ),
       ),
       child: AnimatedBuilder(
         animation: _pageController,
@@ -277,11 +286,13 @@ class _EmojiStickerPanelState extends State<EmojiStickerPanel> {
                   bottom: 0,
                   width: buttonWidth,
                   child: DecoratedBox(
-                    decoration: BoxDecoration(
+                    decoration: ShapeDecoration(
                       color: theme.colorScheme.primaryContainer.withValues(
                         alpha: 0.7,
                       ),
-                      borderRadius: BorderRadius.circular(20),
+                      shape: RoundedSuperellipseBorder(
+                        borderRadius: context.shapes.borderRadius(20),
+                      ),
                     ),
                   ),
                 ),

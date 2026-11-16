@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'dart:io' as io;
@@ -18,8 +19,10 @@ import '../services/data_management/data_backup_service.dart';
 import '../services/windows_webview_environment_service.dart';
 import '../services/toast_service.dart';
 import '../settings/definitions/data_management_defs.dart';
+
 import 'package:m3e_ui/m3e_ui.dart';
 import 'package:path/path.dart' as p;
+
 import '../widgets/settings/settings_group_page.dart';
 
 /// 数据管理页面（数据驱动版）
@@ -98,8 +101,7 @@ class _CacheManagementSectionState
     }
   }
 
-  int get _imageTotal =>
-      _breakdown?.values.fold(0, (a, b) => a! + b) ?? -1;
+  int get _imageTotal => _breakdown?.values.fold(0, (a, b) => a! + b) ?? -1;
 
   int get _selectedSize {
     final b = _breakdown;
@@ -118,14 +120,13 @@ class _CacheManagementSectionState
   }
 
   String _categoryName(ImageCacheCategory c) => switch (c) {
-        ImageCacheCategory.content => S.current.dataManagement_categoryContent,
-        ImageCacheCategory.emoji => S.current.dataManagement_categoryEmoji,
-        ImageCacheCategory.avatar => S.current.dataManagement_categoryAvatar,
-        ImageCacheCategory.sticker => S.current.dataManagement_categorySticker,
-        ImageCacheCategory.external =>
-          S.current.dataManagement_categoryExternal,
-        ImageCacheCategory.other => S.current.dataManagement_categoryOther,
-      };
+    ImageCacheCategory.content => S.current.dataManagement_categoryContent,
+    ImageCacheCategory.emoji => S.current.dataManagement_categoryEmoji,
+    ImageCacheCategory.avatar => S.current.dataManagement_categoryAvatar,
+    ImageCacheCategory.sticker => S.current.dataManagement_categorySticker,
+    ImageCacheCategory.external => S.current.dataManagement_categoryExternal,
+    ImageCacheCategory.other => S.current.dataManagement_categoryOther,
+  };
 
   /// 分类色:固定统计色板 + harmonizeWith(primary) 向主题色调和。
   ///
@@ -353,9 +354,8 @@ class _CacheManagementSectionState
                 width: double.infinity,
                 height: 44,
                 child: FilledButton(
-                  onPressed: _isClearing ||
-                          breakdown == null ||
-                          _selectedSize <= 0
+                  onPressed:
+                      _isClearing || breakdown == null || _selectedSize <= 0
                       ? null
                       : _clearSelected,
                   child: _isClearing
@@ -404,11 +404,7 @@ class _CacheManagementSectionState
     );
   }
 
-  Widget _buildCategoryTile(
-    ThemeData theme,
-    ImageCacheCategory c,
-    int? size,
-  ) {
+  Widget _buildCategoryTile(ThemeData theme, ImageCacheCategory c, int? size) {
     final color = _categoryColor(c, theme.colorScheme);
     final empty = size != null && size <= 0;
     final checked = _selected.contains(c) && !empty;
@@ -433,12 +429,12 @@ class _CacheManagementSectionState
         onChanged: empty || _isClearing
             ? null
             : (v) => setState(() {
-                  if (v == true) {
-                    _selected.add(c);
-                  } else {
-                    _selected.remove(c);
-                  }
-                }),
+                if (v == true) {
+                  _selected.add(c);
+                } else {
+                  _selected.remove(c);
+                }
+              }),
       ),
       title: Text.rich(
         TextSpan(
@@ -468,12 +464,12 @@ class _CacheManagementSectionState
       onTap: empty || _isClearing
           ? null
           : () => setState(() {
-                if (_selected.contains(c)) {
-                  _selected.remove(c);
-                } else {
-                  _selected.add(c);
-                }
-              }),
+              if (_selected.contains(c)) {
+                _selected.remove(c);
+              } else {
+                _selected.add(c);
+              }
+            }),
     );
   }
 
@@ -540,8 +536,8 @@ class _SegmentedBarPainter extends CustomPainter {
     final total = segments.fold<int>(0, (a, s) => a + s.size);
     if (total <= 0 || segments.isEmpty) {
       paint.color = emptyColor;
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(Offset.zero & size, radius),
+      canvas.drawRSuperellipse(
+        RSuperellipse.fromRectAndRadius(Offset.zero & size, radius),
         paint,
       );
       return;
@@ -550,9 +546,7 @@ class _SegmentedBarPainter extends CustomPainter {
     final usable = (size.width - gapTotal).clamp(0.0, double.infinity);
 
     // 先按占比分宽,再把不足保底的段抬到保底,超出部分从最大段扣回。
-    final widths = [
-      for (final s in segments) usable * s.size / total,
-    ];
+    final widths = [for (final s in segments) usable * s.size / total];
     var deficit = 0.0;
     for (var i = 0; i < widths.length; i++) {
       if (widths[i] < _minSegWidth) {
@@ -565,15 +559,17 @@ class _SegmentedBarPainter extends CustomPainter {
       for (var i = 1; i < widths.length; i++) {
         if (widths[i] > widths[maxIdx]) maxIdx = i;
       }
-      widths[maxIdx] =
-          (widths[maxIdx] - deficit).clamp(_minSegWidth, double.infinity);
+      widths[maxIdx] = (widths[maxIdx] - deficit).clamp(
+        _minSegWidth,
+        double.infinity,
+      );
     }
 
     var x = 0.0;
     for (var i = 0; i < segments.length; i++) {
       paint.color = segments[i].color;
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
+      canvas.drawRSuperellipse(
+        RSuperellipse.fromRectAndRadius(
           Rect.fromLTWH(x, 0, widths[i], size.height),
           radius,
         ),
@@ -605,9 +601,11 @@ class _ShimmerBox extends StatelessWidget {
     return Container(
       width: width,
       height: height,
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(4),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(4),
+        ),
       ),
     );
   }
@@ -656,7 +654,8 @@ class DataBackupSection extends ConsumerWidget {
       }
     } catch (e) {
       ToastService.showError(
-          S.current.dataManagement_exportFailed(e.toString()));
+        S.current.dataManagement_exportFailed(e.toString()),
+      );
     }
   }
 
@@ -716,7 +715,8 @@ class DataBackupSection extends ConsumerWidget {
       ToastService.showError(e.message);
     } catch (e) {
       ToastService.showError(
-          S.current.dataManagement_importFailed(e.toString()));
+        S.current.dataManagement_importFailed(e.toString()),
+      );
     }
   }
 

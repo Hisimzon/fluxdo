@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_submission_snapshot.dart';
 
 import '../markdown_editor/uploads/upload_task_labels.dart';
@@ -256,7 +257,22 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
               S.current.editor_noContent,
               style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
             )
-          : MarkdownBody(data: text),
+          : MarkdownBody(
+              data: text,
+              // 富文本通过图片菜单修改尺寸；直接改 raw 会使语义镜像失效。
+              onImageScaleChanged: _richModeEnabled && !_richFallback
+                  ? null
+                  : (image, scale) {
+                      final next = applyImageScaleToRaw(
+                        _contentController.text,
+                        image,
+                        scale,
+                      );
+                      if (next == null) return;
+                      _contentController.text = next;
+                      setState(() {});
+                    },
+            ),
     );
   }
 
@@ -1108,7 +1124,7 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
           actionLabel: S.current.review_viewAction,
           onAction: () {
             navigatorKey.currentState?.push(
-              MaterialPageRoute(builder: (_) => const PendingPostsPage()),
+              InteractionPageRoute(builder: (_) => const PendingPostsPage()),
             );
           },
         );
@@ -1166,10 +1182,12 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
             child: Stack(
               children: [
                 Container(
-                  decoration: BoxDecoration(
+                  decoration: ShapeDecoration(
                     color: theme.colorScheme.surface,
-                    borderRadius: const BorderRadius.vertical(
-                      top: Radius.circular(16),
+                    shape: RoundedSuperellipseBorder(
+                      borderRadius: BorderRadius.vertical(
+                        top: context.shapes.radius(16),
+                      ),
                     ),
                   ),
                   child: Column(
@@ -1183,9 +1201,11 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
                             width: 32,
                             height: 4,
                             margin: const EdgeInsets.only(top: 12, bottom: 8),
-                            decoration: BoxDecoration(
+                            decoration: ShapeDecoration(
                               color: theme.colorScheme.outlineVariant,
-                              borderRadius: BorderRadius.circular(2),
+                              shape: RoundedSuperellipseBorder(
+                                borderRadius: context.shapes.borderRadius(2),
+                              ),
                             ),
                           ),
 
@@ -1221,11 +1241,10 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
                             controller: _titleController,
                             decoration: InputDecoration(
                               hintText: context.l10n.common_title,
-                              border: InputBorder.none,
                               contentPadding: const EdgeInsets.symmetric(
                                 vertical: 12,
                               ),
-                            ),
+                            ).withoutBorder(),
                             style: const TextStyle(fontWeight: FontWeight.w600),
                             textInputAction: TextInputAction.next,
                             onTap: () {
@@ -1356,10 +1375,12 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
                 if (_isLoadingDraft)
                   Positioned.fill(
                     child: Container(
-                      decoration: BoxDecoration(
+                      decoration: ShapeDecoration(
                         color: theme.colorScheme.surface.withValues(alpha: 0.7),
-                        borderRadius: const BorderRadius.vertical(
-                          top: Radius.circular(16),
+                        shape: RoundedSuperellipseBorder(
+                          borderRadius: BorderRadius.vertical(
+                            top: context.shapes.radius(16),
+                          ),
                         ),
                       ),
                       child: const Center(child: LoadingSpinner()),

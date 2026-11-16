@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,6 +10,7 @@ import '../../providers/pinned_categories_provider.dart';
 import '../../utils/font_awesome_helper.dart';
 import '../../utils/url_helper.dart';
 import '../../services/discourse_cache_manager.dart';
+import '../../utils/color_utils.dart';
 
 class CategoryShortcuts extends ConsumerWidget {
   const CategoryShortcuts({
@@ -68,19 +70,28 @@ class _CategoryShortcutItem extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colorScheme = Theme.of(context).colorScheme;
-    final categoryColor = _parseColor(category.color, colorScheme.primary);
+    final categoryColor = ColorUtils.category(
+      category.color,
+      Theme.of(context),
+      fallback: colorScheme.primary,
+    );
     final activeCategoryId = ref.watch(activeSidebarCategoryIdProvider);
     final isSelected = activeCategoryId == category.id;
-    final backgroundColor =
-        isSelected ? colorScheme.secondaryContainer : Colors.transparent;
+    final backgroundColor = isSelected
+        ? colorScheme.secondaryContainer
+        : Colors.transparent;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       child: Material(
         color: backgroundColor,
-        borderRadius: BorderRadius.circular(16),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(16),
+        ),
         child: InkWell(
-          borderRadius: BorderRadius.circular(16),
+          customBorder: RoundedSuperellipseBorder(
+            borderRadius: context.shapes.borderRadius(16),
+          ),
           onTap: onTap,
           child: SizedBox(
             height: 56,
@@ -114,14 +125,6 @@ class _CategoryShortcutItem extends ConsumerWidget {
         ),
       ),
     );
-  }
-}
-
-Color _parseColor(String hex, Color fallback) {
-  try {
-    return Color(int.parse('FF$hex', radix: 16));
-  } catch (_) {
-    return fallback;
   }
 }
 

@@ -7,6 +7,7 @@ import 'package:common_ui/common_ui.dart';
 import 'package:extended_image_lite/extended_image_lite.dart';
 import 'package:jovial_svg/jovial_svg.dart';
 import 'package:super_clipboard/super_clipboard.dart';
+
 import '../services/discourse_cache_manager.dart';
 import '../services/dynamic_content_suspension_service.dart';
 import '../services/image_decode_spec_memo.dart';
@@ -16,8 +17,11 @@ import '../utils/image_save_utils.dart';
 import '../utils/screenshot_utils.dart';
 import '../utils/svg_utils.dart';
 import '../widgets/content/animated_svg_view.dart';
+import '../widgets/layout/immersive_insets_hold.dart';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../models/shortcut_binding.dart';
 import '../providers/shortcut_provider.dart';
 import '../services/toast_service.dart';
@@ -26,7 +30,9 @@ import '../utils/share_utils.dart';
 import '../widgets/common/app_bottom_sheet.dart';
 import '../widgets/common/hero_image.dart';
 import '../widgets/common/image_context_menu.dart';
+
 import 'package:m3e_ui/m3e_ui.dart';
+
 import '../l10n/s.dart';
 
 class ImageViewerPage extends ConsumerStatefulWidget {
@@ -178,7 +184,7 @@ class ImageViewerPage extends ConsumerStatefulWidget {
     }
     return Navigator.push(
       context,
-      PageRouteBuilder(
+      InteractionPageRouteBuilder(
         opaque: false,
         barrierColor: Colors.transparent,
         pageBuilder: (context, animation, secondaryAnimation) {
@@ -217,7 +223,7 @@ class ImageViewerPage extends ConsumerStatefulWidget {
   static void openBytes(BuildContext context, Uint8List bytes) {
     Navigator.push(
       context,
-      PageRouteBuilder(
+      InteractionPageRouteBuilder(
         opaque: false,
         barrierColor: Colors.transparent,
         pageBuilder: (context, animation, secondaryAnimation) {
@@ -292,6 +298,9 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
   bool _isSaving = false;
   bool _isSharing = false;
   bool _showUI = true;
+
+  /// 系统栏是否被本页隐藏(沉浸模式)。退场起点据此提前恢复
+  bool _systemUiHidden = false;
   late final DynamicContentSuspensionLease _dynamicContentLease;
 
   /// 通知所有缓存页面当前活跃的 Hero 页码变化，确保只有当前页有 Hero
@@ -559,6 +568,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
   /// [HeroVisibilityController.startPopping]。
   void _onRouteAnimationStatus(AnimationStatus status) {
     if (status != AnimationStatus.reverse) return;
+    _restoreSystemUIForExit();
     _publishExitFlightRect();
     HeroVisibilityController.instance.startPopping();
   }
@@ -567,10 +577,21 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
   /// HeroController 测量飞行几何)。手势期不改动缩放 —— 缩放由 Hero
   /// 飞行承载。同样要宣告 startPopping,理由同上。
   void _onNavUserGestureChanged() {
-    if (_navUserGesture?.value == true && (_route?.isCurrent ?? false)) {
+    if (!(_route?.isCurrent ?? false)) return;
+    if (_navUserGesture?.value == true) {
+      _restoreSystemUIForExit();
       _publishExitFlightRect();
       HeroVisibilityController.instance.startPopping();
+    } else if (!_showUI && !_systemUiHidden) {
+      // 手势取消、仍停留在查看器:回到沉浸
+      _updateSystemUI();
     }
+  }
+
+  /// 退场一开始就恢复系统栏,不等 dispose(退场动画播完才触发)。
+  /// 否则整段退场里底下页面都拿着归零的安全区。
+  void _restoreSystemUIForExit() {
+    if (_systemUiHidden) unawaited(_restoreSystemUI());
   }
 
   /// 把「当前页图片在屏幕上的可见矩形」发布给源端 Hero 作飞行起点。
@@ -701,11 +722,15 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
       // Android 15+ 默认 edge-to-edge，manual 模式会被系统忽略导致隐藏后
       // 无法恢复。immersiveSticky 是专为 fullscreen 设计的模式，Android 15+
       // 仍正常工作，且边缘上滑可临时显示 system bars。
+      _systemUiHidden = true;
+      ImmersiveInsetsHold.begin(MediaQuery.of(context));
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     }
   }
 
   Future<void> _restoreSystemUI() async {
+    _systemUiHidden = false;
+    ImmersiveInsetsHold.release();
     // Flutter 3.41+ 引擎在 setSystemChromeEnabledSystemUIMode 的 EDGE_TO_EDGE
     // 分支不清除前一个模式（immersiveSticky）设的 SYSTEM_UI_FLAG_FULLSCREEN
     // 和 SYSTEM_UI_FLAG_HIDE_NAVIGATION，导致直接切 edgeToEdge 不能恢复 bars。
@@ -840,9 +865,8 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     if (widget.imageBytes == null) return;
 
     if (PlatformUtils.isDesktop && position != null) {
-      final overlayRenderObject = Overlay.of(
-        context,
-      ).context.findRenderObject();
+      final overlayRenderObject = Overlay.of(context).context
+          .findRenderObject();
       if (overlayRenderObject is RenderBox && overlayRenderObject.hasSize) {
         final relativeRect = RelativeRect.fromRect(
           position & Size.zero,
@@ -1335,9 +1359,11 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                                   horizontal: 12,
                                   vertical: 6,
                                 ),
-                                decoration: BoxDecoration(
+                                decoration: ShapeDecoration(
                                   color: Colors.black.withValues(alpha: 0.5),
-                                  borderRadius: BorderRadius.circular(20),
+                                  shape: RoundedSuperellipseBorder(
+                                    borderRadius: context.shapes.borderRadius(20),
+                                  ),
                                 ),
                                 child: Text(
                                   "${currentIndex + 1} / ${images.length}",

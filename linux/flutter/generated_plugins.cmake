@@ -4,6 +4,7 @@
 
 list(APPEND FLUTTER_PLUGIN_LIST
   audioplayers_linux
+  desktop_multi_window
   dynamic_color
   file_selector_linux
   flutter_acrylic
@@ -28,7 +29,6 @@ list(APPEND FLUTTER_PLUGIN_LIST
 list(APPEND FLUTTER_FFI_PLUGIN_LIST
   jni
   native_animated_image_linux
-  rhttp
 )
 
 set(PLUGIN_BUNDLED_LIBRARIES)

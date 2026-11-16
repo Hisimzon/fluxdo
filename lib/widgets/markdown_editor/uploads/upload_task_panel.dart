@@ -56,7 +56,9 @@ class _UploadTaskPanelState extends State<UploadTaskPanel> {
           .length;
       return Material(
         color: Theme.of(context).colorScheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(12),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(12),
+        ),
         clipBehavior: Clip.antiAlias,
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -142,8 +144,8 @@ class UploadTaskCard extends StatelessWidget {
             width: 44,
             height: 44,
             child: task.isImage
-                ? ClipRRect(
-                    borderRadius: BorderRadius.circular(6),
+                ? ClipRSuperellipse(
+                    borderRadius: context.shapes.borderRadius(6),
                     child: Image.file(
                       File(task.path),
                       fit: BoxFit.cover,
@@ -173,7 +175,7 @@ class UploadTaskCard extends StatelessWidget {
                   LinearProgressIndicator(
                     value: fraction,
                     minHeight: 2,
-                    borderRadius: BorderRadius.circular(2),
+                    borderRadius: context.shapes.borderRadius(2),
                   ),
                 ],
               ],
@@ -268,13 +270,15 @@ class _ChatUploadTile extends StatelessWidget {
           key: ValueKey('chat-upload-${task.id}'),
           width: task.isImage ? 80 : 164,
           clipBehavior: Clip.antiAlias,
-          decoration: BoxDecoration(
+          decoration: ShapeDecoration(
             color: theme.colorScheme.surfaceContainerHigh,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: failed
-                  ? theme.colorScheme.error
-                  : theme.colorScheme.outlineVariant.withValues(alpha: 0.45),
+            shape: RoundedSuperellipseBorder(
+              borderRadius: context.shapes.borderRadius(14),
+              side: BorderSide(
+                color: failed
+                    ? theme.colorScheme.error
+                    : theme.colorScheme.outlineVariant.withValues(alpha: 0.45),
+              ),
             ),
           ),
           child: Stack(
@@ -299,7 +303,7 @@ class _ChatUploadTile extends StatelessWidget {
                       Icon(
                         Icons.insert_drive_file_outlined,
                         size: 25,
-                        color: theme.colorScheme.primary,
+                        color: context.emphasis.accent,
                       ),
                       const SizedBox(width: 8),
                       Expanded(
@@ -398,9 +402,9 @@ class _ChatUploadTile extends StatelessWidget {
                   ),
                   icon: Container(
                     padding: const EdgeInsets.all(3),
-                    decoration: BoxDecoration(
+                    decoration: ShapeDecoration(
                       color: Colors.black.withValues(alpha: 0.6),
-                      shape: BoxShape.circle,
+                      shape: context.shapes.circle(),
                     ),
                     child: const Icon(
                       Icons.close_rounded,
@@ -493,17 +497,24 @@ class _SourceUploadPanelState extends State<SourceUploadPanel> {
                           Container(
                             width: 30,
                             height: 30,
-                            decoration: BoxDecoration(
-                              color: (failed ? colors.error : colors.primary)
-                                  .withValues(alpha: .12),
-                              borderRadius: BorderRadius.circular(10),
+                            decoration: ShapeDecoration(
+                              color:
+                                  (failed
+                                          ? colors.error
+                                          : context.emphasis.accent)
+                                      .withValues(alpha: .12),
+                              shape: RoundedSuperellipseBorder(
+                                borderRadius: context.shapes.borderRadius(10),
+                              ),
                             ),
                             child: Icon(
                               failed
                                   ? Icons.error_outline_rounded
                                   : Icons.cloud_upload_outlined,
                               size: 18,
-                              color: failed ? colors.error : colors.primary,
+                              color: failed
+                                  ? colors.error
+                                  : context.emphasis.accent,
                             ),
                           ),
                           const SizedBox(width: 10),

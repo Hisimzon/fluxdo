@@ -1,9 +1,12 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+
 import '../../../../l10n/s.dart';
 import '../../../../models/topic.dart';
 import '../../../../utils/fluxdo_render_callbacks.dart';
 import '../../../../utils/time_utils.dart';
+import '../../../../theme/app_colors.dart';
 
 /// 帖子提示横条（新用户首发帖、回归用户、自定义通知）
 class PostNoticeWidget extends StatelessWidget {
@@ -25,22 +28,28 @@ class PostNoticeWidget extends StatelessWidget {
 
     // custom 类型用浅红色，其他用浅蓝色
     final bgColor = isCustom
-        ? (isDark ? Colors.red.withValues(alpha: 0.1) : Colors.red.withValues(alpha: 0.06))
-        : (isDark ? Colors.blue.withValues(alpha: 0.1) : Colors.blue.withValues(alpha: 0.06));
+        ? (isDark
+              ? context.appColors.red.withValues(alpha: 0.1)
+              : context.appColors.red.withValues(alpha: 0.06))
+        : (isDark
+              ? context.appColors.blue.withValues(alpha: 0.1)
+              : context.appColors.blue.withValues(alpha: 0.06));
     final borderColor = isCustom
-        ? Colors.red.withValues(alpha: 0.2)
-        : Colors.blue.withValues(alpha: 0.2);
+        ? context.appColors.red.withValues(alpha: 0.2)
+        : context.appColors.blue.withValues(alpha: 0.2);
     final iconColor = isCustom
-        ? (isDark ? Colors.red.shade300 : Colors.red.shade600)
-        : (isDark ? Colors.blue.shade300 : Colors.blue.shade600);
+        ? (isDark ? context.appColors.red.shade300 : context.appColors.red.shade600)
+        : (isDark ? context.appColors.blue.shade300 : context.appColors.blue.shade600);
 
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: bgColor,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: borderColor, width: 0.5),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(8),
+          side: BorderSide(color: borderColor, width: 0.5),
+        ),
       ),
       child: _buildContent(theme, iconColor),
     );
@@ -81,14 +90,19 @@ class PostNoticeWidget extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Expanded(
-                child: FluxdoRenderCallbacks.generic(
-                  heroTagNamespace: 'post_notice',
-                ).render(
-                  cookedHtml: notice.cooked!,
-                  baseTextStyle:
-                      theme.textTheme.bodySmall?.copyWith(height: 1.5),
-                  selectionEnabled: false,
-                ),
+                child:
+                    FluxdoRenderCallbacks.generic(
+                      heroTagNamespace: 'post_notice',
+                    ).render(
+                      cookedHtml: notice.cooked!,
+                      baseTextStyle: theme.textTheme.bodySmall?.copyWith(
+                        height: 1.5,
+                      ),
+                      selectionEnabled: false,
+                      // 提示框已提供留白，去掉首尾段落外边距以对齐图标。
+                      trimTopMargin: true,
+                      trimBottomMargin: true,
+                    ),
               ),
             ],
           );

@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 
@@ -55,13 +56,15 @@ class ToolCellBody extends StatelessWidget {
             Container(
               width: iconExtent,
               height: iconExtent,
-              decoration: BoxDecoration(
+              decoration: ShapeDecoration(
                 color: highlight
                     ? theme.colorScheme.primaryContainer
                     : theme.colorScheme.surfaceContainerHighest.withValues(
                         alpha: 0.6,
                       ),
-                borderRadius: BorderRadius.circular(14),
+                shape: RoundedSuperellipseBorder(
+                  borderRadius: context.shapes.borderRadius(14),
+                ),
               ),
               alignment: Alignment.center,
               // 通过 IconTheme 统一图标尺寸和颜色（兼容 FaIcon 和 Icon）
@@ -143,9 +146,11 @@ class ToolCell extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       clipBehavior: Clip.antiAlias,
-      borderRadius: BorderRadius.circular(14),
+      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(14)),
       child: InkWell(
-        borderRadius: BorderRadius.circular(14),
+        customBorder: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(14),
+        ),
         onTap: onTap,
         onLongPress: onLongPress,
         child: ToolCellBody(

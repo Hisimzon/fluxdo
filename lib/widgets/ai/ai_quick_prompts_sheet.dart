@@ -1,5 +1,6 @@
 import 'package:ai_model_manager/ai_model_manager.dart';
 import 'package:flutter/material.dart';
+import 'package:common_ui/common_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -70,7 +71,7 @@ class _PromptPresetsSheet extends ConsumerWidget {
           onPressed: () {
             Navigator.of(context).pop();
             Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const PromptPresetsPage()),
+              InteractionPageRoute(builder: (_) => const PromptPresetsPage()),
             );
           },
         ),
@@ -164,9 +165,11 @@ class _PresetTile extends ConsumerWidget {
               width: 36,
               height: 36,
               alignment: Alignment.center,
-              decoration: BoxDecoration(
+              decoration: ShapeDecoration(
                 color: theme.colorScheme.surfaceContainerHigh,
-                borderRadius: BorderRadius.circular(8),
+                shape: RoundedSuperellipseBorder(
+                  borderRadius: context.shapes.borderRadius(8),
+                ),
               ),
               child: PresetIcon(
                 iconRaw: preset.iconRaw,
@@ -207,7 +210,9 @@ class _PresetTile extends ConsumerWidget {
               tooltip: preset.pinned
                   ? S.current.ai_quickPromptsUnpin
                   : S.current.ai_quickPromptsPin,
-              icon: Icon(Symbols.push_pin_rounded, fill: preset.pinned ? 1 : 0,
+              icon: Icon(
+                Symbols.push_pin_rounded,
+                fill: preset.pinned ? 1 : 0,
                 size: 18,
                 color: preset.pinned
                     ? theme.colorScheme.primary
@@ -228,11 +233,13 @@ class _PresetTile extends ConsumerWidget {
   Widget _miniBadge(ThemeData theme, String text, {bool dim = false}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: dim
             ? theme.colorScheme.surfaceContainerHighest
             : theme.colorScheme.primaryContainer.withValues(alpha: 0.6),
-        borderRadius: BorderRadius.circular(4),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: UiShapes.current.borderRadius(4),
+        ),
       ),
       child: Text(
         text,
@@ -255,7 +262,9 @@ class _PresetTile extends ConsumerWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: Icon(Symbols.push_pin_rounded, fill: preset.pinned ? 1 : 0,
+              leading: Icon(
+                Symbols.push_pin_rounded,
+                fill: preset.pinned ? 1 : 0,
               ),
               title: Text(
                 preset.pinned
@@ -276,7 +285,7 @@ class _PresetTile extends ConsumerWidget {
                 onTap: () {
                   Navigator.of(ctx).pop();
                   Navigator.of(context).push(
-                    MaterialPageRoute(
+                    InteractionPageRoute(
                       builder: (_) => PromptPresetEditPage(preset: preset),
                     ),
                   );
@@ -331,7 +340,7 @@ class _PresetTile extends ConsumerWidget {
   }
 
   Future<bool> _confirmDelete(BuildContext context, String name) async {
-    final result = await showDialog<bool>(
+    final result = await showInteractionDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         content: Text(S.current.ai_quickPromptsDeleteConfirm(name)),

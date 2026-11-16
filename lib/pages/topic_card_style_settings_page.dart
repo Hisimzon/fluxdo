@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:common_ui/common_ui.dart'
+    show showInteractionDialog, UiEmphasisContext;
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3e_ui/m3e_ui.dart';
@@ -84,7 +86,7 @@ class _TopicCardStyleSettingsPageState
       final l10n = context.l10n;
       final bool? confirmed;
       try {
-        confirmed = await showDialog<bool>(
+        confirmed = await showInteractionDialog<bool>(
           context: context,
           builder: (ctx) => AlertDialog(
             title: Text(l10n.topicCardStyle_fetchWarningTitle),
@@ -357,7 +359,7 @@ class _TopicCardStyleSettingsPageState
             children: [
               Icon(
                 Symbols.format_size_rounded,
-                color: theme.colorScheme.primary,
+                color: context.emphasis.accent,
               ),
               const SizedBox(width: 16),
               Expanded(
@@ -417,7 +419,7 @@ class _TopicCardStyleSettingsPageState
       secondary: Icon(
         icon,
         color: value
-            ? theme.colorScheme.primary
+            ? context.emphasis.accent
             : theme.colorScheme.onSurfaceVariant,
       ),
       value: value,
@@ -428,7 +430,7 @@ class _TopicCardStyleSettingsPageState
   Widget _buildSectionHeader(ThemeData theme, String title, IconData icon) {
     return Row(
       children: [
-        Icon(icon, size: 18, color: theme.colorScheme.primary),
+        Icon(icon, size: 18, color: context.emphasis.accent),
         const SizedBox(width: 8),
         Text(
           title,

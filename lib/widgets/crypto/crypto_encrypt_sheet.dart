@@ -4,6 +4,7 @@
 /// 对称算法输出 ENC1（默认）或 OpenSSL 兼容格式；编码/哈希/经典直接输出。
 library;
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -14,7 +15,8 @@ import '../../providers/secret_store_provider.dart';
 import '../../services/crypto/crypto_algorithm.dart';
 import '../../services/crypto/crypto_key_store.dart';
 import '../../services/crypto/crypto_toolbox.dart';
-import '../../services/crypto/algorithms/symmetric_algorithms.dart' show SymmetricAlgorithm;
+import '../../services/crypto/algorithms/symmetric_algorithms.dart'
+    show SymmetricAlgorithm;
 import '../../services/toast_service.dart';
 import '../common/app_bottom_sheet.dart';
 import 'crypto_algorithm_field.dart';
@@ -31,9 +33,8 @@ Future<String?> showCryptoEncryptSheet({
     context: context,
     style: AppSheetStyle.card,
     title: context.l10n.crypto_encryptTitle,
-    builder: (sheetContext) => CryptoEncryptSheet(
-      initialPlaintext: initialPlaintext,
-    ),
+    builder: (sheetContext) =>
+        CryptoEncryptSheet(initialPlaintext: initialPlaintext),
   );
 }
 
@@ -50,11 +51,13 @@ class _CryptoEncryptSheetState extends ConsumerState<CryptoEncryptSheet> {
   late final TextEditingController _plaintextController;
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _pemController = TextEditingController();
-  final TextEditingController _caesarController =
-      TextEditingController(text: '3');
+  final TextEditingController _caesarController = TextEditingController(
+    text: '3',
+  );
   final TextEditingController _vigenereController = TextEditingController();
-  final TextEditingController _railCountController =
-      TextEditingController(text: '2');
+  final TextEditingController _railCountController = TextEditingController(
+    text: '2',
+  );
 
   String _algorithmId = CryptoToolbox.defaultAlgorithmId;
   CryptoOutputFormat _outputFormat = CryptoOutputFormat.enc1;
@@ -68,8 +71,9 @@ class _CryptoEncryptSheetState extends ConsumerState<CryptoEncryptSheet> {
   @override
   void initState() {
     super.initState();
-    _plaintextController =
-        TextEditingController(text: widget.initialPlaintext ?? '');
+    _plaintextController = TextEditingController(
+      text: widget.initialPlaintext ?? '',
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final remember = ref.read(preferencesProvider).cryptoRememberPassword;
@@ -109,12 +113,12 @@ class _CryptoEncryptSheetState extends ConsumerState<CryptoEncryptSheet> {
   }
 
   CryptoParams _buildParams() => CryptoParams(
-        password: _passwordController.text,
-        rsaPem: _pemController.text,
-        caesarShift: int.tryParse(_caesarController.text) ?? 3,
-        vigenereKey: _vigenereController.text,
-        railCount: int.tryParse(_railCountController.text) ?? 2,
-      );
+    password: _passwordController.text,
+    rsaPem: _pemController.text,
+    caesarShift: int.tryParse(_caesarController.text) ?? 3,
+    vigenereKey: _vigenereController.text,
+    railCount: int.tryParse(_railCountController.text) ?? 2,
+  );
 
   Future<void> _encrypt() async {
     final plaintext = _plaintextController.text;
@@ -139,8 +143,7 @@ class _CryptoEncryptSheetState extends ConsumerState<CryptoEncryptSheet> {
       if (_rememberPassword &&
           algo.category == CryptoAlgorithmCategory.symmetric) {
         final store = ref.read(secretStoreProvider);
-        await CryptoKeyStore.rememberPassword(
-            store, _passwordController.text);
+        await CryptoKeyStore.rememberPassword(store, _passwordController.text);
         await _loadRememberedPasswords();
       }
     } on CryptoException catch (e) {
@@ -164,7 +167,7 @@ class _CryptoEncryptSheetState extends ConsumerState<CryptoEncryptSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-      TextField(
+          TextField(
             key: const ValueKey('crypto-encrypt-plaintext-input'),
             controller: _plaintextController,
             minLines: 3,
@@ -200,7 +203,9 @@ class _CryptoEncryptSheetState extends ConsumerState<CryptoEncryptSheet> {
               label: Text(s.crypto_encrypt),
               style: FilledButton.styleFrom(
                 padding: const EdgeInsets.symmetric(
-                    horizontal: 28, vertical: 12),
+                  horizontal: 28,
+                  vertical: 12,
+                ),
               ),
             ),
           ),
@@ -218,7 +223,11 @@ class _CryptoEncryptSheetState extends ConsumerState<CryptoEncryptSheet> {
     );
   }
 
-  Widget _buildKeyFields(ThemeData theme, AppLocalizations s, CryptoAlgorithm algo) {
+  Widget _buildKeyFields(
+    ThemeData theme,
+    AppLocalizations s,
+    CryptoAlgorithm algo,
+  ) {
     switch (algo.category) {
       case CryptoAlgorithmCategory.symmetric:
         return Column(
@@ -232,7 +241,9 @@ class _CryptoEncryptSheetState extends ConsumerState<CryptoEncryptSheet> {
                   children: [
                     for (final pw in _rememberedPasswords.take(3))
                       ActionChip(
-                        key: ValueKey('crypto-enc-remembered-pw-${pw.hashCode}'),
+                        key: ValueKey(
+                          'crypto-enc-remembered-pw-${pw.hashCode}',
+                        ),
                         label: Text(
                           pw.length > 10 ? '${pw.substring(0, 8)}…' : pw,
                         ),
@@ -259,8 +270,8 @@ class _CryptoEncryptSheetState extends ConsumerState<CryptoEncryptSheet> {
                         ? Icons.visibility_outlined
                         : Icons.visibility_off_outlined,
                   ),
-                  onPressed: () => setState(
-                      () => _obscurePassword = !_obscurePassword),
+                  onPressed: () =>
+                      setState(() => _obscurePassword = !_obscurePassword),
                 ),
               ),
             ),
@@ -275,8 +286,9 @@ class _CryptoEncryptSheetState extends ConsumerState<CryptoEncryptSheet> {
               controller: _pemController,
               minLines: 3,
               maxLines: 5,
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(fontFamily: 'monospace'),
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontFamily: 'monospace',
+              ),
               decoration: cryptoSheetInputDecoration(
                 theme,
                 labelText: s.crypto_rsaPublicKeyHint,
@@ -337,9 +349,13 @@ class _CryptoEncryptSheetState extends ConsumerState<CryptoEncryptSheet> {
           color: selected
               ? theme.colorScheme.primaryContainer.withValues(alpha: 0.6)
               : theme.colorScheme.surfaceContainerHigh,
-          borderRadius: BorderRadius.circular(12),
+          shape: RoundedSuperellipseBorder(
+            borderRadius: context.shapes.borderRadius(12),
+          ),
           child: InkWell(
-            borderRadius: BorderRadius.circular(12),
+            customBorder: RoundedSuperellipseBorder(
+              borderRadius: context.shapes.borderRadius(12),
+            ),
             onTap: () => setState(() {
               _outputFormat = format;
               _result = null;
@@ -353,7 +369,7 @@ class _CryptoEncryptSheetState extends ConsumerState<CryptoEncryptSheet> {
                     Icon(
                       Icons.check_circle_rounded,
                       size: 16,
-                      color: theme.colorScheme.primary,
+                      color: context.emphasis.selected,
                     ),
                     const SizedBox(width: 6),
                   ],
@@ -363,8 +379,9 @@ class _CryptoEncryptSheetState extends ConsumerState<CryptoEncryptSheet> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.bodySmall?.copyWith(
-                        fontWeight:
-                            selected ? FontWeight.w600 : FontWeight.w500,
+                        fontWeight: selected
+                            ? FontWeight.w600
+                            : FontWeight.w500,
                         color: selected
                             ? theme.colorScheme.onPrimaryContainer
                             : theme.colorScheme.onSurface,
@@ -386,8 +403,9 @@ class _CryptoEncryptSheetState extends ConsumerState<CryptoEncryptSheet> {
           padding: const EdgeInsets.only(left: 2, bottom: 6),
           child: Text(
             s.crypto_outputFormat,
-            style: theme.textTheme.bodySmall
-                ?.copyWith(color: theme.colorScheme.outline),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.outline,
+            ),
           ),
         ),
         Row(
@@ -403,7 +421,10 @@ class _CryptoEncryptSheetState extends ConsumerState<CryptoEncryptSheet> {
   }
 
   Widget _buildRememberRow(
-      ThemeData theme, AppLocalizations s, CryptoAlgorithm? algo) {
+    ThemeData theme,
+    AppLocalizations s,
+    CryptoAlgorithm? algo,
+  ) {
     if (algo?.category != CryptoAlgorithmCategory.symmetric ||
         !_rememberEnabled) {
       return const SizedBox.shrink();
@@ -417,8 +438,9 @@ class _CryptoEncryptSheetState extends ConsumerState<CryptoEncryptSheet> {
         Expanded(
           child: Text(
             '${s.crypto_rememberPassword}（${s.crypto_secureStorageNote}）',
-            style: theme.textTheme.bodySmall
-                ?.copyWith(color: theme.colorScheme.outline),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.outline,
+            ),
           ),
         ),
       ],

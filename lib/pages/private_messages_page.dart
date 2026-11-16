@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -14,6 +15,7 @@ import '../providers/preferences_provider.dart';
 import '../providers/shortcut_provider.dart';
 import '../utils/load_more_coordinator.dart';
 import '../widgets/common/paged_list_footer.dart';
+import '../widgets/layout/bottom_nav_clearance.dart';
 import '../widgets/layout/master_detail_layout.dart';
 import '../widgets/layout/pane_projection_back_scope.dart';
 import '../widgets/topic/topic_card_prewarmer.dart';
@@ -25,6 +27,7 @@ import '../widgets/desktop_refresh_indicator.dart';
 import '../l10n/s.dart';
 import 'topic_detail_page/topic_detail_page.dart';
 import 'topics_screen.dart' show PaneContentWidget;
+import '../theme/app_colors.dart';
 
 /// 内部 tab 动作：外层根据当前激活 filter 派发给对应子 widget。
 /// 用 nonce 让连续同类事件也能触发 Riverpod 监听。
@@ -184,11 +187,13 @@ class _PrivateMessagesPageState extends ConsumerState<PrivateMessagesPage>
         ),
         // 新建私信：此前只能从某个用户的头像菜单发起，对方没在可见处
         // 发过言就完全没有路径。对齐 Discourse 网页版私信列表的入口。
-        floatingActionButton: FloatingActionButton(
-          heroTag: 'composePm',
-          onPressed: _composeNewMessage,
-          tooltip: context.l10n.pm_newTitle,
-          child: const Icon(Icons.edit_rounded),
+        floatingActionButton: BottomNavClearance(
+          child: FloatingActionButton(
+            heroTag: 'composePm',
+            onPressed: _composeNewMessage,
+            tooltip: context.l10n.pm_newTitle,
+            child: const Icon(Icons.edit_rounded),
+          ),
         ),
       ),
     );
@@ -323,7 +328,7 @@ class _PrivateMessageTabViewState extends ConsumerState<_PrivateMessageTabView>
     }
     Navigator.push(
       context,
-      MaterialPageRoute(
+      InteractionPageRoute(
         builder: (_) => TopicDetailPage(
           topicId: topic.id,
           scrollToPostNumber: topic.lastReadPostNumber,
@@ -392,11 +397,11 @@ class _PrivateMessageTabViewState extends ConsumerState<_PrivateMessageTabView>
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Symbols.mail_rounded, size: 64, color: Colors.grey),
+                  Icon(Symbols.mail_rounded, size: 64, color: context.appColors.grey),
                   const SizedBox(height: 16),
                   Text(
                     context.l10n.privateMessages_empty,
-                    style: const TextStyle(color: Colors.grey),
+                    style: TextStyle(color: context.appColors.grey),
                   ),
                 ],
               ),

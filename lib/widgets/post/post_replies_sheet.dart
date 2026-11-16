@@ -1,7 +1,12 @@
+import 'dart:async';
+
+import 'package:common_ui/common_ui.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:positioned_sliver_list/positioned_sliver_list.dart';
+
 import '../../l10n/s.dart';
 import '../../utils/dialog_utils.dart';
 import '../../models/topic.dart';
@@ -15,7 +20,10 @@ import '../../utils/html_text_mapper.dart';
 import '../../utils/html_to_markdown.dart';
 import '../../utils/quote_builder.dart';
 import '../common/app_bottom_sheet.dart';
+import '../common/positioned_stream_list.dart';
+
 import 'package:m3e_ui/m3e_ui.dart';
+
 import '../../utils/fluxdo_render_callbacks.dart';
 import 'post_item/quote_selection_helper.dart';
 import '../crypto/crypto_decrypt_sheet.dart';
@@ -76,7 +84,8 @@ class _PostRepliesSheetContentState
     extends ConsumerState<_PostRepliesSheetContent> {
   static const int _batchSize = 20;
 
-  final DiscourseService _service = DiscourseService();
+  late final DiscourseService _service = ref.read(discourseServiceProvider);
+  final ListController _listController = ListController();
   final List<Post> _replies = [];
   List<int> _allReplyIds = [];
   bool _isLoading = true;
@@ -84,8 +93,8 @@ class _PostRepliesSheetContentState
   String? _error;
 
   // 弹框内跳转高亮
-  final Map<int, GlobalKey> _postKeys = {};
   int? _highlightPostNumber;
+  Timer? _highlightTimer;
 
   // 阅读时长上报
   late final ScreenTrack _screenTrack;
@@ -116,6 +125,8 @@ class _PostRepliesSheetContentState
   @override
   void dispose() {
     _screenTrack.stop();
+    _highlightTimer?.cancel();
+    _listController.dispose();
     super.dispose();
   }
 
@@ -193,21 +204,21 @@ class _PostRepliesSheetContentState
     widget.onJumpToPost?.call(postNumber);
   }
 
-  GlobalKey _keyForPost(int postNumber) {
-    return _postKeys.putIfAbsent(postNumber, () => GlobalKey());
-  }
-
-  void _scrollToAndHighlight(int postNumber) {
-    final key = _postKeys[postNumber];
-    if (key?.currentContext == null) return;
-    Scrollable.ensureVisible(
-      key!.currentContext!,
+  Future<void> _scrollToAndHighlight(int postNumber) async {
+    if (!_listController.isAttached) return;
+    final replyIndex = _replies.indexWhere(
+      (post) => post.postNumber == postNumber,
+    );
+    if (postNumber != widget.post.postNumber && replyIndex < 0) return;
+    await _listController.scrollToIndex(
+      postNumber == widget.post.postNumber ? 0 : replyIndex + 2,
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeOutCubic,
-      alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtStart,
     );
+    if (!mounted) return;
+    _highlightTimer?.cancel();
     setState(() => _highlightPostNumber = postNumber);
-    Future.delayed(const Duration(seconds: 2), () {
+    _highlightTimer = Timer(const Duration(seconds: 2), () {
       if (mounted) setState(() => _highlightPostNumber = null);
     });
   }
@@ -373,22 +384,44 @@ class _PostRepliesSheetContentState
 
     return NotificationListener<ScrollNotification>(
       onNotification: _handleScrollNotification,
-      child: ListView.builder(
-        controller: scrollController,
-        padding: const EdgeInsets.fromLTRB(12, 8, 12, 16),
-        itemCount: itemCount,
+      child: PositionedStreamList(
+        scrollController: scrollController,
+        listController: _listController,
+        positionKey: widget.post.id,
+        initialIndex: null,
+        cacheExtent: 300,
+        physics: const ScrollPhysics(),
+        itemKeys: [
+          'post-${widget.post.id}',
+          if (hasReplies) ...[
+            'replies-divider',
+            for (final reply in _replies) 'post-${reply.id}',
+            if (_canLoadMore) 'load-more',
+          ],
+        ],
         itemBuilder: (context, index) {
-          // 第 0 项：始终显示当前帖子
-          if (index == 0) return _buildPostCard(theme, widget.post);
-          if (!hasReplies) return const SizedBox.shrink();
-          // 第 1 项：回复分隔标题
-          if (index == 1) return _buildRepliesDivider(theme);
-          final replyIndex = index - 2;
-          if (replyIndex == _replies.length) return _buildLoadMore(theme);
-          final reply = _replies[replyIndex];
-          return _isDirectReply(reply)
-              ? _buildPostCard(theme, reply)
-              : _buildNestedReplyCard(theme, reply);
+          final Widget child;
+          if (index == 0) {
+            child = _buildPostCard(theme, widget.post);
+          } else if (index == 1) {
+            child = _buildRepliesDivider(theme);
+          } else if (index - 2 == _replies.length) {
+            child = _buildLoadMore(theme);
+          } else {
+            final reply = _replies[index - 2];
+            child = _isDirectReply(reply)
+                ? _buildPostCard(theme, reply)
+                : _buildNestedReplyCard(theme, reply);
+          }
+          return Padding(
+            padding: EdgeInsets.fromLTRB(
+              12,
+              index == 0 ? 8 : 0,
+              12,
+              index == itemCount - 1 ? 16 : 0,
+            ),
+            child: child,
+          );
         },
       ),
     );
@@ -406,9 +439,11 @@ class _PostRepliesSheetContentState
           Container(
             width: 3,
             height: 14,
-            decoration: BoxDecoration(
+            decoration: ShapeDecoration(
               color: theme.colorScheme.primary,
-              borderRadius: BorderRadius.circular(1.5),
+              shape: RoundedSuperellipseBorder(
+                borderRadius: context.shapes.borderRadius(1.5),
+              ),
             ),
           ),
           const SizedBox(width: 8),
@@ -427,15 +462,16 @@ class _PostRepliesSheetContentState
   Widget _buildPostCard(ThemeData theme, Post post) {
     final isHighlighted = _highlightPostNumber == post.postNumber;
     return AnimatedContainer(
-      key: _keyForPost(post.postNumber),
       duration: const Duration(milliseconds: 300),
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(vertical: 8),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: isHighlighted
             ? theme.colorScheme.primaryContainer.withValues(alpha: 0.3)
             : theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(12),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(12),
+        ),
       ),
       child: _buildPostContent(post),
     );
@@ -446,24 +482,25 @@ class _PostRepliesSheetContentState
     final isHighlighted = _highlightPostNumber == reply.postNumber;
     return Padding(
       padding: const EdgeInsets.only(left: 20),
-      child: AnimatedContainer(
-        key: _keyForPost(reply.postNumber),
-        duration: const Duration(milliseconds: 300),
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        decoration: BoxDecoration(
-          color: isHighlighted
-              ? theme.colorScheme.primaryContainer.withValues(alpha: 0.3)
-              : theme.colorScheme.surface,
-          borderRadius: BorderRadius.circular(12),
-          border: Border(
-            left: BorderSide(
-              color: theme.colorScheme.primary.withValues(alpha: 0.3),
-              width: 3,
+      child: ClipRSuperellipse(
+        borderRadius: context.shapes.borderRadius(12),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          decoration: BoxDecoration(
+            color: isHighlighted
+                ? theme.colorScheme.primaryContainer.withValues(alpha: 0.3)
+                : theme.colorScheme.surface,
+            border: Border(
+              left: BorderSide(
+                color: theme.colorScheme.primary.withValues(alpha: 0.3),
+                width: 3,
+              ),
             ),
           ),
+          child: _buildPostContent(reply),
         ),
-        child: _buildPostContent(reply),
       ),
     );
   }
@@ -500,9 +537,8 @@ class _PostRepliesSheetContentState
                 topicId: widget.topicId,
               ).render(
                 cookedHtml: post.cooked,
-                baseTextStyle: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(fontSize: 14, height: 1.5),
+                baseTextStyle: Theme.of(context).textTheme.bodySmall
+                    ?.copyWith(fontSize: 14, height: 1.5),
                 compact: true,
                 selectionEnabled: _isLoggedIn,
                 onQuoteRequest: _isLoggedIn

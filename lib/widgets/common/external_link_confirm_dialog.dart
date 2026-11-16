@@ -1,22 +1,35 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
+
 import '../../config/site_customization.dart';
 import '../../l10n/s.dart';
 import '../../services/toast_service.dart';
 import '../../utils/dialog_utils.dart';
 import 'app_bottom_sheet.dart';
+import '../../theme/app_colors.dart';
+
+/// 外部链接本次选择的打开方式。
+enum ExternalLinkOpenChoice { systemBrowser, inAppBrowser }
 
 /// 显示外部链接确认对话框
 ///
-/// 返回 `true` 表示用户确认继续访问，`false` 或 `null` 表示取消
-Future<bool?> showExternalLinkConfirmDialog(
+/// 返回本次打开方式，`null` 表示取消或关闭。
+Future<ExternalLinkOpenChoice?> showExternalLinkConfirmDialog(
   BuildContext context,
   String url,
-  LinkRiskLevel riskLevel,
-) {
-  return showAppBottomSheet<bool>(
+  LinkRiskLevel riskLevel, {
+  bool filterBackdrop = true,
+  ValueListenable<bool>? blurReady,
+  ValueChanged<double>? onBlurSigmaChanged,
+}) {
+  return showAppBottomSheet<ExternalLinkOpenChoice>(
     context: context,
+    filterBackdrop: filterBackdrop,
+    blurReady: blurReady,
+    onBlurSigmaChanged: onBlurSigmaChanged,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
     enableDrag: false, // 确认弹框:禁止下滑误关
@@ -26,9 +39,18 @@ Future<bool?> showExternalLinkConfirmDialog(
 }
 
 /// 显示链接被阻止的提示
-Future<void> showLinkBlockedDialog(BuildContext context, String url) {
+Future<void> showLinkBlockedDialog(
+  BuildContext context,
+  String url, {
+  bool filterBackdrop = true,
+  ValueListenable<bool>? blurReady,
+  ValueChanged<double>? onBlurSigmaChanged,
+}) {
   return showAppBottomSheet(
     context: context,
+    filterBackdrop: filterBackdrop,
+    blurReady: blurReady,
+    onBlurSigmaChanged: onBlurSigmaChanged,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
     enableDrag: false, // 提示弹框:禁止下滑误关
@@ -45,181 +67,216 @@ class _ExternalLinkConfirmSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final config = _getConfigForLevel(riskLevel, theme);
+    final config = _getConfigForLevel(context, riskLevel, theme);
     final urlInfo = _parseUrl(url);
+    final uri = Uri.tryParse(url);
+    final canOpenInApp = uri?.scheme == 'http' || uri?.scheme == 'https';
 
     return AppSheetScaffold(
       style: AppSheetStyle.card,
       contentPadding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // 顶部图标和标题
-          Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(
-              color: config.color.withValues(alpha: 0.12),
-              shape: BoxShape.circle,
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // 顶部图标和标题
+            Container(
+              width: 56,
+              height: 56,
+              decoration: ShapeDecoration(
+                color: config.color.withValues(alpha: 0.12),
+                shape: context.shapes.circle(),
+              ),
+              child: Icon(config.icon, color: config.color, size: 28),
             ),
-            child: Icon(config.icon, color: config.color, size: 28),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            config.title,
-            style: theme.textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.w500,
+            const SizedBox(height: 16),
+            Text(
+              config.title,
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w500,
+              ),
             ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            config.message,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
+            const SizedBox(height: 8),
+            Text(
+              config.message,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              textAlign: TextAlign.center,
             ),
-            textAlign: TextAlign.center,
-          ),
 
-          const SizedBox(height: 20),
+            const SizedBox(height: 20),
 
-          // URL 显示区域
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: theme.colorScheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(12),
+            // URL 显示区域
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: ShapeDecoration(
+                color: theme.colorScheme.surfaceContainerHighest,
+                shape: RoundedSuperellipseBorder(
+                  borderRadius: context.shapes.borderRadius(12),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 域名高亮显示
+                  Row(
+                    children: [
+                      Icon(
+                        Symbols.language_rounded,
+                        size: 16,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          urlInfo.host,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w500,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      // 复制按钮
+                      GestureDetector(
+                        onTap: () => _copyUrl(context),
+                        child: Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: ShapeDecoration(
+                            color: theme.colorScheme.surfaceContainerLow,
+                            shape: RoundedSuperellipseBorder(
+                              borderRadius: context.shapes.borderRadius(6),
+                            ),
+                          ),
+                          child: Icon(
+                            Symbols.content_copy_rounded,
+                            size: 16,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (urlInfo.path.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      urlInfo.path,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                        fontFamily: 'monospace',
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ],
+              ),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // 域名高亮显示
-                Row(
+
+            // 警告提示
+            if (config.warning != null) ...[
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: ShapeDecoration(
+                  color: config.color.withValues(alpha: 0.08),
+                  shape: RoundedSuperellipseBorder(
+                    borderRadius: context.shapes.borderRadius(12),
+                    side: BorderSide(
+                      color: config.color.withValues(alpha: 0.2),
+                    ),
+                  ),
+                ),
+                child: Row(
                   children: [
                     Icon(
-                      Symbols.language_rounded,
-                      size: 16,
-                      color: theme.colorScheme.onSurfaceVariant,
+                      Symbols.warning_amber_rounded,
+                      color: config.color,
+                      size: 20,
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        urlInfo.host,
-                        style: theme.textTheme.titleSmall?.copyWith(
+                        config.warning!,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: config.color,
                           fontWeight: FontWeight.w500,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    // 复制按钮
-                    GestureDetector(
-                      onTap: () => _copyUrl(context),
-                      child: Container(
-                        padding: const EdgeInsets.all(6),
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.surfaceContainerLow,
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Icon(
-                          Symbols.content_copy_rounded,
-                          size: 16,
-                          color: theme.colorScheme.onSurfaceVariant,
                         ),
                       ),
                     ),
                   ],
                 ),
-                if (urlInfo.path.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    urlInfo.path,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                      fontFamily: 'monospace',
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ],
-            ),
-          ),
-
-          // 警告提示
-          if (config.warning != null) ...[
-            const SizedBox(height: 12),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: config.color.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: config.color.withValues(alpha: 0.2)),
               ),
-              child: Row(
-                children: [
-                  Icon(
-                    Symbols.warning_amber_rounded,
-                    color: config.color,
-                    size: 20,
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      config.warning!,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: config.color,
-                        fontWeight: FontWeight.w500,
+            ],
+
+            const SizedBox(height: 24),
+
+            // 操作按钮
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedSuperellipseBorder(
+                        borderRadius: context.shapes.borderRadius(12),
                       ),
                     ),
+                    child: Text(context.l10n.common_cancel),
                   ),
-                ],
-              ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: FilledButton(
+                    onPressed: () => Navigator.pop(
+                      context,
+                      ExternalLinkOpenChoice.systemBrowser,
+                    ),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: config.buttonColor,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedSuperellipseBorder(
+                        borderRadius: context.shapes.borderRadius(12),
+                      ),
+                    ),
+                    child: Text(context.l10n.externalLink_openInSystemBrowser),
+                  ),
+                ),
+              ],
             ),
-          ],
-
-          const SizedBox(height: 24),
-
-          // 操作按钮
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () => Navigator.pop(context, false),
+            if (canOpenInApp) ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () => Navigator.pop(
+                    context,
+                    ExternalLinkOpenChoice.inAppBrowser,
+                  ),
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                    shape: RoundedSuperellipseBorder(
+                      borderRadius: context.shapes.borderRadius(12),
                     ),
                   ),
-                  child: Text(context.l10n.common_cancel),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: FilledButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: config.buttonColor,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: Text(context.l10n.common_continueVisit),
+                  icon: const Icon(Symbols.open_in_browser_rounded, size: 18),
+                  label: Text(context.l10n.externalLink_openInAppBrowser),
                 ),
               ),
             ],
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
   void _copyUrl(BuildContext context) {
     Clipboard.setData(ClipboardData(text: url));
-    ToastService.showSuccess(S.current.common_linkCopied);
+    ToastService.showSuccess(context.l10n.common_linkCopied);
   }
 
   _UrlInfo _parseUrl(String url) {
@@ -229,8 +286,12 @@ class _ExternalLinkConfirmSheet extends StatelessWidget {
     return _UrlInfo(host: uri.host, path: path);
   }
 
-  _DialogConfig _getConfigForLevel(LinkRiskLevel level, ThemeData theme) {
-    final l10n = S.current;
+  _DialogConfig _getConfigForLevel(
+    BuildContext context,
+    LinkRiskLevel level,
+    ThemeData theme,
+  ) {
+    final l10n = context.l10n;
     switch (level) {
       case LinkRiskLevel.normal:
         return _DialogConfig(
@@ -243,8 +304,8 @@ class _ExternalLinkConfirmSheet extends StatelessWidget {
       case LinkRiskLevel.risky:
         return _DialogConfig(
           icon: Symbols.link_off_rounded,
-          color: Colors.orange,
-          buttonColor: Colors.orange,
+          color: context.appColors.orange,
+          buttonColor: context.appColors.orange,
           title: l10n.externalLink_shortLinkTitle,
           message: l10n.externalLink_shortLinkMessage,
           warning: l10n.externalLink_shortLinkWarning,
@@ -252,8 +313,8 @@ class _ExternalLinkConfirmSheet extends StatelessWidget {
       case LinkRiskLevel.dangerous:
         return _DialogConfig(
           icon: Symbols.shield_rounded,
-          color: Colors.red,
-          buttonColor: Colors.red,
+          color: context.appColors.red,
+          buttonColor: context.appColors.red,
           title: l10n.externalLink_securityWarningTitle,
           message: l10n.externalLink_securityWarningMessage,
           warning: l10n.externalLink_securityWarningHint,
@@ -316,11 +377,15 @@ class _LinkBlockedSheet extends StatelessWidget {
           Container(
             width: 56,
             height: 56,
-            decoration: BoxDecoration(
-              color: Colors.red.withValues(alpha: 0.12),
-              shape: BoxShape.circle,
+            decoration: ShapeDecoration(
+              color: context.appColors.red.withValues(alpha: 0.12),
+              shape: context.shapes.circle(),
             ),
-            child: const Icon(Symbols.block_rounded, color: Colors.red, size: 28),
+            child: Icon(
+              Symbols.block_rounded,
+              color: context.appColors.red,
+              size: 28,
+            ),
           ),
           const SizedBox(height: 16),
           Text(
@@ -344,10 +409,14 @@ class _LinkBlockedSheet extends StatelessWidget {
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.red.withValues(alpha: 0.06),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.red.withValues(alpha: 0.15)),
+            decoration: ShapeDecoration(
+              color: context.appColors.red.withValues(alpha: 0.06),
+              shape: RoundedSuperellipseBorder(
+                borderRadius: context.shapes.borderRadius(12),
+                side: BorderSide(
+                  color: context.appColors.red.withValues(alpha: 0.15),
+                ),
+              ),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -355,14 +424,14 @@ class _LinkBlockedSheet extends StatelessWidget {
                 Icon(
                   Symbols.dangerous_rounded,
                   size: 18,
-                  color: Colors.red.shade400,
+                  color: context.appColors.red.shade400,
                 ),
                 const SizedBox(width: 10),
                 Flexible(
                   child: Text(
                     host,
                     style: theme.textTheme.titleSmall?.copyWith(
-                      color: Colors.red.shade700,
+                      color: context.appColors.red.shade700,
                       fontWeight: FontWeight.w500,
                     ),
                     maxLines: 1,
@@ -379,9 +448,11 @@ class _LinkBlockedSheet extends StatelessWidget {
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
+            decoration: ShapeDecoration(
               color: theme.colorScheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(12),
+              shape: RoundedSuperellipseBorder(
+                borderRadius: context.shapes.borderRadius(12),
+              ),
             ),
             child: Row(
               children: [
@@ -412,8 +483,8 @@ class _LinkBlockedSheet extends StatelessWidget {
               onPressed: () => Navigator.pop(context),
               style: FilledButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+                shape: RoundedSuperellipseBorder(
+                  borderRadius: context.shapes.borderRadius(12),
                 ),
               ),
               child: Text(context.l10n.common_understood),

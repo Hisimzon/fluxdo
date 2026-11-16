@@ -17,7 +17,7 @@ class _ThreadEntryCard extends StatelessWidget {
     final participants = thread.participants.take(3).toList();
     return Material(
       color: theme.colorScheme.surfaceContainerHigh.withValues(alpha: 0.5),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(12)),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
@@ -67,7 +67,7 @@ class _ThreadEntryCard extends StatelessWidget {
                   Icon(
                     Symbols.forum_rounded,
                     size: 20,
-                    color: theme.colorScheme.primary,
+                    color: context.emphasis.accent,
                   ),
                 const SizedBox(width: 8),
                 Expanded(
@@ -78,7 +78,7 @@ class _ThreadEntryCard extends StatelessWidget {
                       Text(
                         S.current.chat_threadReplies(thread.replyCount),
                         style: theme.textTheme.labelMedium?.copyWith(
-                          color: theme.colorScheme.primary,
+                          color: context.emphasis.accent,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
@@ -159,8 +159,8 @@ class _ReactionChip extends StatelessWidget {
       color: reaction.reacted
           ? theme.colorScheme.primary.withValues(alpha: 0.12)
           : theme.colorScheme.surfaceContainerHigh.withValues(alpha: 0.6),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
+      shape: RoundedSuperellipseBorder(
+        borderRadius: context.shapes.borderRadius(8),
         side: BorderSide(
           color: reaction.reacted
               ? theme.colorScheme.primary.withValues(alpha: 0.7)
@@ -170,7 +170,9 @@ class _ReactionChip extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         onLongPress: onLongPress,
-        borderRadius: BorderRadius.circular(8),
+        customBorder: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(8),
+        ),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
           child: Row(
@@ -216,15 +218,17 @@ class _AddReactionChip extends StatelessWidget {
     final theme = Theme.of(context);
     return Material(
       color: theme.colorScheme.surfaceContainerHigh.withValues(alpha: 0.6),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
+      shape: RoundedSuperellipseBorder(
+        borderRadius: context.shapes.borderRadius(8),
         side: BorderSide(
           color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3),
         ),
       ),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
+        customBorder: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(8),
+        ),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
           child: Icon(

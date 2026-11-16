@@ -5,6 +5,7 @@
 list(APPEND FLUTTER_PLUGIN_LIST
   app_links
   connectivity_plus
+  desktop_multi_window
   dynamic_color
   file_selector_windows
   flutter_acrylic
@@ -32,7 +33,6 @@ list(APPEND FLUTTER_FFI_PLUGIN_LIST
   flutter_local_notifications_windows
   jni
   native_animated_image_windows
-  rhttp
 )
 
 set(PLUGIN_BUNDLED_LIBRARIES)

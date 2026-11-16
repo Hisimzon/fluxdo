@@ -3,20 +3,16 @@ import 'package:flutter/scheduler.dart';
 
 import '../providers/theme_provider.dart';
 import '../theme/app_palettes.dart';
+import '../theme/theme_preview_cache.dart';
+import '../theme/theme_registry.dart';
+import '../theme/theme_spec.dart';
 import 'seed_color_scheme.dart';
 
 /// 外观设置页首帧开销的预热。
 ///
-/// 首次进入外观设置页会一次性付两笔昂贵开销，叠加起来明显掉帧；再次进入
-/// 时因引擎与 [SeedColorScheme] 都已缓存，所以只有第一次会顿：
-///
-/// 1. **MiSans 懒加载** — 引擎读 `FontManifest.json` 时只登记
-///    family → asset 映射（`AssetManagerFontProvider::RegisterAsset`），真正
-///    读取并解析 asset 字体发生在首次匹配该 family 时。字体分组里那行
-///    `TextStyle(fontFamily: 'MiSans')` 是用户未选 MiSans 时全 App 唯一的
-///    MiSans 用点，于是 19MB 可变字体的读取与 typeface 创建全落在这一帧，
-///    实测约 35ms。
-/// 2. **色卡网格的种子配色计算** — 原因见 [SeedColorScheme]。
+/// 首次进入外观设置页要为色卡网格、配色风格卡、主题模式卡与主题画廊
+/// 计算几十套配色（原因见 [SeedColorScheme]、[ThemePreviewCache]），集中
+/// 在首帧会明显掉帧；再次进入时都已缓存，所以只有第一次会顿。
 ///
 /// 预热挂在进入设置页时：此时界面静止，且用户还要再点一次才进外观页，
 /// 用 idle 优先级逐项排队（每项 1~2ms），既不与转场动画抢帧，也来得及做完。
@@ -25,13 +21,14 @@ import 'seed_color_scheme.dart';
 /// 一致，否则白预热还占缓存：
 /// - 色卡网格（调色板/动态色/自定义色）：跟随当前 schemeVariant；
 /// - 主题模式卡：当前生效种子 × 亮/暗两种预览；
-/// - 配色风格卡：当前生效种子 × 9 种风格。
+/// - 配色风格卡：当前生效种子 × 9 种风格；
+/// - 主题画廊：全部主题的缩略图配色（[ThemePreviewCache]）。
 class AppearanceWarmup {
   AppearanceWarmup._();
 
-  /// 上次预热依据的 (来源, 种子色, 配色风格, 亮暗)，用于避免重复排任务；
-  /// 主题变更后签名不同，会按新配色重新预热。
-  static (int, int, int, int)? _lastSignature;
+  /// 上次预热依据的配色签名，用于避免重复排任务；主题、强调色等变更
+  /// 后签名不同，会按新配色重新预热。
+  static Object? _lastSignature;
 
   static void schedule({
     required ThemeState themeState,
@@ -43,6 +40,11 @@ class AppearanceWarmup {
       themeState.effectiveSeedColor.toARGB32(),
       variant.index,
       brightness.index,
+      themeState.themeId,
+      Object.hashAllUnordered(
+        themeState.themeAccents.entries.map((e) => '${e.key}=${e.value}'),
+      ),
+      themeState.blackEnabled,
     );
     if (signature == _lastSignature) return;
     _lastSignature = signature;
@@ -50,8 +52,6 @@ class AppearanceWarmup {
     final scheduler = SchedulerBinding.instance;
     void queue(void Function() task) =>
         scheduler.scheduleTask(task, Priority.idle);
-
-    queue(_warmUpMiSansTypeface);
 
     // 色卡网格：动态色卡 + 内置调色板（跟随当前配色风格）
     for (final seed in <Color>{
@@ -99,18 +99,22 @@ class AppearanceWarmup {
         ),
       );
     }
-  }
 
-  /// 排版一次 MiSans 文本，触发字体 asset 的读取与 typeface 创建。
-  static void _warmUpMiSansTypeface() {
-    TextPainter(
-        text: const TextSpan(
-          text: 'MiSans',
-          style: TextStyle(fontFamily: 'MiSans'),
+    // 主题画廊：每个主题一张缩略图（同族只画当前或族内第一个，这里
+    // 全族预热，多出的几项代价可忽略）
+    for (final spec in ThemeRegistry.all.where(
+      (s) => s.group != ThemeGroup.festival,
+    )) {
+      queue(
+        () => ThemePreviewCache.schemeOf(
+          spec: spec,
+          brightness: brightness,
+          accentId: themeState.accentFor(spec),
+          seed: themeState.effectiveSeedColor,
+          variant: variant,
+          black: themeState.blackEnabled,
         ),
-        textDirection: TextDirection.ltr,
-      )
-      ..layout()
-      ..dispose();
+      );
+    }
   }
 }

@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/gestures.dart'
     show
         DelayedMultiDragGestureRecognizer,
@@ -21,6 +22,7 @@ import '../settings/settings_model.dart';
 import '../settings/settings_renderer.dart';
 import '../utils/dialog_utils.dart';
 import '../utils/responsive.dart';
+
 import 'package:m3e_ui/m3e_ui.dart';
 
 /// 底栏设置页
@@ -45,8 +47,7 @@ class BottomNavSettingsPage extends ConsumerStatefulWidget {
       _BottomNavSettingsPageState();
 }
 
-class _BottomNavSettingsPageState
-    extends ConsumerState<BottomNavSettingsPage> {
+class _BottomNavSettingsPageState extends ConsumerState<BottomNavSettingsPage> {
   static const int _minCount = 2;
 
   /// 搜索跳转定位:手势分组条目的锚点与高亮(与 SettingsGroupPage 同机制;
@@ -72,9 +73,7 @@ class _BottomNavSettingsPageState
   @override
   void initState() {
     super.initState();
-    _enabledIds = List<String>.from(
-      ref.read(preferencesProvider).bottomNavIds,
-    );
+    _enabledIds = List<String>.from(ref.read(preferencesProvider).bottomNavIds);
     _sanitize();
     if (widget.highlightId != null) {
       _highlightedId = widget.highlightId;
@@ -150,9 +149,7 @@ class _BottomNavSettingsPageState
 
   Future<void> _addEntry(NavEntry entry) async {
     if (_enabledIds.length >= _maxCount) {
-      ToastService.showInfo(
-        S.current.bottomNav_editorMaxReached(_maxCount),
-      );
+      ToastService.showInfo(S.current.bottomNav_editorMaxReached(_maxCount));
       return;
     }
     setState(() => _enabledIds.add(entry.id));
@@ -162,9 +159,7 @@ class _BottomNavSettingsPageState
   Future<void> _removeEntry(NavEntry entry) async {
     if (entry.locked) return;
     if (_enabledIds.length <= _minCount) {
-      ToastService.showInfo(
-        S.current.bottomNav_editorMinReached(_minCount),
-      );
+      ToastService.showInfo(S.current.bottomNav_editorMinReached(_minCount));
       return;
     }
     setState(() => _enabledIds.remove(entry.id));
@@ -204,10 +199,11 @@ class _BottomNavSettingsPageState
 
     final all = NavEntryRegistry.buildAll();
     final byId = {for (final e in all) e.id: e};
-    final enabled =
-        _enabledIds.map((id) => byId[id]).whereType<NavEntry>().toList();
-    final available =
-        all.where((e) => !_enabledIds.contains(e.id)).toList();
+    final enabled = _enabledIds
+        .map((id) => byId[id])
+        .whereType<NavEntry>()
+        .toList();
+    final available = all.where((e) => !_enabledIds.contains(e.id)).toList();
 
     return Scaffold(
       appBar: AppBar(
@@ -256,15 +252,13 @@ class _BottomNavSettingsPageState
           const SizedBox(height: 20),
           _SectionHeader(
             title: l10n.bottomNav_editorAvailable,
-            subtitle:
-                available.isEmpty ? l10n.bottomNav_editorEmptyAvailable : null,
+            subtitle: available.isEmpty
+                ? l10n.bottomNav_editorEmptyAvailable
+                : null,
           ),
           if (available.isEmpty)
             Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 24,
-                vertical: 12,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               child: Text(
                 l10n.bottomNav_editorEmptyAvailable,
                 style: theme.textTheme.bodySmall?.copyWith(
@@ -280,10 +274,8 @@ class _BottomNavSettingsPageState
                   for (final entry in available)
                     _AvailableTile(
                       entry: entry,
-                      canAdd: NavEntryRegistry.isAvailable(
-                            entry,
-                            user,
-                          ) &&
+                      canAdd:
+                          NavEntryRegistry.isAvailable(entry, user) &&
                           enabled.length < _maxCount,
                       needsLogin: entry.requiresLogin && user == null,
                       onAdd: () => _addEntry(entry),
@@ -358,9 +350,11 @@ class _PreviewBar extends StatelessWidget {
     final theme = Theme.of(context);
     return Container(
       height: 108,
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(20),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(20),
+        ),
       ),
       clipBehavior: Clip.antiAlias,
       child: ReorderableListView.builder(
@@ -382,7 +376,9 @@ class _PreviewBar extends StatelessWidget {
                   color: Colors.transparent,
                   elevation: 12 * lift,
                   shadowColor: Colors.black.withValues(alpha: 0.4),
-                  borderRadius: BorderRadius.circular(20),
+                  shape: RoundedSuperellipseBorder(
+                    borderRadius: context.shapes.borderRadius(20),
+                  ),
                   child: c,
                 ),
               );
@@ -443,9 +439,11 @@ class _PreviewItem extends StatelessWidget {
                   Container(
                     width: 64,
                     height: 36,
-                    decoration: BoxDecoration(
+                    decoration: ShapeDecoration(
                       color: theme.colorScheme.secondaryContainer,
-                      borderRadius: BorderRadius.circular(18),
+                      shape: RoundedSuperellipseBorder(
+                        borderRadius: context.shapes.borderRadius(18),
+                      ),
                     ),
                     alignment: Alignment.center,
                     child: Icon(
@@ -464,12 +462,13 @@ class _PreviewItem extends StatelessWidget {
                         child: Container(
                           width: 20,
                           height: 20,
-                          decoration: BoxDecoration(
+                          decoration: ShapeDecoration(
                             color: theme.colorScheme.errorContainer,
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: theme.colorScheme.surface,
-                              width: 1.5,
+                            shape: context.shapes.circle(
+                              side: BorderSide(
+                                color: theme.colorScheme.surface,
+                                width: 1.5,
+                              ),
                             ),
                           ),
                           child: Icon(
@@ -487,8 +486,9 @@ class _PreviewItem extends StatelessWidget {
                       child: Icon(
                         Symbols.lock_rounded,
                         size: 14,
-                        color: theme.colorScheme.onSurfaceVariant
-                            .withValues(alpha: 0.55),
+                        color: theme.colorScheme.onSurfaceVariant.withValues(
+                          alpha: 0.55,
+                        ),
                       ),
                     ),
                 ],
@@ -540,8 +540,7 @@ class _PointerAwareDragStartListener extends StatelessWidget {
         final list = SliverReorderableList.maybeOf(context);
         if (list == null) return;
         final recognizer = switch (event.kind) {
-          PointerDeviceKind.mouse ||
-          PointerDeviceKind.trackpad =>
+          PointerDeviceKind.mouse || PointerDeviceKind.trackpad =>
             ImmediateMultiDragGestureRecognizer(debugOwner: this),
           _ => DelayedMultiDragGestureRecognizer(debugOwner: this),
         };
@@ -616,8 +615,9 @@ class _GestureGroup extends ConsumerWidget {
     final theme = Theme.of(context);
     // 隐藏项（如依赖前置开关的条目）不进卡片组，否则零高占位会顶掉
     // 组尾的大圆角（SegmentedCardGroup 按位置分配圆角）
-    final visibleItems =
-        group.items.where((item) => item.isVisible(ref)).toList();
+    final visibleItems = group.items
+        .where((item) => item.isVisible(ref))
+        .toList();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -625,7 +625,7 @@ class _GestureGroup extends ConsumerWidget {
           padding: const EdgeInsets.fromLTRB(24, 8, 24, 8),
           child: Row(
             children: [
-              Icon(group.icon, size: 18, color: theme.colorScheme.primary),
+              Icon(group.icon, size: 18, color: context.emphasis.accent),
               const SizedBox(width: 8),
               Text(
                 group.title,

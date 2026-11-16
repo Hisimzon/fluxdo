@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
@@ -221,16 +222,20 @@ class _RecordKeyDialogState extends State<_RecordKeyDialog> {
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: 24),
-              decoration: BoxDecoration(
+              decoration: ShapeDecoration(
                 color: theme.colorScheme.surfaceContainerHighest.withValues(
                   alpha: 0.5,
                 ),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: _conflict != null
-                      ? theme.colorScheme.error.withValues(alpha: 0.5)
-                      : theme.colorScheme.outlineVariant.withValues(alpha: 0.3),
-                  width: 2,
+                shape: RoundedSuperellipseBorder(
+                  borderRadius: context.shapes.borderRadius(12),
+                  side: BorderSide(
+                    color: _conflict != null
+                        ? theme.colorScheme.error.withValues(alpha: 0.5)
+                        : theme.colorScheme.outlineVariant.withValues(
+                            alpha: 0.3,
+                          ),
+                    width: 2,
+                  ),
                 ),
               ),
               child: Center(
@@ -364,17 +369,17 @@ class _ShortcutMetaChip extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withValues(alpha: 0.18)),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(999),
+          side: BorderSide(color: color.withValues(alpha: 0.18)),
+        ),
       ),
       child: Text(
         label,
-        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-          color: color,
-          fontWeight: FontWeight.w600,
-        ),
+        style: Theme.of(context).textTheme.labelSmall
+            ?.copyWith(color: color, fontWeight: FontWeight.w600),
       ),
     );
   }

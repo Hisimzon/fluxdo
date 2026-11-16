@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -20,11 +21,7 @@ class SharedIssueButton extends ConsumerStatefulWidget {
   final TopicDetail topic;
   final void Function(int count, bool userMarked)? onChanged;
 
-  const SharedIssueButton({
-    super.key,
-    required this.topic,
-    this.onChanged,
-  });
+  const SharedIssueButton({super.key, required this.topic, this.onChanged});
 
   @override
   ConsumerState<SharedIssueButton> createState() => _SharedIssueButtonState();
@@ -66,8 +63,9 @@ class _SharedIssueButtonState extends ConsumerState<SharedIssueButton> {
     setState(() => _isLoading = true);
 
     try {
-      final response =
-          await DiscourseService().toggleSharedIssue(widget.topic.id);
+      final response = await DiscourseService().toggleSharedIssue(
+        widget.topic.id,
+      );
       if (!mounted) return;
       setState(() {
         _count = response.count;
@@ -110,31 +108,34 @@ class _SharedIssueButtonState extends ConsumerState<SharedIssueButton> {
       color: Colors.transparent,
       child: InkWell(
         onTap: (disabled || _isLoading) ? null : _handleTap,
-        borderRadius: BorderRadius.circular(24),
+        customBorder: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(24),
+        ),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-          decoration: BoxDecoration(
+          decoration: ShapeDecoration(
             color: _userMarked
                 ? theme.colorScheme.primary
                 : theme.colorScheme.surfaceContainerHigh,
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(
-              color: _userMarked
-                  ? theme.colorScheme.primary
-                  : theme.colorScheme.outlineVariant,
-              width: 1,
-            ),
-            boxShadow: _userMarked
+            shadows: _userMarked
                 ? [
                     BoxShadow(
-                      color:
-                          theme.colorScheme.primary.withValues(alpha: 0.2),
+                      color: theme.colorScheme.primary.withValues(alpha: 0.2),
                       blurRadius: 4,
                       offset: const Offset(0, 2),
                     ),
                   ]
                 : null,
+            shape: RoundedSuperellipseBorder(
+              borderRadius: context.shapes.borderRadius(24),
+              side: BorderSide(
+                color: _userMarked
+                    ? theme.colorScheme.primary
+                    : theme.colorScheme.outlineVariant,
+                width: 1,
+              ),
+            ),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -153,7 +154,9 @@ class _SharedIssueButtonState extends ConsumerState<SharedIssueButton> {
                   ),
                 )
               else
-                Icon(Symbols.front_hand_rounded, fill: _userMarked ? 1 : 0,
+                Icon(
+                  Symbols.front_hand_rounded,
+                  fill: _userMarked ? 1 : 0,
                   size: 18,
                   color: _userMarked
                       ? theme.colorScheme.onPrimary
@@ -178,11 +181,13 @@ class _SharedIssueButtonState extends ConsumerState<SharedIssueButton> {
                     horizontal: 6,
                     vertical: 2,
                   ),
-                  decoration: BoxDecoration(
+                  decoration: ShapeDecoration(
                     color: _userMarked
                         ? theme.colorScheme.onPrimary.withValues(alpha: 0.2)
                         : theme.colorScheme.primary.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(10),
+                    shape: RoundedSuperellipseBorder(
+                      borderRadius: context.shapes.borderRadius(10),
+                    ),
                   ),
                   alignment: Alignment.center,
                   child: Text(

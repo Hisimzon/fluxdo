@@ -1,6 +1,8 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../models/category.dart';
 import '../../models/search_result.dart';
 import '../../providers/category_provider.dart';
@@ -168,7 +170,7 @@ class _SearchPostCardContent extends ConsumerWidget {
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(10)),
       child: InkWell(
         onTap: onTap,
         onLongPress: onLongPress,
@@ -203,9 +205,11 @@ class _SearchPostCardContent extends ConsumerWidget {
                         horizontal: 6,
                         vertical: 2,
                       ),
-                      decoration: BoxDecoration(
+                      decoration: ShapeDecoration(
                         color: theme.colorScheme.surfaceContainerHighest,
-                        borderRadius: BorderRadius.circular(10),
+                        shape: RoundedSuperellipseBorder(
+                          borderRadius: context.shapes.borderRadius(10),
+                        ),
                       ),
                       child: Text(
                         '#${post.postNumber}',

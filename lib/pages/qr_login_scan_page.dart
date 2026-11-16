@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io' show Platform;
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
@@ -10,6 +11,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import '../l10n/s.dart';
 import '../services/qr_login_service.dart';
 import '../services/toast_service.dart';
+
 import 'package:m3e_ui/m3e_ui.dart';
 
 /// 待登录设备:扫描另一台已登录设备展示的登录二维码。
@@ -163,9 +165,11 @@ class _QrLoginScanPageState extends State<QrLoginScanPage> {
                     horizontal: 28,
                     vertical: 24,
                   ),
-                  decoration: BoxDecoration(
+                  decoration: ShapeDecoration(
                     color: scheme.surface,
-                    borderRadius: BorderRadius.circular(16),
+                    shape: RoundedSuperellipseBorder(
+                      borderRadius: context.shapes.borderRadius(16),
+                    ),
                   ),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -173,7 +177,10 @@ class _QrLoginScanPageState extends State<QrLoginScanPage> {
                       const LoadingSpinner(),
                       if (_statusMessage != null) ...[
                         const SizedBox(height: 16),
-                        Text(_statusMessage!, style: theme.textTheme.bodyMedium),
+                        Text(
+                          _statusMessage!,
+                          style: theme.textTheme.bodyMedium,
+                        ),
                       ],
                     ],
                   ),
@@ -209,11 +216,13 @@ class _QrLoginScanPageState extends State<QrLoginScanPage> {
                     child: Container(
                       width: 240,
                       height: 240,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.85),
-                          width: 2.5,
+                      decoration: ShapeDecoration(
+                        shape: RoundedSuperellipseBorder(
+                          borderRadius: context.shapes.borderRadius(20),
+                          side: BorderSide(
+                            color: Colors.white.withValues(alpha: 0.85),
+                            width: 2.5,
+                          ),
                         ),
                       ),
                     ),
@@ -261,7 +270,7 @@ class _QrLoginScanPageState extends State<QrLoginScanPage> {
               Icon(
                 Symbols.qr_code_scanner_rounded,
                 size: 72,
-                color: scheme.primary,
+                color: context.emphasis.accent,
               ),
               const SizedBox(height: 20),
               Text(
@@ -274,9 +283,7 @@ class _QrLoginScanPageState extends State<QrLoginScanPage> {
                 onPressed: _handling ? null : _pickFromGallery,
                 icon: const Icon(Symbols.photo_library_rounded),
                 label: Text(context.l10n.login_qrPickImage),
-                style: FilledButton.styleFrom(
-                  minimumSize: const Size(220, 52),
-                ),
+                style: FilledButton.styleFrom(minimumSize: const Size(220, 52)),
               ),
             ],
           ),
@@ -287,10 +294,7 @@ class _QrLoginScanPageState extends State<QrLoginScanPage> {
 }
 
 class _CameraErrorPane extends StatelessWidget {
-  const _CameraErrorPane({
-    required this.message,
-    required this.onPickImage,
-  });
+  const _CameraErrorPane({required this.message, required this.onPickImage});
 
   final String message;
   final VoidCallback onPickImage;

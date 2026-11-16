@@ -17,6 +17,7 @@ import '../../../utils/time_utils.dart';
 import '../../../widgets/common/smart_avatar.dart';
 import '../../../widgets/common/app_bottom_sheet.dart';
 import '../../../widgets/markdown_editor/emoji_picker.dart';
+
 import 'package:common_ui/common_ui.dart';
 
 /// 菜单动作(对齐网页版 chat-message-interactor 的 secondaryActions)
@@ -147,7 +148,7 @@ Future<String?> showChatEmojiPicker(
       ),
     );
   }
-  return showDialog<String>(
+  return showInteractionDialog<String>(
     context: context,
     builder: (dialogContext) => Dialog(
       clipBehavior: Clip.antiAlias,
@@ -179,7 +180,7 @@ Future<ChatMessageMenuResult?> showChatMessageActionsOverlay({
 }) {
   HapticFeedback.mediumImpact();
   return Navigator.of(context, rootNavigator: true).push<ChatMessageMenuResult>(
-    PageRouteBuilder(
+    InteractionPageRouteBuilder(
       opaque: false,
       barrierColor: Colors.transparent,
       transitionDuration: const Duration(milliseconds: 320),
@@ -356,9 +357,8 @@ class _MessageActionsOverlay extends StatelessWidget {
               width: width,
               child: IgnorePointer(
                 child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
+                  decoration: ShapeDecoration(
+                    shadows: [
                       if (t > 0)
                         BoxShadow(
                           color: Colors.black.withValues(alpha: 0.25 * t),
@@ -366,9 +366,12 @@ class _MessageActionsOverlay extends StatelessWidget {
                           offset: Offset(0, 8 * t),
                         ),
                     ],
+                    shape: RoundedSuperellipseBorder(
+                      borderRadius: context.shapes.borderRadius(16),
+                    ),
                   ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(16),
+                  child: ClipRSuperellipse(
+                    borderRadius: context.shapes.borderRadius(16),
                     child: DecoratedBox(
                       decoration: BoxDecoration(
                         color: theme.colorScheme.surfaceContainerHigh
@@ -554,8 +557,8 @@ class _MessageActionsOverlay extends StatelessWidget {
       color: theme.colorScheme.surfaceContainerHigh,
       elevation: 8,
       shadowColor: Colors.black.withValues(alpha: 0.25),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(18),
+      shape: RoundedSuperellipseBorder(
+        borderRadius: context.shapes.borderRadius(18),
         side: BorderSide(
           color: theme.colorScheme.outlineVariant.withValues(alpha: 0.25),
           width: 0.5,
@@ -648,7 +651,8 @@ class _ReactionBar extends StatelessWidget {
       color: theme.colorScheme.surfaceContainerHigh,
       elevation: 8,
       shadowColor: Colors.black.withValues(alpha: 0.25),
-      shape: StadiumBorder(
+      shape: RoundedSuperellipseBorder(
+        borderRadius: BorderRadius.all(context.shapes.radius(9999)),
         side: BorderSide(
           color: theme.colorScheme.outlineVariant.withValues(alpha: 0.25),
           width: 0.5,
@@ -678,7 +682,7 @@ class _ReactionBar extends StatelessWidget {
                 quickReactions.length,
                 InkWell(
                   onTap: onMore,
-                  customBorder: const CircleBorder(),
+                  customBorder: context.shapes.circle(),
                   child: Padding(
                     padding: const EdgeInsets.all(6),
                     child: Icon(
@@ -714,13 +718,13 @@ class _ReactionBarButton extends StatelessWidget {
     final url = EmojiHandler().getEmojiUrl(emoji);
     return InkWell(
       onTap: onTap,
-      customBorder: const CircleBorder(),
+      customBorder: context.shapes.circle(),
       child: Container(
         padding: const EdgeInsets.all(7),
         decoration: reacted
-            ? BoxDecoration(
+            ? ShapeDecoration(
                 color: theme.colorScheme.primaryContainer,
-                shape: BoxShape.circle,
+                shape: context.shapes.circle(),
               )
             : null,
         child: url.isEmpty
@@ -830,7 +834,7 @@ class _ReactionRowEntryState extends State<_ReactionRowEntry> {
                 Navigator.pop(context, (null, selected));
               }
             },
-            customBorder: const CircleBorder(),
+            customBorder: context.shapes.circle(),
             child: Padding(
               padding: const EdgeInsets.all(7),
               child: Icon(

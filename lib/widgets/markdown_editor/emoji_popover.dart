@@ -1,9 +1,9 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/services.dart';
 
-import '../../theme/theme_resolver.dart';
 
 /// 桌面端表情悬浮弹层的固定尺寸
 const Size kEmojiPopoverSize = Size(440, 480);
@@ -46,6 +46,7 @@ class EmojiPopoverController with ChangeNotifier, WidgetsBindingObserver {
 
   /// 退场动画进行中(entry 还挂着但语义上已关闭)
   bool _closing = false;
+  ValueNotifier<bool>? _acceptsInput;
 
   /// 关闭票据:退场动画完成回调用它识别"是否已被后来者接管"
   /// (动画期间再次 show 会立即终结旧 entry,旧回调作废)
@@ -72,8 +73,12 @@ class EmojiPopoverController with ChangeNotifier, WidgetsBindingObserver {
     if (isOpen) return;
     // 退场动画中被重开:旧弹层立即终结,避免同帧双 entry
     if (_entry != null) _removeEntryNow();
+    final input = ValueNotifier(true);
+    _acceptsInput = input;
     final overlay = Overlay.of(context, rootOverlay: true);
-    _entry = OverlayEntry(builder: (context) => _buildPopover(context, panel));
+    _entry = OverlayEntry(
+      builder: (context) => _buildPopover(context, panel, input),
+    );
     overlay.insert(_entry!);
     HardwareKeyboard.instance.addHandler(_onKeyEvent);
     WidgetsBinding.instance.addObserver(this);
@@ -83,6 +88,7 @@ class EmojiPopoverController with ChangeNotifier, WidgetsBindingObserver {
   void hide() {
     if (!isOpen) return;
     _closing = true;
+    _acceptsInput?.value = false;
     _detachGlobalHooks();
     notifyListeners();
     final shell = _shellKey.currentState;
@@ -103,6 +109,9 @@ class EmojiPopoverController with ChangeNotifier, WidgetsBindingObserver {
     final entry = _entry;
     _entry = null;
     _closing = false;
+    _acceptsInput?.value = false;
+    _acceptsInput?.dispose();
+    _acceptsInput = null;
     entry?.remove();
     entry?.dispose();
   }
@@ -153,7 +162,11 @@ class EmojiPopoverController with ChangeNotifier, WidgetsBindingObserver {
     });
   }
 
-  Widget _buildPopover(BuildContext context, Widget panel) {
+  Widget _buildPopover(
+    BuildContext context,
+    Widget panel,
+    ValueNotifier<bool> input,
+  ) {
     final anchorBox =
         anchorKey.currentContext?.findRenderObject() as RenderBox?;
     if (anchorBox == null || !anchorBox.attached) {
@@ -231,55 +244,64 @@ class EmojiPopoverController with ChangeNotifier, WidgetsBindingObserver {
       // 静态定位:上弹以按钮顶为底边,下弹以按钮底为顶边
       top: top.toDouble(),
       // 动画壳:从按钮侧的角缩放生长 + 淡入,退场反向
-      child: _PopoverShell(
-        key: _shellKey,
-        alignment: beside
-            ? Alignment.centerRight
-            : showAbove
-            ? Alignment.bottomLeft
-            : Alignment.topLeft,
-        // TextFieldTapRegion:点弹层不触发编辑器 TextField 失焦;
-        // TapRegion(groupId: this):点弹层与锚点按钮之外才关闭
-        child: TextFieldTapRegion(
-          child: TapRegion(
-            groupId: this,
-            onTapOutside: (_) => hide(),
-            child: Container(
-              key: const ValueKey('composer-emoji-popover'),
-              width: width,
-              height: height,
-              clipBehavior: Clip.antiAlias,
-              decoration: BoxDecoration(
-                color: theme.colorScheme.overlaySurface,
-                borderRadius: BorderRadius.circular(_kPopoverRadius),
-                // 双层阴影:大范围柔和主影 + 近距离细影,
-                // 比 Material elevation 的默认投影轻盈(桌面弹层观感)
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: isDark ? 0.45 : 0.14),
-                    blurRadius: 32,
-                    spreadRadius: -4,
-                    offset: const Offset(0, 12),
-                  ),
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: isDark ? 0.30 : 0.08),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              // 边框走前景:decoration 的 border 画在子内容之下,
-              // 面板背景同被裁进圆角矩形会盖住描边(四角尤其明显)
-              foregroundDecoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(_kPopoverRadius),
-                border: Border.all(
-                  color: theme.colorScheme.outlineVariant.withValues(
-                    alpha: isDark ? 0.6 : 0.5,
+      child: InteractionGate(
+        enabled: input,
+        child: _PopoverShell(
+          key: _shellKey,
+          alignment: beside
+              ? Alignment.centerRight
+              : showAbove
+              ? Alignment.bottomLeft
+              : Alignment.topLeft,
+          // TextFieldTapRegion:点弹层不触发编辑器 TextField 失焦;
+          // TapRegion(groupId: this):点弹层与锚点按钮之外才关闭
+          child: TextFieldTapRegion(
+            child: TapRegion(
+              groupId: this,
+              onTapOutside: (_) => hide(),
+              child: Container(
+                key: const ValueKey('composer-emoji-popover'),
+                width: width,
+                height: height,
+                clipBehavior: Clip.antiAlias,
+                decoration: ShapeDecoration(
+                  color: theme.colorScheme.surface,
+                  shadows: [
+                    BoxShadow(
+                      color: Colors.black.withValues(
+                        alpha: isDark ? 0.45 : 0.14,
+                      ),
+                      blurRadius: 32,
+                      spreadRadius: -4,
+                      offset: const Offset(0, 12),
+                    ),
+                    BoxShadow(
+                      color: Colors.black.withValues(
+                        alpha: isDark ? 0.30 : 0.08,
+                      ),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                  shape: RoundedSuperellipseBorder(
+                    borderRadius: context.shapes.borderRadius(_kPopoverRadius),
                   ),
                 ),
+                // 边框走前景:decoration 的 border 画在子内容之下,
+                // 面板背景同被裁进圆角矩形会盖住描边(四角尤其明显)
+                foregroundDecoration: ShapeDecoration(
+                  shape: RoundedSuperellipseBorder(
+                    borderRadius: context.shapes.borderRadius(_kPopoverRadius),
+                    side: BorderSide(
+                      color: theme.colorScheme.outlineVariant.withValues(
+                        alpha: isDark ? 0.6 : 0.5,
+                      ),
+                    ),
+                  ),
+                ),
+                // Overlay 里没有 Material 祖先,面板内 InkWell 需要
+                child: Material(type: MaterialType.transparency, child: panel),
               ),
-              // Overlay 里没有 Material 祖先,面板内 InkWell 需要
-              child: Material(type: MaterialType.transparency, child: panel),
             ),
           ),
         ),
