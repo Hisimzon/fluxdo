@@ -1245,6 +1245,21 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
     _endAddressEditing();
     if (_finding) _endFind();
     final url = target.uri.toString();
+    // connect OAuth 授权页即使从地址栏直达，也要先经过第三方授权确认，
+    // 与网页内跳转（_shouldOverrideUrlLoading）走同一套流程。
+    if (_isConnectAuthorizationUrl(target.uri)) {
+      unawaited(_openConfirmedConnectAuthorization(url));
+      return;
+    }
+    // 隔离边界不匹配时交给对应环境的新页面承接，
+    // 避免第三方站点落在主环境的 Cookie 里。
+    final isolated = WebViewIsolation.shouldIsolate(url);
+    if (isolated != widget.isolated) {
+      if (mounted) {
+        unawaited(WebViewPage.open(context, url, isolated: isolated));
+      }
+      return;
+    }
     setState(() {
       _pendingNavigation = url;
       _currentUrl = url;
@@ -1678,11 +1693,6 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
         url.path.toLowerCase().startsWith('/oauth2/');
   }
 
-  Future<bool> _confirmConnectAuthorizationIfNeeded(Uri url) async {
-    if (!_isConnectAuthorizationUrl(url)) return true;
-    return _confirmConnectAuthorization();
-  }
-
   Future<bool> _openConfirmedConnectAuthorization(String urlString) async {
     final confirmed = await _confirmConnectAuthorization();
     if (!confirmed || !mounted) return false;
@@ -1825,33 +1835,6 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
       case 'open_external':
         _openInExternalBrowser();
         break;
-    }
-  }
-
-  Future<void> _navigateToUrl(String input) async {
-    var url = input.trim();
-    if (url.isEmpty) return;
-    // 自动补全 scheme
-    if (!url.startsWith('http://') && !url.startsWith('https://')) {
-      url = 'https://$url';
-    }
-    final uri = Uri.tryParse(url);
-    if (uri != null &&
-        !await _confirmConnectAuthorizationIfNeeded(uri)) {
-      return;
-    }
-    final targetIsolated = WebViewIsolation.shouldIsolate(url);
-    if (targetIsolated != widget.isolated) {
-      if (mounted) {
-        await WebViewPage.open(context, url, isolated: targetIsolated);
-      }
-      return;
-    }
-    _watchSearch(url);
-    _pendingNavigation = url;
-    final controller = _controller;
-    if (controller != null) {
-      await _loadAddress(controller, url, _navigationRevision);
     }
   }
 
