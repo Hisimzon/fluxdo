@@ -29,6 +29,9 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
 
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
       # flutterw build windows 内部会执行 native:prepare windows --release,
       # 在此预置 Rust 工具链与构建缓存。
       - name: Setup Rust
@@ -37,7 +40,7 @@ jobs:
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: core/doh_proxy
+          workspaces: core/net_core
           key: windows-x86_64
 
       # 与上游 build.yaml 的 Windows 构建保持一致:Flutter Windows 链接
@@ -51,9 +54,9 @@ jobs:
       - name: Build Windows
         run: |
           dart tool/flutterw.dart build windows --release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $releaseDir = "build\windows\x64\runner\Release"
-          if (-not (Test-Path "$releaseDir\native\doh_proxy.dll")) { throw "Missing doh_proxy.dll" }
-          if (-not (Test-Path "$releaseDir\native\doh_proxy_bin.exe")) { throw "Missing doh_proxy_bin.exe" }
+          if (-not (Test-Path "$releaseDir\native\fluxdo_net.dll")) { throw "Missing fluxdo_net.dll" }
           mkdir dist
 
       # 便携免安装包:不签名、不进 Inno Setup 安装器,解压即用。
