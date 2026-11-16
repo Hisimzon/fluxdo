@@ -86,11 +86,6 @@ extension PostUpdateMethods on TopicDetailNotifier {
     final index = currentPosts.indexWhere((p) => p.id == postId);
     if (index == -1) return;
 
-    // refreshPost 网络响应落地(msgbus acted/revised/deleted 的真正
-    // 高度变化时刻,与发起请求隔了一次网络往返):在这里武装锚定哨兵
-    // 才能覆盖到落地帧;在消息分发处武装会因异步而错帧失效。
-    AnchorGuardSliver.arm();
-
     final oldPost = currentPosts[index];
 
     // /posts/{id}.json 单帖接口不会预加载 boosts 关联，
@@ -672,11 +667,22 @@ extension PostUpdateMethods on TopicDetailNotifier {
       if (!ref.mounted) return;
       // 只更新元数据，保留当前帖子列表
       state = AsyncValue.data(
-        currentDetail.copyWith(
+        (state.value ?? currentDetail).copyWith(
           title: newDetail.title,
           slug: newDetail.slug,
           closed: newDetail.closed,
           archived: newDetail.archived,
+          slowModeSeconds: newDetail.slowModeSeconds,
+          topicTimer: newDetail.topicTimer,
+          clearTopicTimer: newDetail.topicTimer == null,
+          visible: newDetail.visible,
+          visibilityReasonId: newDetail.visibilityReasonId,
+          isWarning: newDetail.isWarning,
+          queuedPostsCount: newDetail.queuedPostsCount,
+          wordCount: newDetail.wordCount,
+          participantCount: newDetail.participantCount,
+          participants: newDetail.participants,
+          links: newDetail.links,
           tags: newDetail.tags,
           categoryId: newDetail.categoryId,
           notificationLevel: newDetail.notificationLevel,

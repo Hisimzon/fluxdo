@@ -1,16 +1,21 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:jovial_svg/jovial_svg.dart';
 
 import '../../services/discourse_cache_manager.dart';
 import '../../services/emoji_handler.dart';
 import '../../utils/relative_time_clock.dart';
+import '../../utils/svg_utils.dart';
 import '../common/animated_avatar_overlay.dart';
 import '../common/smart_avatar.dart' show isSquareAvatarUrl;
 import 'topic_card.dart' show TopicCardInteractiveSurface;
 import 'topic_card_layout.dart';
+import '../../theme/theme_style.dart';
 
 /// 标题 emoji 短代码 → 图片 URL(自绘卡排版层注入;顶层函数,避免
 /// 每个调用点手写 EmojiHandler 单例访问)
@@ -19,7 +24,7 @@ String topicCardEmojiUrlResolver(String name) =>
 
 /// 话题自绘卡:内容 = 单 RenderObject 绘制 [TopicCardLayout] 的排版
 /// 成品;**壳与交互与 widget 版逐层同构** —— Padding(卡间距) →
-/// ClipRRect(有色带时) → DecoratedBox(卡底色) →
+/// ClipRSuperellipse(有色带时) → DecoratedBox(卡底色) →
 /// [TopicCardInteractiveSurface](与 TopicCard 共用同一交互面:桌面
 /// hover/水波纹/右键/中键,移动按压灰底) → 内容 leaf。
 ///
@@ -70,11 +75,13 @@ class _PaintedTopicCardState extends State<PaintedTopicCard> {
   @override
   Widget build(BuildContext context) {
     final layout = widget.layout;
-    final cardRadius = BorderRadius.circular(10);
+    final cardRadius = context.shapes.borderRadius(10);
     final theme = Theme.of(context);
+    final surfaces = context.themeStyle.surfaces;
     final bgColor = widget.isSelected
         ? theme.colorScheme.primaryContainer.withValues(alpha: 0.4)
-        : (widget.highlightColor ?? layout.cardColor);
+        : (widget.highlightColor ??
+              PageBackgroundScope.contentColor(context, layout.cardColor));
     // 动图头像混合岛:layout.animatedAvatarUrl 非空(开关开启且用户有
     // 动图)时挂播放 overlay 钉在 avatarRect,画布先画静态模板小图
     // (几 KB 秒出)顶住观感;overlay 首帧就绪后画布停画静态层,防
@@ -92,14 +99,18 @@ class _PaintedTopicCardState extends State<PaintedTopicCard> {
           )
         : null;
     Widget card = DecoratedBox(
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: bgColor,
-        borderRadius: cardRadius,
-        border: widget.isSelected
-            ? Border.all(
-                color: theme.colorScheme.primary.withValues(alpha: 0.5),
-              )
-            : null,
+        shape: RoundedSuperellipseBorder(
+          borderRadius: cardRadius,
+          side: widget.isSelected
+              ? BorderSide(
+                  color: theme.colorScheme.primary.withValues(alpha: 0.5),
+                )
+              : surfaces.hasOutline
+              ? BorderSide(color: theme.colorScheme.outlineVariant)
+              : BorderSide.none,
+        ),
       ),
       child: TopicCardInteractiveSurface(
         borderRadius: cardRadius,
@@ -116,10 +127,43 @@ class _PaintedTopicCardState extends State<PaintedTopicCard> {
       ),
     );
     if (layout.band != null) {
-      card = ClipRRect(borderRadius: cardRadius, child: card);
+      card = ClipRSuperellipse(borderRadius: cardRadius, child: card);
     }
-    return Padding(padding: const EdgeInsets.only(bottom: 8), child: card);
+    card = Padding(padding: const EdgeInsets.only(bottom: 8), child: card);
+    // 平铺风格：卡片不画容器，相邻话题之间在间距正中画一道细线
+    if (surfaces == SurfaceStyle.flat) {
+      card = CustomPaint(
+        foregroundPainter: _GapDividerPainter(
+          theme.colorScheme.outlineVariant,
+        ),
+        child: card,
+      );
+    }
+    return card;
   }
+}
+
+/// 平铺风格的分隔线：画在卡片下方 8px 间距的正中，左右与内容对齐。
+class _GapDividerPainter extends CustomPainter {
+  const _GapDividerPainter(this.color);
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final y = size.height - 4;
+    canvas.drawLine(
+      Offset(12, y),
+      Offset(size.width - 12, y),
+      Paint()
+        ..color = color
+        ..strokeWidth = 0.6,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_GapDividerPainter oldDelegate) =>
+      oldDelegate.color != color;
 }
 
 class _PaintedTopicCardLeaf extends SingleChildRenderObjectWidget {
@@ -166,6 +210,7 @@ class _RenderTopicCard extends RenderBox
   int _seenRevision = 0;
   set layoutData(TopicCardLayout v) {
     if (identical(_layout, v) && _seenRevision == v.revision) return;
+    TopicCardImages.releaseRequester(this);
     _layout = v;
     _seenRevision = v.revision;
     markNeedsLayout();
@@ -196,6 +241,7 @@ class _RenderTopicCard extends RenderBox
 
   @override
   void detach() {
+    TopicCardImages.releaseRequester(this);
     RelativeTimeClock.instance.removeListener(_onClockTick);
     super.detach();
   }
@@ -231,7 +277,7 @@ class _RenderTopicCard extends RenderBox
     final canvas = context.canvas;
     final l = _layout;
 
-    // 色带底色(裁剪由外层 ClipRRect 承担,与 widget 版同构)
+    // 色带底色(裁剪由外层 ClipRSuperellipse 承担,与 widget 版同构)
     if (l.band != null) {
       canvas.drawRect(
         Rect.fromLTWH(offset.dx, offset.dy, size.width, l.bandHeight),
@@ -285,8 +331,8 @@ class _RenderTopicCard extends RenderBox
         // linux.do 站点定制:个别账号头像方形化,画布直绘不走 SmartAvatar,
         // 得同一份 isSquareAvatarUrl 判断,不然图是方的、这里裁切还是圆的。
         final clipPath = isSquareAvatarUrl(l.avatarUrl)
-            ? (Path()..addRRect(
-                RRect.fromRectAndRadius(
+            ? (Path()..addRSuperellipse(
+                RSuperellipse.fromRectAndRadius(
                   avatarRect,
                   Radius.circular(avatarRect.shortestSide * 0.1),
                 ),
@@ -318,10 +364,10 @@ class _RenderTopicCard extends RenderBox
       canvas.drawParagraph(l.time!, offset + l.timeOffset);
     }
     if (l.categoryDotColor != null) {
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
+      canvas.drawRSuperellipse(
+        RSuperellipse.fromRectAndRadius(
           l.categoryDotRect.shift(offset),
-          const Radius.circular(2),
+          UiShapes.current.radius(2),
         ),
         Paint()..color = l.categoryDotColor!,
       );
@@ -338,8 +384,8 @@ class _RenderTopicCard extends RenderBox
 
     // 通用装饰通道:徽章/蓝点/楼层 chip 底 + 徽章数字/AI 图标
     for (final (rrect, color) in l.extraFills) {
-      canvas.drawRRect(
-        RRect.fromLTRBAndCorners(
+      canvas.drawRSuperellipse(
+        RSuperellipse.fromLTRBAndCorners(
           rrect.left + offset.dx,
           rrect.top + offset.dy,
           rrect.right + offset.dx,
@@ -386,6 +432,28 @@ class TopicCardImages {
   static final Map<String, Set<RenderObject>> _waiters = {};
   static const int _cap = 400;
 
+  // 只有真正 paint 的卡片保留前台优先权。预热不提权；卡片离开、
+  // 复用或下载结束时释放，多视图共享同一头像时分别计数。
+  static final _foreground = <RenderObject, Map<String, VoidCallback>>{};
+
+  static void _retainForeground(
+    String url,
+    String bucket,
+    RenderObject requester,
+  ) {
+    final leases = _foreground.putIfAbsent(requester, () => {});
+    leases.putIfAbsent(url, () => BlobImageCache.retainForeground(bucket, url));
+  }
+
+  static void releaseRequester(RenderObject requester) {
+    final leases = _foreground.remove(requester);
+    if (leases == null) return;
+    for (final entry in leases.entries) {
+      _waiters[entry.key]?.remove(requester);
+      entry.value();
+    }
+  }
+
   static ui.Image? lookup(
     String url,
     RenderObject requester, {
@@ -393,6 +461,7 @@ class TopicCardImages {
   }) {
     final hit = _images[url];
     if (hit != null) return hit;
+    _retainForeground(url, bucket, requester);
     final waiters = _waiters[url];
     if (waiters != null) {
       waiters.add(requester);
@@ -417,9 +486,20 @@ class TopicCardImages {
 
   static Future<void> _load(String url, String bucket) async {
     try {
-      final bytes = await BlobImageCache.fetch(bucket, url);
-      if (bytes.isEmpty) {
-        _waiters.remove(url);
+      final bytes = await BlobImageCache.fetch(
+        bucket,
+        url,
+        // 与 emojiImageProvider 同一回退:展示表情集缺图取站点表情集
+        fallbackUrl: bucket == BlobImageCache.emojiBucket
+            ? EmojiHandler.fallbackUrl(url)
+            : null,
+      );
+      if (bytes.isEmpty) return;
+      // SVG 头像(含伪装成 PNG 的)位图解码器解不了,按内容嗅探后光栅化,
+      // 与 SmartAvatar 同一判断
+      if (SvgUtils.isSvgBytes(bytes)) {
+        final image = await _rasterizeSvg(bytes);
+        if (image != null) _store(url, image);
         return;
       }
       final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
@@ -440,22 +520,61 @@ class TopicCardImages {
           );
       final frame = await codec.getNextFrame();
       codec.dispose();
-      if (_images.length >= _cap) {
-        for (final k in _images.keys.take(_cap ~/ 4).toList()) {
-          _images.remove(k)?.dispose();
-        }
-      }
-      _images[url] = frame.image;
+      _store(url, frame.image);
     } catch (_) {
       // 失败不重试本会话(fallback 占位继续显示);滚动重访会因 waiters
       // 已清除而重新尝试
     } finally {
       final waiters = _waiters.remove(url);
-      if (waiters != null && _images.containsKey(url)) {
+      if (waiters != null) {
         for (final r in waiters) {
-          if (r.attached) r.markNeedsPaint();
+          final leases = _foreground[r];
+          leases?.remove(url)?.call();
+          if (leases != null && leases.isEmpty) _foreground.remove(r);
+          if (_images.containsKey(url) && r.attached) r.markNeedsPaint();
         }
       }
+    }
+  }
+
+  static void _store(String url, ui.Image image) {
+    if (_images.length >= _cap) {
+      for (final k in _images.keys.take(_cap ~/ 4).toList()) {
+        _images.remove(k)?.dispose();
+      }
+    }
+    _images[url] = image;
+  }
+
+  /// SVG 按 cover 裁切光栅化成 96px 方图(与位图路径同一解码上限),
+  /// 裁切方式与 SmartAvatar 的 BoxFit.cover 一致
+  static Future<ui.Image?> _rasterizeSvg(List<int> bytes) async {
+    final si = ScalableImage.fromSvgString(
+      SvgUtils.sanitize(SvgUtils.decodeSvgBytes(bytes)),
+      warnF: (_) {},
+    );
+    await si.prepareImages();
+    try {
+      final vp = si.viewport;
+      if (vp.isEmpty) return null;
+      const side = 96;
+      final scale = side / math.min(vp.width, vp.height);
+      final recorder = ui.PictureRecorder();
+      final canvas = Canvas(recorder);
+      canvas.translate(
+        (side - vp.width * scale) / 2,
+        (side - vp.height * scale) / 2,
+      );
+      canvas.scale(scale);
+      si.paint(canvas);
+      final picture = recorder.endRecording();
+      try {
+        return await picture.toImage(side, side);
+      } finally {
+        picture.dispose();
+      }
+    } finally {
+      si.unprepareImages();
     }
   }
 }

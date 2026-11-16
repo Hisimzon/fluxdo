@@ -3,6 +3,7 @@ import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:m3e_ui/m3e_ui.dart';
+
 import '../../models/category.dart';
 import '../../providers/discourse_providers.dart';
 import '../../providers/pinned_categories_provider.dart';
@@ -10,20 +11,15 @@ import '../../utils/font_awesome_helper.dart';
 import '../../services/discourse_cache_manager.dart';
 import '../../utils/url_helper.dart';
 import '../../pages/category_topics_page.dart';
+
 import 'package:common_ui/common_ui.dart';
+
 import '../../../../../l10n/s.dart';
+import '../../utils/color_utils.dart';
 
 // ============================================================
 // 工具函数
 // ============================================================
-
-Color _parseColor(String hex) {
-  try {
-    return Color(int.parse('FF$hex', radix: 16));
-  } catch (e) {
-    return Colors.grey;
-  }
-}
 
 /// 构建分类图标 widget
 /// [preferImage] 为 true 时图片优先（用于网格），false 时图标优先（用于 chips）
@@ -98,7 +94,9 @@ Future<void> _showSubcategoryMenu({
       Rect.fromCenter(center: tapPosition, width: 0, height: 0),
       Offset.zero & overlay.size,
     ),
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+    shape: RoundedSuperellipseBorder(
+      borderRadius: context.shapes.borderRadius(16),
+    ),
     elevation: 6,
     items: [
       // "全部"
@@ -117,7 +115,7 @@ Future<void> _showSubcategoryMenu({
       ),
       // 子分类
       ...subcategories.map((sub) {
-        final subColor = _parseColor(sub.color);
+        final subColor = ColorUtils.category(sub.color, Theme.of(context));
         return PopupMenuItem<Category>(
           value: sub,
           child: Row(
@@ -135,7 +133,9 @@ Future<void> _showSubcategoryMenu({
   if (result != null && context.mounted) {
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => CategoryTopicsPage(category: result)),
+      InteractionPageRoute(
+        builder: (_) => CategoryTopicsPage(category: result),
+      ),
     );
   }
 }
@@ -228,7 +228,7 @@ class _BrowseContent extends ConsumerWidget {
               onPressed: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(
+                  InteractionPageRoute(
                     builder: (_) => const PinnedCategoryEditPage(),
                   ),
                 );
@@ -259,7 +259,10 @@ class _BrowseContent extends ConsumerWidget {
               spacing: 8,
               runSpacing: 8,
               children: pinnedCategories.map((category) {
-                final color = _parseColor(category.color);
+                final color = ColorUtils.category(
+                  category.color,
+                  Theme.of(context),
+                );
                 return _buildQuickChip(context, category, color);
               }).toList(),
             ),
@@ -291,7 +294,10 @@ class _BrowseContent extends ConsumerWidget {
           itemCount: topCategories.length,
           itemBuilder: (context, index) {
             final category = topCategories[index];
-            final color = _parseColor(category.color);
+            final color = ColorUtils.category(
+              category.color,
+              Theme.of(context),
+            );
             final subs = subcategoryMap[category.id];
             final hasSubs = subs != null && subs.isNotEmpty;
 
@@ -319,7 +325,7 @@ class _BrowseContent extends ConsumerWidget {
                 } else {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(
+                    InteractionPageRoute(
                       builder: (_) => CategoryTopicsPage(category: category),
                     ),
                   );
@@ -341,10 +347,12 @@ class _BrowseContent extends ConsumerWidget {
       },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
+        decoration: ShapeDecoration(
           color: color.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: color.withValues(alpha: 0.2)),
+          shape: RoundedSuperellipseBorder(
+            borderRadius: context.shapes.borderRadius(6),
+            side: BorderSide(color: color.withValues(alpha: 0.2)),
+          ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -396,12 +404,15 @@ class _CategoryGridItem extends StatelessWidget {
           Container(
             width: 48,
             height: 48,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
+            decoration: ShapeDecoration(
               color: isSelected
                   ? color.withValues(alpha: 0.2)
                   : colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
-              border: isSelected ? Border.all(color: color, width: 2) : null,
+              shape: context.shapes.circle(
+                side: isSelected
+                    ? BorderSide(color: color, width: 2)
+                    : BorderSide.none,
+              ),
             ),
             child: Center(child: iconWidget ?? const SizedBox.shrink()),
           ),
@@ -555,13 +566,18 @@ class _EditContent extends ConsumerWidget {
             proxyDecorator: (child, index, animation) {
               return Material(
                 elevation: 2,
-                borderRadius: BorderRadius.circular(8),
+                shape: RoundedSuperellipseBorder(
+                  borderRadius: context.shapes.borderRadius(8),
+                ),
                 child: child,
               );
             },
             itemBuilder: (context, index) {
               final category = pinnedCategories[index];
-              final color = _parseColor(category.color);
+              final color = ColorUtils.category(
+                category.color,
+                Theme.of(context),
+              );
               return _PinnedCategoryTile(
                 key: ValueKey(category.id),
                 category: category,
@@ -604,7 +620,10 @@ class _EditContent extends ConsumerWidget {
           itemCount: topLevel.length,
           itemBuilder: (context, index) {
             final category = topLevel[index];
-            final color = _parseColor(category.color);
+            final color = ColorUtils.category(
+              category.color,
+              Theme.of(context),
+            );
             final subs = subMap[category.id];
             final hasSubs = subs != null && subs.isNotEmpty;
 
@@ -658,10 +677,12 @@ class _EditContent extends ConsumerWidget {
         Rect.fromCenter(center: tapPosition, width: 0, height: 0),
         Offset.zero & overlay.size,
       ),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedSuperellipseBorder(
+        borderRadius: context.shapes.borderRadius(16),
+      ),
       elevation: 6,
       items: allItems.map((cat) {
-        final color = _parseColor(cat.color);
+        final color = ColorUtils.category(cat.color, Theme.of(context));
         final isParent = cat.id == parent.id;
         return PopupMenuItem<Category>(
           value: cat,
@@ -719,9 +740,11 @@ class _PinnedCategoryTile extends StatelessWidget {
 
     return Container(
       margin: const EdgeInsets.only(bottom: 4),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
-        borderRadius: BorderRadius.circular(8),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(8),
+        ),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),

@@ -54,6 +54,8 @@ class _PriorityQueue {
   void add(_RequestEntry entry) => _queue.add(entry);
 
   _RequestEntry removeFirst() => _queue.removeFirst();
+
+  bool remove(_RequestEntry entry) => _queue.remove(entry);
 }
 
 /// 滑动窗口速率限制器
@@ -175,26 +177,38 @@ class RequestSchedulerInterceptor extends Interceptor {
       return;
     }
 
-    // CF 验证进行中时冻结所有业务请求，模拟"网页 CF 403 直接停滞"的语义，
-    // 避免挑战完成瞬间一次性 flush 心跳/poll/timings 触发服务端 429，
-    // 同时也能防止用户在验证弹窗期间触发的请求带着旧 cf_clearance 又判 403
-    // 进入挑战循环。
-    //
-    // 仅 CfChallengeInterceptor 内部 retry（标记 skipCfBlock=true）能绕过。
-    if (!options.spec.skipCfBlock &&
-        CfChallengeService().isVerifying) {
-      handler.reject(
-        DioException(
-          requestOptions: options,
-          type: DioExceptionType.cancel,
-          error: CfChallengeException(silentBlockedDuringChallenge: true),
-        ),
-        true,
-      );
-      return;
+    // CF 验证进行中时冻结业务请求，防止带着旧 cf_clearance 又判 403 进入
+    // 挑战循环。仅 CfChallengeInterceptor 内部 retry（标记 skipCfBlock=true）
+    // 能绕过。
+    final cfService = CfChallengeService();
+    if (!options.spec.skipCfBlock && cfService.isVerifying) {
+      // 静默请求直接拒绝：模拟"网页 CF 403 直接停滞"，避免挑战完成瞬间
+      // 一次性 flush 心跳/poll/timings 触发服务端 429。
+      if (options.spec.isSilent) {
+        handler.reject(
+          DioException(
+            requestOptions: options,
+            type: DioExceptionType.cancel,
+            error: CfChallengeException(silentBlockedDuringChallenge: true),
+          ),
+          true,
+        );
+        return;
+      }
+      // 用户在等的请求不能直接失败（后台静默过盾时用户会莫名看到报错）：
+      // 暂存到本轮验证结束，再走下方正常排队，届时 CookieManager 取到新值。
+      // 同时把本轮展示抬到 blocking，让用户知道在等什么。
+      cfService.raisePresentation(CfVerifyPresentation.blocking);
+      await _waitForCfIdle(options);
+      if (options.cancelToken?.isCancelled ?? false) {
+        handler.reject(options.cancelToken!.cancelError!, true);
+        return;
+      }
     }
 
+    final trustWait = Stopwatch()..start();
     await _waitForBrowserTrustIfNeeded(options);
+    options.extra['_browserTrustWaitMs'] = trustWait.elapsedMilliseconds;
 
     final state = _stateFor(options);
     final priority = _inferPriority(options);
@@ -202,13 +216,7 @@ class RequestSchedulerInterceptor extends Interceptor {
 
     // cancelToken 已取消，直接拒绝
     if (options.cancelToken?.isCancelled ?? false) {
-      handler.reject(
-        DioException.requestCancelled(
-          requestOptions: options,
-          reason: '请求在排队前已被取消',
-        ),
-        true,
-      );
+      handler.reject(options.cancelToken!.cancelError!, true);
       return;
     }
 
@@ -234,7 +242,12 @@ class RequestSchedulerInterceptor extends Interceptor {
     options.cancelToken?.whenCancel.then((_) {
       if (!entry.completer.isCompleted) {
         entry.isCancelled = true;
+        state.queue.remove(entry);
         entry.completer.complete();
+        if (state.queue.isEmpty) {
+          state.pendingTimer?.cancel();
+          state.pendingTimer = null;
+        }
       }
     });
 
@@ -251,13 +264,7 @@ class RequestSchedulerInterceptor extends Interceptor {
 
     // 被唤醒后检查是否已取消
     if (entry.isCancelled) {
-      handler.reject(
-        DioException.requestCancelled(
-          requestOptions: options,
-          reason: '请求在排队中被取消',
-        ),
-        true,
-      );
+      handler.reject(options.cancelToken!.cancelError!, true);
       return;
     }
 
@@ -325,6 +332,14 @@ class RequestSchedulerInterceptor extends Interceptor {
     });
   }
 
+  /// 等到当前 CF 验证轮次结束；请求被取消时提前返回。
+  Future<void> _waitForCfIdle(RequestOptions options) {
+    final idle = CfChallengeService().waitUntilIdle();
+    final cancelToken = options.cancelToken;
+    if (cancelToken == null) return idle;
+    return Future.any<void>([idle, cancelToken.whenCancel.then((_) {})]);
+  }
+
   Future<void> _waitForBrowserTrustIfNeeded(RequestOptions options) async {
     // CF 验证自身的重试请求不等信任门(避免与验证流程互锁)。
     // challenge-platform 请求现全部在 WebView 内发起,不经过 dio,
@@ -338,8 +353,13 @@ class RequestSchedulerInterceptor extends Interceptor {
       return;
     }
 
-    await BrowserTrustCoordinator.instance.waitForActiveBrowserTrust(
-      reason: '${options.method.toUpperCase()} ${options.uri}',
-    );
+    final ready = BrowserTrustCoordinator.instance
+        .waitForActiveBrowserTrust(
+          reason: '${options.method.toUpperCase()} ${options.uri}',
+        )
+        .then<void>((_) {});
+    final token = options.cancelToken;
+    if (token == null) return ready;
+    await Future.any<void>([ready, token.whenCancel.then((_) {})]);
   }
 }

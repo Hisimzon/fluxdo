@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -15,6 +16,7 @@ import '../common/category_selection_sheet.dart';
 import '../common/tag_selection_sheet.dart';
 import '../common/topic_badges.dart';
 import '../../../../../l10n/s.dart';
+import '../../utils/color_utils.dart';
 
 /// 话题编辑器辅助函数和 Widgets
 /// 用于 CreateTopicPage 和 EditTopicPage 的公共逻辑
@@ -66,9 +68,8 @@ class SmartListHandler {
     final prevLine = currentText.substring(prevLineStart, selection.start - 1);
 
     // 检测无序列表
-    final unorderedMatch = RegExp(
-      r'^(\s*)([-*+])\s+(.*)$',
-    ).firstMatch(prevLine);
+    final unorderedMatch = RegExp(r'^(\s*)([-*+])\s+(.*)$')
+        .firstMatch(prevLine);
     if (unorderedMatch != null) {
       final indent = unorderedMatch.group(1)!;
       final marker = unorderedMatch.group(2)!;
@@ -237,15 +238,6 @@ class PanguSpacingHandler {
 // UI 辅助函数
 // ============================================================================
 
-/// 解析十六进制颜色
-Color parseHexColor(String hex) {
-  hex = hex.replaceAll('#', '');
-  if (hex.length == 6) {
-    return Color(int.parse('0xFF$hex'));
-  }
-  return Colors.grey;
-}
-
 /// 构建颜色点
 Widget buildColorDot(Color color, {double size = 8}) {
   return Container(
@@ -296,10 +288,14 @@ class CategoryTrigger extends StatelessWidget {
     if (category == null) {
       return Material(
         color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(8),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(8),
+        ),
         child: InkWell(
           onTap: () => _showPicker(context),
-          borderRadius: BorderRadius.circular(8),
+          customBorder: RoundedSuperellipseBorder(
+            borderRadius: context.shapes.borderRadius(8),
+          ),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             child: Row(
@@ -337,21 +333,27 @@ class CategoryTrigger extends StatelessWidget {
       );
     }
 
-    final color = parseHexColor(category!.color);
+    final color = ColorUtils.category(category!.color, theme);
     FaIconData? faIcon = FontAwesomeHelper.getIcon(category!.icon);
     String? logoUrl = category!.uploadedLogo;
 
     return Material(
       color: color.withValues(alpha: 0.1),
-      borderRadius: BorderRadius.circular(8),
+      shape: RoundedSuperellipseBorder(
+        borderRadius: context.shapes.borderRadius(8),
+      ),
       child: InkWell(
         onTap: () => _showPicker(context),
-        borderRadius: BorderRadius.circular(8),
+        customBorder: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(8),
+        ),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: color.withValues(alpha: 0.3), width: 1),
+          decoration: ShapeDecoration(
+            shape: RoundedSuperellipseBorder(
+              borderRadius: context.shapes.borderRadius(8),
+              side: BorderSide(color: color.withValues(alpha: 0.3), width: 1),
+            ),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -474,13 +476,15 @@ class TagsArea extends StatelessWidget {
         ...selectedTags.map(
           (tag) => Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
+            decoration: ShapeDecoration(
               color: theme.colorScheme.surfaceContainerHighest.withValues(
                 alpha: 0.3,
               ),
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(
-                color: theme.colorScheme.outline.withValues(alpha: 0.1),
+              shape: RoundedSuperellipseBorder(
+                borderRadius: context.shapes.borderRadius(6),
+                side: BorderSide(
+                  color: theme.colorScheme.outline.withValues(alpha: 0.1),
+                ),
               ),
             ),
             child: Row(
@@ -519,20 +523,24 @@ class TagsArea extends StatelessWidget {
           color: Colors.transparent,
           child: InkWell(
             onTap: () => _showPicker(context, availableTags),
-            borderRadius: BorderRadius.circular(6),
+            customBorder: RoundedSuperellipseBorder(
+              borderRadius: context.shapes.borderRadius(6),
+            ),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                border: Border.all(
-                  color: isSatisfied
-                      ? theme.colorScheme.outline.withValues(alpha: 0.2)
-                      : theme.colorScheme.error.withValues(alpha: 0.5),
-                  style: BorderStyle.solid,
-                ),
+              decoration: ShapeDecoration(
                 color: isSatisfied
                     ? null
                     : theme.colorScheme.errorContainer.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(6),
+                shape: RoundedSuperellipseBorder(
+                  borderRadius: context.shapes.borderRadius(6),
+                  side: BorderSide(
+                    color: isSatisfied
+                        ? theme.colorScheme.outline.withValues(alpha: 0.2)
+                        : theme.colorScheme.error.withValues(alpha: 0.5),
+                    style: BorderStyle.solid,
+                  ),
+                ),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -681,7 +689,10 @@ class ComposerMetaBar extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           onTap: enabled ? onTap : null,
-          borderRadius: BorderRadius.circular(20),
+          customBorder: RoundedSuperellipseBorder(
+            borderRadius: (theme.extension<UiShapes>() ?? UiShapes.standard)
+                .borderRadius(20),
+          ),
           child: ConstrainedBox(
             constraints: const BoxConstraints(minHeight: 48),
             child: Center(
@@ -692,7 +703,12 @@ class ComposerMetaBar extends StatelessWidget {
                   color: theme.colorScheme.surfaceContainerHighest.withValues(
                     alpha: .42,
                   ),
-                  shape: StadiumBorder(
+                  shape: RoundedSuperellipseBorder(
+                    borderRadius: BorderRadius.all(
+                      (theme.extension<UiShapes>() ?? UiShapes.standard).radius(
+                        9999,
+                      ),
+                    ),
                     side: BorderSide(
                       color:
                           borderColor ??
@@ -737,8 +753,9 @@ class ComposerMetaBar extends StatelessWidget {
         color: desktop
             ? theme.colorScheme.surfaceContainerHighest.withValues(alpha: .22)
             : Colors.transparent,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(desktop ? 8 : 10),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: (theme.extension<UiShapes>() ?? UiShapes.standard)
+              .borderRadius(desktop ? 8 : 10),
           side: desktop
               ? BorderSide(
                   width: .6,
@@ -750,7 +767,10 @@ class ComposerMetaBar extends StatelessWidget {
         ),
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(desktop ? 8 : 10),
+          customBorder: RoundedSuperellipseBorder(
+            borderRadius: (theme.extension<UiShapes>() ?? UiShapes.standard)
+                .borderRadius(desktop ? 8 : 10),
+          ),
           child: ConstrainedBox(
             constraints: BoxConstraints(minHeight: desktop ? 36 : 48),
             child: Padding(
@@ -779,7 +799,7 @@ class ComposerMetaBar extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: theme.textTheme.labelMedium?.copyWith(
-                color: theme.colorScheme.primary,
+                color: context.emphasis.accent,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -787,12 +807,12 @@ class ComposerMetaBar extends StatelessWidget {
           Icon(
             Symbols.arrow_drop_down_rounded,
             size: 16,
-            color: theme.colorScheme.primary,
+            color: context.emphasis.accent,
           ),
         ],
       );
     }
-    final color = parseHexColor(category!.color);
+    final color = ColorUtils.category(category!.color, theme);
     return _pill(
       theme,
       key: const ValueKey('composer-category-chip'),

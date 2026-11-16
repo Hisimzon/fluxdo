@@ -1,7 +1,9 @@
+import 'package:fluxdo/utils/avatar_url.dart';
 import '../l10n/s.dart';
 import '../utils/time_utils.dart';
 import '../utils/url_helper.dart';
 import 'badge.dart';
+import 'topic.dart' show TopicGroup;
 
 /// 用户数据模型
 class User {
@@ -14,6 +16,14 @@ class User {
   final String? bio;
   final String? bioCooked;
   final String? bioRaw;
+  final String? title;
+  final bool profileHidden;
+  final bool canEdit;
+  final int? profileViewCount;
+  final SummaryTopic? featuredTopic;
+  final User? invitedBy;
+  final List<TopicGroup> groups;
+  final Map<String, dynamic> userFields;
 
   // 背景图
   final String? cardBackgroundUploadUrl;
@@ -109,6 +119,14 @@ class User {
     this.bio,
     this.bioCooked,
     this.bioRaw,
+    this.title,
+    this.profileHidden = false,
+    this.canEdit = false,
+    this.profileViewCount,
+    this.featuredTopic,
+    this.invitedBy,
+    this.groups = const [],
+    this.userFields = const {},
     this.cardBackgroundUploadUrl,
     this.profileBackgroundUploadUrl,
     this.unreadNotifications = 0,
@@ -155,7 +173,12 @@ class User {
     this.chatDrafts = const [],
   });
 
+  /// identity 用于同步会话中的名字、头像和群组标识。
   User copyWith({
+    User? identity,
+    String? avatarTemplate,
+    UserStatus? status,
+    bool clearStatus = false,
     int? unreadNotifications,
     int? unreadHighPriorityNotifications,
     int? allUnreadNotificationsCount,
@@ -168,13 +191,24 @@ class User {
     return User(
       id: id,
       username: username,
-      name: name,
-      avatarTemplate: avatarTemplate,
-      animatedAvatar: animatedAvatar,
+      name: identity != null ? identity.name : name,
+      avatarTemplate: avatarTemplate ??
+          (identity != null ? identity.avatarTemplate : this.avatarTemplate),
+      animatedAvatar: avatarTemplate != null
+          ? null
+          : (identity != null ? identity.animatedAvatar : animatedAvatar),
       trustLevel: trustLevel,
       bio: bio,
       bioCooked: bioCooked,
       bioRaw: bioRaw,
+      title: title,
+      profileHidden: profileHidden,
+      canEdit: canEdit,
+      profileViewCount: profileViewCount,
+      featuredTopic: featuredTopic,
+      invitedBy: invitedBy,
+      groups: groups,
+      userFields: userFields,
       cardBackgroundUploadUrl: cardBackgroundUploadUrl,
       profileBackgroundUploadUrl: profileBackgroundUploadUrl,
       unreadNotifications: unreadNotifications ?? this.unreadNotifications,
@@ -186,7 +220,7 @@ class User {
       notificationChannelPosition:
           notificationChannelPosition ?? this.notificationChannelPosition,
       pendingPostsCount: pendingPostsCount,
-      status: status,
+      status: clearStatus ? null : status ?? this.status,
       lastPostedAt: lastPostedAt,
       lastSeenAt: lastSeenAt,
       createdAt: createdAt,
@@ -195,11 +229,11 @@ class User {
       location: location,
       website: website,
       websiteName: websiteName,
-      flairUrl: flairUrl,
-      flairName: flairName,
-      flairBgColor: flairBgColor,
-      flairColor: flairColor,
-      flairGroupId: flairGroupId,
+      flairUrl: identity != null ? identity.flairUrl : flairUrl,
+      flairName: identity != null ? identity.flairName : flairName,
+      flairBgColor: identity != null ? identity.flairBgColor : flairBgColor,
+      flairColor: identity != null ? identity.flairColor : flairColor,
+      flairGroupId: identity != null ? identity.flairGroupId : flairGroupId,
       canFollow: canFollow,
       isFollowed: isFollowed,
       totalFollowers: totalFollowers,
@@ -233,8 +267,8 @@ class User {
       if (html == null) return null;
       // 替换 src="/... 为 src="https://linux.do/...
       return html.replaceAllMapped(
-        RegExp(r'''src=["'](/[^"']+)["']'''), 
-        (match) => 'src="${UrlHelper.resolveUrlWithCdn(match.group(1)!)}"'
+        RegExp(r'''src=["'](/[^"']+)["']'''),
+        (match) => 'src="${UrlHelper.resolveUrlWithCdn(match.group(1)!)}"',
       );
     }
 
@@ -248,8 +282,31 @@ class User {
       bio: fixHtml(json['bio_cooked'] as String?) ?? json['bio_excerpt'] as String? ?? json['bio_raw'] as String?,
       bioCooked: fixHtml(json['bio_cooked'] as String?),
       bioRaw: json['bio_raw'] as String?,
-      cardBackgroundUploadUrl: resolve(json['card_background_upload_url'] as String?),
-      profileBackgroundUploadUrl: resolve(json['profile_background_upload_url'] as String?),
+      title: json['title'] as String?,
+      profileHidden: json['profile_hidden'] == true,
+      canEdit: json['can_edit'] == true,
+      profileViewCount: (json['profile_view_count'] as num?)?.toInt(),
+      featuredTopic: json['featured_topic'] is Map<String, dynamic>
+          ? SummaryTopic.fromJson(
+              json['featured_topic'] as Map<String, dynamic>,
+            )
+          : null,
+      invitedBy: json['invited_by'] is Map<String, dynamic>
+          ? User.fromJson(json['invited_by'] as Map<String, dynamic>)
+          : null,
+      groups: (json['groups'] as List? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(TopicGroup.fromJson)
+          .toList(growable: false),
+      userFields: Map<String, dynamic>.from(
+        json['user_fields'] as Map? ?? const {},
+      ),
+      cardBackgroundUploadUrl: resolve(
+        json['card_background_upload_url'] as String?,
+      ),
+      profileBackgroundUploadUrl: resolve(
+        json['profile_background_upload_url'] as String?,
+      ),
       unreadNotifications: json['unread_notifications'] as int? ?? 0,
       unreadHighPriorityNotifications: json['unread_high_priority_notifications'] as int? ?? 0,
       allUnreadNotificationsCount: json['all_unread_notifications_count'] as int? ?? 0,
@@ -314,9 +371,17 @@ class User {
     'avatar_template': avatarTemplate,
     'animated_avatar': animatedAvatar,
     'trust_level': trustLevel,
-    'status': status != null ? {'description': status!.description, 'emoji': status!.emoji} : null,
+    'status': status == null
+        ? null
+        : {
+            'description': status!.description,
+            'emoji': status!.emoji,
+            'ends_at': status!.endsAt?.toUtc().toIso8601String(),
+            'message_bus_last_id': status!.messageBusLastId,
+          },
     'flair_url': flairUrl,
     'flair_name': flairName,
+    'flair_group_id': flairGroupId,
     'flair_bg_color': flairBgColor,
     'flair_color': flairColor,
     'gamification_score': gamificationScore,
@@ -337,6 +402,7 @@ class User {
       status: json['status'] != null ? UserStatus.fromJson(json['status'] as Map<String, dynamic>) : null,
       flairUrl: json['flair_url'] as String?,
       flairName: json['flair_name'] as String?,
+      flairGroupId: json['flair_group_id'] as int?,
       flairBgColor: json['flair_bg_color'] as String?,
       flairColor: json['flair_color'] as String?,
       gamificationScore: json['gamification_score'] as int?,
@@ -391,7 +457,7 @@ class User {
       return UrlHelper.resolveUrlWithCdn(animatedAvatar!);
     }
     if (avatarTemplate == null) return '';
-    final template = avatarTemplate!.replaceAll('{size}', size.toString());
+    final template = AvatarUrl.resolve(avatarTemplate!, size: size);
     return UrlHelper.resolveUrlWithCdn(template);
   }
 }
@@ -401,18 +467,26 @@ class UserStatus {
   final String? description;
   final String? emoji;
   
-  UserStatus({this.description, this.emoji});
+  final DateTime? endsAt;
+
+  final int? messageBusLastId;
+
+  UserStatus({this.description, this.emoji, this.endsAt, this.messageBusLastId});
   
   factory UserStatus.fromJson(Map<String, dynamic> json) {
     return UserStatus(
       description: json['description'] as String?,
       emoji: json['emoji'] as String?,
+      endsAt: TimeUtils.parseUtcTime(json['ends_at'] as String?),
+      messageBusLastId: json['message_bus_last_id'] as int?,
     );
   }
 }
 
 /// 用户统计数据
 class UserSummary {
+  final bool canSeeSummaryStats;
+  final bool canSeeUserActions;
   final int daysVisited;
   final int postsReadCount;
   final int likesReceived;
@@ -435,6 +509,8 @@ class UserSummary {
   final List<Badge> badges;
 
   UserSummary({
+    this.canSeeSummaryStats = true,
+    this.canSeeUserActions = true,
     required this.daysVisited,
     required this.postsReadCount,
     required this.likesReceived,
@@ -479,6 +555,8 @@ class UserSummary {
     final badgesJson = json['badges'] as List<dynamic>? ?? [];
 
     return UserSummary(
+      canSeeSummaryStats: summary['can_see_summary_stats'] != false,
+      canSeeUserActions: summary['can_see_user_actions'] != false,
       daysVisited: summary['days_visited'] as int? ?? 0,
       postsReadCount: summary['posts_read_count'] as int? ?? 0,
       likesReceived: summary['likes_received'] as int? ?? 0,
@@ -502,6 +580,8 @@ class UserSummary {
 
   /// 序列化为缓存 JSON
   Map<String, dynamic> toCacheJson() => {
+    'can_see_summary_stats': canSeeSummaryStats,
+    'can_see_user_actions': canSeeUserActions,
     'days_visited': daysVisited,
     'posts_read_count': postsReadCount,
     'likes_received': likesReceived,
@@ -517,6 +597,8 @@ class UserSummary {
   /// 从缓存 JSON 恢复
   factory UserSummary.fromCacheJson(Map<String, dynamic> json) {
     return UserSummary(
+      canSeeSummaryStats: json['can_see_summary_stats'] != false,
+      canSeeUserActions: json['can_see_user_actions'] != false,
       daysVisited: json['days_visited'] as int? ?? 0,
       postsReadCount: json['posts_read_count'] as int? ?? 0,
       likesReceived: json['likes_received'] as int? ?? 0,
@@ -665,7 +747,7 @@ class SummaryUserWithCount {
 
   String getAvatarUrl({int size = 120}) {
     if (avatarTemplate == null) return '';
-    final template = avatarTemplate!.replaceAll('{size}', '$size');
+    final template = AvatarUrl.resolve(avatarTemplate!, size: size);
     return UrlHelper.resolveUrlWithCdn(template);
   }
 }
@@ -744,7 +826,7 @@ class FollowUser {
 
   String getAvatarUrl({int size = 96}) {
     if (avatarTemplate == null) return '';
-    final template = avatarTemplate!.replaceAll('{size}', size.toString());
+    final template = AvatarUrl.resolve(avatarTemplate!, size: size);
     return UrlHelper.resolveUrlWithCdn(template);
   }
 }

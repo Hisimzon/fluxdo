@@ -1,3 +1,6 @@
+import 'package:common_ui/common_ui.dart';
+import 'package:fluxdo/utils/avatar_url.dart';
+
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -9,6 +12,7 @@ import '../../../utils/url_helper.dart';
 import '../../common/emoji_text.dart';
 import '../../common/smart_avatar.dart';
 import 'boost_content.dart';
+import '../../../theme/app_colors.dart';
 
 typedef BoostDanmakuTapCallback = void Function(Boost boost, Rect? anchorRect);
 
@@ -489,9 +493,11 @@ class _DanmakuItemState extends State<_DanmakuItem> {
             behavior: HitTestBehavior.opaque,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-              decoration: BoxDecoration(
+              decoration: ShapeDecoration(
                 color: Colors.black.withValues(alpha: 0.42),
-                borderRadius: BorderRadius.circular(999),
+                shape: RoundedSuperellipseBorder(
+                  borderRadius: context.shapes.borderRadius(999),
+                ),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -520,7 +526,7 @@ class _DanmakuItemState extends State<_DanmakuItem> {
                         fontWeight: FontWeight.w700,
                         color: widget.item.isHighlighted
                             ? highlightColor
-                            : Colors.amber.shade300,
+                            : context.appColors.amber.shade300,
                       ),
                     ),
                   ],
@@ -585,7 +591,10 @@ class _AvatarStrip extends StatelessWidget {
                 child: SmartAvatar(
                   imageUrl: visible[i].avatarTemplate.isNotEmpty
                       ? UrlHelper.resolveUrlWithCdn(
-                          visible[i].avatarTemplate.replaceAll('{size}', '48'),
+                          AvatarUrl.resolve(
+                            visible[i].avatarTemplate,
+                            size: 48,
+                          ),
                         )
                       : null,
                   radius: size / 2,
@@ -649,11 +658,11 @@ class _DanmakuIconPainter extends CustomPainter {
       ..strokeJoin = StrokeJoin.round;
 
     // 弹幕屏外框
-    final rrect = RRect.fromRectAndRadius(
+    final rrect = RSuperellipse.fromRectAndRadius(
       const Rect.fromLTWH(1.2, 3.6, iconSize - 2.4, iconSize - 7.2),
-      const Radius.circular(3.2),
+      UiShapes.current.radius(3.2),
     );
-    canvas.drawRRect(rrect, stroke);
+    canvas.drawRSuperellipse(rrect, stroke);
 
     // 两条弹幕线
     canvas.drawLine(const Offset(3.6, 7.6), const Offset(11.2, 7.6), stroke);

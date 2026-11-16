@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:common_ui/common_ui.dart' show UiShapesContext;
 import 'package:flutter/physics.dart';
 
 import 'm3e_flags.dart';
@@ -110,8 +111,17 @@ class _M3eNavigationBarState extends State<M3eNavigationBar>
                             width: _kIndicatorWidth,
                             height: _kIndicatorHeight,
                             decoration: ShapeDecoration(
-                              color: scheme.secondaryContainer,
-                              shape: const StadiumBorder(),
+                              // 主题可换指示器颜色（浅灰底、短横等风格）
+                              color:
+                                  barTheme.indicatorColor ??
+                                  scheme.secondaryContainer,
+                              shape:
+                                  barTheme.indicatorShape ??
+                                  RoundedSuperellipseBorder(
+                                    borderRadius: context.shapes.borderRadius(
+                                      9999,
+                                    ),
+                                  ),
                             ),
                           ),
                         ),

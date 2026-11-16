@@ -1,3 +1,5 @@
+import 'package:common_ui/common_ui.dart';
+
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -80,7 +82,7 @@ class _PageDialogScaffoldState extends State<PageDialogScaffold> {
     final builder = widget.fullscreenBuilder!;
     final navigator = Navigator.of(context, rootNavigator: true);
     navigator.pop();
-    navigator.push(MaterialPageRoute(builder: builder));
+    navigator.push(InteractionPageRoute(builder: builder));
   }
 
   @override
@@ -129,7 +131,9 @@ class _PageDialogScaffoldState extends State<PageDialogScaffold> {
                   color: theme.colorScheme.surface,
                   clipBehavior: Clip.antiAlias,
                   elevation: 6,
-                  borderRadius: BorderRadius.circular(28),
+                  shape: RoundedSuperellipseBorder(
+                    borderRadius: context.shapes.borderRadius(28),
+                  ),
                   child: _buildPanelBody(theme),
                 ),
               ),
@@ -188,7 +192,9 @@ class _PageDialogTopButton extends StatelessWidget {
       padding: const EdgeInsetsDirectional.only(start: 8),
       child: Material(
         color: theme.colorScheme.surfaceContainerHigh,
-        shape: const CircleBorder(),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(9999),
+        ),
         clipBehavior: Clip.antiAlias,
         child: IconButton(
           tooltip: tooltip,
@@ -196,7 +202,7 @@ class _PageDialogTopButton extends StatelessWidget {
             icon,
             color: onPressed == null
                 ? theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.38)
-                : theme.colorScheme.onSurfaceVariant,
+                : theme.colorScheme.primary,
           ),
           onPressed: onPressed,
         ),

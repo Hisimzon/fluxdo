@@ -1,3 +1,5 @@
+import 'package:common_ui/common_ui.dart';
+import 'package:fluxdo/utils/avatar_url.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 
@@ -7,6 +9,7 @@ import '../../../../utils/fluxdo_render_callbacks.dart';
 import '../../../../utils/time_utils.dart';
 import '../../../../utils/url_helper.dart';
 import '../../../common/smart_avatar.dart';
+import '../../../../theme/app_colors.dart';
 
 /// 解决方案横幅(仅在主贴下方展示)
 ///
@@ -51,18 +54,20 @@ class _PostSolutionBannerState extends State<PostSolutionBanner> {
 
     return Padding(
       padding: const EdgeInsets.only(top: 16),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
+      child: ClipRSuperellipse(
+        borderRadius: context.shapes.borderRadius(12),
         child: Container(
-          decoration: BoxDecoration(
+          decoration: ShapeDecoration(
             color: isDark
-                ? Colors.green.withValues(alpha: 0.05)
-                : Colors.green.withValues(alpha: 0.04),
-            border: Border.all(
-              color: Colors.green.withValues(alpha: 0.3),
-              width: 1,
+                ? context.appColors.green.withValues(alpha: 0.05)
+                : context.appColors.green.withValues(alpha: 0.04),
+            shape: RoundedSuperellipseBorder(
+              borderRadius: context.shapes.borderRadius(12),
+              side: BorderSide(
+                color: context.appColors.green.withValues(alpha: 0.3),
+                width: 1,
+              ),
             ),
-            borderRadius: BorderRadius.circular(12),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -100,9 +105,7 @@ class _BannerHeader extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: isDark
-            ? const Color(0xFF2E7D32)
-            : const Color(0xFF43A047),
+        color: isDark ? const Color(0xFF2E7D32) : const Color(0xFF43A047),
       ),
       child: Row(
         children: [
@@ -157,7 +160,7 @@ class _AnswerRow extends StatelessWidget {
     final timeText = TimeUtils.formatRelativeTime(answer.createdAt);
     final avatarUrl = (answer.avatarTemplate?.isNotEmpty ?? false)
         ? UrlHelper.resolveUrlWithCdn(
-            answer.avatarTemplate!.replaceAll('{size}', '48'),
+            AvatarUrl.resolve(answer.avatarTemplate!, size: 48),
           )
         : null;
     final hasExcerpt = (answer.excerpt?.isNotEmpty ?? false);
@@ -175,7 +178,9 @@ class _AnswerRow extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           InkWell(
-            onTap: hasExcerpt ? onToggle : () => onJumpToPost?.call(answer.postNumber),
+            onTap: hasExcerpt
+                ? onToggle
+                : () => onJumpToPost?.call(answer.postNumber),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               child: Row(
@@ -221,7 +226,9 @@ class _AnswerRow extends StatelessWidget {
                   ),
                   if (hasExcerpt)
                     Icon(
-                      expanded ? Symbols.expand_less_rounded : Symbols.expand_more_rounded,
+                      expanded
+                          ? Symbols.expand_less_rounded
+                          : Symbols.expand_more_rounded,
                       size: 20,
                       color: theme.colorScheme.onSurfaceVariant,
                     )
@@ -284,7 +291,9 @@ class _ExpandedExcerpt extends StatelessWidget {
           const SizedBox(height: 6),
           InkWell(
             onTap: () => onJumpToPost?.call(postNumber),
-            borderRadius: BorderRadius.circular(4),
+            customBorder: RoundedSuperellipseBorder(
+              borderRadius: context.shapes.borderRadius(4),
+            ),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
               child: Text(
@@ -301,4 +310,3 @@ class _ExpandedExcerpt extends StatelessWidget {
     );
   }
 }
-

@@ -1,5 +1,7 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
 import 'floating_widget_mixin.dart';
 
@@ -11,6 +13,18 @@ class DraggableFloatingPill extends StatefulWidget {
   final bool initiallyExpanded;
   final bool tapToExpand;
 
+  /// 前导图标。
+  final IconData icon;
+
+  /// 自带颜色的标志（如品牌 logo），提供时取代 [icon]，不跟随内容色。
+  final Widget? mark;
+
+  /// 进行中：图标外套一圈不确定进度环。
+  final bool busy;
+
+  /// 需要用户处理：改用 primary 色底，与进行中态区分。
+  final bool emphasized;
+
   const DraggableFloatingPill({
     super.key,
     required this.child,
@@ -19,11 +33,22 @@ class DraggableFloatingPill extends StatefulWidget {
     this.initialTop = 100,
     this.initiallyExpanded = false,
     this.tapToExpand = true,
+    this.icon = Symbols.gpp_maybe_rounded,
+    this.mark,
+    this.busy = false,
+    this.emphasized = false,
   });
 
   @override
   State<DraggableFloatingPill> createState() => _DraggableFloatingPillState();
 }
+
+/// 进度环直径。比普通图标（20）大一圈：M3E 波浪环会向内起伏，
+/// 留出余量免得贴住内部标志。
+const double _busyRingSize = 24;
+
+/// 普通图标尺寸。
+const double _iconSize = 20;
 
 class _DraggableFloatingPillState extends State<DraggableFloatingPill>
     with TickerProviderStateMixin, FloatingWidgetMixin {
@@ -98,14 +123,23 @@ class _DraggableFloatingPillState extends State<DraggableFloatingPill>
 
   @override
   Widget build(BuildContext context) {
-    final borderRadius = BorderRadius.circular(999);
+    final borderRadius = context.shapes.borderRadius(999);
     final pos = floatingPosition();
     final colorScheme = Theme.of(context).colorScheme;
-    final backgroundColor = colorScheme.inverseSurface;
-    final contentColor = colorScheme.onInverseSurface;
+    final backgroundColor = widget.emphasized
+        ? colorScheme.primary
+        : colorScheme.inverseSurface;
+    final contentColor = widget.emphasized
+        ? colorScheme.onPrimary
+        : colorScheme.onInverseSurface;
 
     // Padding 动画：吸附时增加 padding 防止内容被埋在 offscreen 区域
-    final basePadding = widget.padding;
+    // 进度环比图标高出的部分从上下内边距里扣回，各状态胶囊等高
+    final ringExtra = widget.busy ? (_busyRingSize - _iconSize) / 2 : 0.0;
+    final basePadding = widget.padding.copyWith(
+      top: widget.padding.top - ringExtra,
+      bottom: widget.padding.bottom - ringExtra,
+    );
     final overlap = floatingOverlap;
     final isRight = floatingIsRight;
     final targetPadding = floatingIsAdsorbed
@@ -130,9 +164,8 @@ class _DraggableFloatingPillState extends State<DraggableFloatingPill>
             animation: _breathingAnimation,
             builder: (context, child) {
               return Container(
-                decoration: BoxDecoration(
-                  borderRadius: borderRadius,
-                  boxShadow: [
+                decoration: ShapeDecoration(
+                  shadows: [
                     BoxShadow(
                       color: Colors.black.withValues(alpha: 0.2),
                       blurRadius: 6,
@@ -147,6 +180,7 @@ class _DraggableFloatingPillState extends State<DraggableFloatingPill>
                       spreadRadius: 2 + 4 * _breathingAnimation.value,
                     ),
                   ],
+                  shape: RoundedSuperellipseBorder(borderRadius: borderRadius),
                 ),
                 child: child,
               );
@@ -154,26 +188,55 @@ class _DraggableFloatingPillState extends State<DraggableFloatingPill>
             child: Material(
               color: Colors.transparent,
               elevation: 0,
-              borderRadius: borderRadius,
+              shape: RoundedSuperellipseBorder(borderRadius: borderRadius),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
                 curve: Curves.easeOut,
-                decoration: BoxDecoration(
+                decoration: ShapeDecoration(
                   color: backgroundColor.withValues(alpha: 0.9),
-                  borderRadius: borderRadius,
-                  border: Border.all(
-                    color: colorScheme.outline.withValues(alpha: 0.1),
-                    width: 1.0,
+                  shape: RoundedSuperellipseBorder(
+                    borderRadius: borderRadius,
+                    side: BorderSide(
+                      color: colorScheme.outline.withValues(alpha: 0.1),
+                      width: 1.0,
+                    ),
                   ),
                 ),
                 padding: targetPadding,
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Symbols.gpp_maybe_rounded, fill: _isExpanded ? 1 : 0,
-                      size: 20,
-                      color: contentColor,
-                    ),
+                    if (widget.busy)
+                      // 进度环包住标志；M3E 开关关闭时组件内部回退为经典转圈
+                      SizedBox.square(
+                        dimension: _busyRingSize,
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            M3eCircularProgress(
+                              size: _busyRingSize,
+                              strokeWidth: 1.5,
+                              color: contentColor,
+                              trackColor: contentColor.withValues(alpha: 0.2),
+                            ),
+                            widget.mark ??
+                                Icon(
+                                  widget.icon,
+                                  fill: 1,
+                                  size: 12,
+                                  color: contentColor,
+                                ),
+                          ],
+                        ),
+                      )
+                    else
+                      widget.mark ??
+                          Icon(
+                            widget.icon,
+                            fill: _isExpanded ? 1 : 0,
+                            size: _iconSize,
+                            color: contentColor,
+                          ),
                     AnimatedSize(
                       duration: const Duration(milliseconds: 200),
                       child: SizedBox(

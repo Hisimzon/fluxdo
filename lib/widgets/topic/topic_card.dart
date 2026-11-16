@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:common_ui/common_ui.dart';
+import 'package:m3e_ui/m3e_ui.dart' show SegmentedCardItem;
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -24,6 +26,10 @@ import '../common/relative_time_text.dart';
 import '../../utils/number_utils.dart';
 import '../common/emoji_text.dart';
 import 'topic_expandable_excerpt.dart';
+import '../../theme/app_colors.dart';
+import '../../utils/color_utils.dart';
+import 'topic_item_builder.dart' show TopicGroupSlot;
+import 'pinned_topics_header.dart';
 
 Widget _withDesktopTertiaryTap(Widget child, VoidCallback? onMiddleClick) {
   if (!PlatformUtils.isDesktop || onMiddleClick == null) return child;
@@ -36,7 +42,7 @@ Widget _clipCardIfNeeded({
   required bool shouldClip,
 }) {
   if (!shouldClip) return child;
-  return ClipRRect(borderRadius: borderRadius, child: child);
+  return ClipRSuperellipse(borderRadius: borderRadius, child: child);
 }
 
 /// 话题卡交互面(公共):桌面 = Material + InkWell(hover/水波纹/右键/
@@ -79,7 +85,7 @@ class TopicCardInteractiveSurface extends StatelessWidget {
       type: MaterialType.transparency,
       child: _withDesktopTertiaryTap(
         InkWell(
-          borderRadius: borderRadius,
+          customBorder: RoundedSuperellipseBorder(borderRadius: borderRadius),
           splashFactory: InkSplash.splashFactory,
           onTap: onTap,
           onLongPress: onLongPress,
@@ -201,9 +207,11 @@ class _MobileTopicTapSurfaceState extends State<_MobileTopicTapSurface> {
               ? null
               : (_) => _setPressed(false),
           child: DecoratedBox(
-            decoration: BoxDecoration(
+            decoration: ShapeDecoration(
               color: _pressed ? overlayColor : Colors.transparent,
-              borderRadius: widget.borderRadius,
+              shape: RoundedSuperellipseBorder(
+                borderRadius: widget.borderRadius,
+              ),
             ),
             child: widget.child,
           ),
@@ -310,9 +318,9 @@ class TopicCard extends ConsumerWidget {
     // Card 壳换轻装(视觉逐项等价):cardTheme elevation=0 无阴影无 tint,
     // 而 Card→Material 每卡挂一套 AnimatedPhysicalModel 隐式动画基建
     // (AnimationController/Ticker/PhysicalShape),对列表滚动物化是纯税
-    // (生产 PROF 点名)。DecoratedBox 复刻色/圆角/选中描边,ClipRRect
+    // (生产 PROF 点名)。DecoratedBox 复刻色/圆角/选中描边,ClipRSuperellipse
     // 复刻 antiAlias 裁剪,Material(transparency) 只做 InkWell 的 ink 载体。
-    final cardRadius = BorderRadius.circular(10);
+    final cardRadius = context.shapes.borderRadius(10);
     // PerfSpanBox:整卡子树的 layout/paint 账单(lay:card#N / pnt:card#N),
     // 与 noteBuild 在场名单互补(监控关闭零开销,纯代理盒无视觉影响)
     return PerfSpanBox(
@@ -323,16 +331,22 @@ class TopicCard extends ConsumerWidget {
           borderRadius: cardRadius,
           shouldClip: topWidget != null,
           child: DecoratedBox(
-            decoration: BoxDecoration(
+            decoration: ShapeDecoration(
               color: isSelected
                   ? theme.colorScheme.primaryContainer.withValues(alpha: 0.4)
-                  : (highlightColor ?? theme.cardTheme.color),
-              borderRadius: cardRadius,
-              border: isSelected
-                  ? Border.all(
-                      color: theme.colorScheme.primary.withValues(alpha: 0.5),
-                    )
-                  : null,
+                  : (highlightColor ??
+                        PageBackgroundScope.contentColor(
+                          context,
+                          theme.cardTheme.color ?? Colors.transparent,
+                        )),
+              shape: RoundedSuperellipseBorder(
+                borderRadius: cardRadius,
+                side: isSelected
+                    ? BorderSide(
+                        color: theme.colorScheme.primary.withValues(alpha: 0.5),
+                      )
+                    : BorderSide.none,
+              ),
             ),
             child: TopicCardInteractiveSurface(
               borderRadius: cardRadius,
@@ -690,8 +704,8 @@ class TopicCard extends ConsumerWidget {
           size: 15,
           // 全读完时随文字一起降饱和
           color: isFullyRead
-              ? Colors.green.withValues(alpha: 0.5)
-              : Colors.green,
+              ? context.appColors.green.withValues(alpha: 0.5)
+              : context.appColors.green,
           gap: 4,
         )
       else if (topic.canHaveAnswer)
@@ -845,9 +859,11 @@ class TopicCard extends ConsumerWidget {
       // 未读数：主题色圆角徽章
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-        decoration: BoxDecoration(
+        decoration: ShapeDecoration(
           color: theme.colorScheme.primary,
-          borderRadius: BorderRadius.circular(10),
+          shape: RoundedSuperellipseBorder(
+            borderRadius: context.shapes.borderRadius(10),
+          ),
         ),
         child: Text(
           '${topic.unread}',
@@ -995,6 +1011,9 @@ class CompactTopicCard extends ConsumerWidget {
   final Color? highlightColor;
   final Map<int, Category>? categoryMap;
 
+  /// 在置顶分组里的位置；为 null 时是普通紧凑卡
+  final TopicGroupSlot? group;
+
   const CompactTopicCard({
     super.key,
     required this.topic,
@@ -1005,6 +1024,7 @@ class CompactTopicCard extends ConsumerWidget {
     this.isSelected = false,
     this.highlightColor,
     this.categoryMap,
+    this.group,
   });
 
   @override
@@ -1033,210 +1053,273 @@ class CompactTopicCard extends ConsumerWidget {
 
     // 同 TopicCard:Card 壳换轻装(elevation=0 主题下视觉逐项等价),
     // 砍每卡一套 AnimatedPhysicalModel 隐式动画基建。
-    final cardRadius = BorderRadius.circular(10);
-    final compactTitleStyle = theme.textTheme.labelMedium?.copyWith(
-      fontWeight: isUnread ? FontWeight.w500 : FontWeight.w400,
-      color: isUnread
-          ? theme.colorScheme.onSurface
-          : theme.colorScheme.onSurfaceVariant,
-    );
+    final group = this.group;
+    final grouped = group != null;
+    final cardRadius = group != null
+        ? SegmentedCardItem.borderRadiusOf(
+            context,
+            index: group.index,
+            count: group.count,
+            outerRadius: PinnedTopicsGroup.outerRadius,
+            innerRadius: PinnedTopicsGroup.innerRadius,
+          )
+        : context.shapes.borderRadius(10);
+    final compactTitleStyle =
+        (grouped ? theme.textTheme.bodyMedium : theme.textTheme.labelMedium)
+            ?.copyWith(
+              fontWeight: isUnread ? FontWeight.w500 : FontWeight.w400,
+              color: isUnread
+                  ? theme.colorScheme.onSurface
+                  : theme.colorScheme.onSurfaceVariant,
+            );
     final needsRichTitle =
+        category != null ||
         topic.closed ||
         topic.hasAcceptedAnswer ||
         topic.canHaveAnswer ||
         topic.title.contains(':');
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: _clipCardIfNeeded(
-        borderRadius: cardRadius,
-        shouldClip: false,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: isSelected
-                ? theme.colorScheme.primaryContainer.withValues(alpha: 0.4)
-                : highlightColor ??
-                      theme.colorScheme.surfaceContainerLow.withValues(
-                        alpha: 0.5,
-                      ),
-            borderRadius: cardRadius,
-            border: isSelected
-                ? Border.all(
-                    color: theme.colorScheme.primary.withValues(alpha: 0.5),
-                  )
-                : null,
-          ),
-          child: TopicCardInteractiveSurface(
+    final selectedColor = theme.colorScheme.primaryContainer.withValues(
+      alpha: 0.4,
+    );
+    final selectedSide = BorderSide(
+      color: theme.colorScheme.primary.withValues(alpha: 0.5),
+    );
+    final surface = TopicCardInteractiveSurface(
             borderRadius: cardRadius,
             onTap: onTap,
             onLongPress: onLongPress,
             onPreviewIntent: onPreviewIntent,
             onMiddleClick: onMiddleClick,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              child: Row(
-                children: [
-                  // 1. 置顶图标
-                  Icon(
-                    Symbols.push_pin_rounded,
-                    size: 14,
-                    color: theme.colorScheme.primary,
-                  ),
-                  const SizedBox(width: 8),
-
-                  // 2. 分类图标/Dot
-                  if (category != null) ...[
-                    if (faIcon != null)
-                      FaIcon(
-                        faIcon,
-                        size: 12,
-                        color: _parseColor(category.color),
-                      )
-                    else if (logoUrl != null && logoUrl.isNotEmpty)
-                      Image(
-                        image: discourseImageProvider(
-                          UrlHelper.resolveUrlWithCdn(logoUrl),
-                        ),
-                        width: 12,
-                        height: 12,
-                        fit: BoxFit.contain,
-                        errorBuilder: (context, error, stackTrace) {
-                          return _buildCategoryDot(category);
-                        },
-                      )
-                    else
-                      _buildCategoryDot(category),
-                    const SizedBox(width: 8),
-                  ],
-
-                  // 3. 标题
-                  Expanded(
-                    child: needsRichTitle
-                        ? Text.rich(
-                            TextSpan(
-                              style: compactTitleStyle,
-                              children: [
-                                if (topic.closed)
-                                  iconGlyphSpan(
-                                    context,
-                                    Symbols.lock_rounded,
-                                    size: 12,
-                                    color: isUnread
-                                        ? theme.colorScheme.onSurface
-                                        : theme.colorScheme.onSurfaceVariant,
-                                    gap: 3,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: grouped ? 52 : 0),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    child: Row(
+                      children: [
+                        // 3. 标题
+                        Expanded(
+                          child: needsRichTitle
+                              ? Text.rich(
+                                  TextSpan(
+                                    style: compactTitleStyle,
+                                    children: [
+                                      if (category != null)
+                                        WidgetSpan(
+                                          alignment:
+                                              PlaceholderAlignment.middle,
+                                          child: ExcludeSemantics(
+                                            child: Padding(
+                                              key: ValueKey(
+                                                'topic-category-inline-${topic.id}',
+                                              ),
+                                              padding:
+                                                  const EdgeInsetsDirectional.only(
+                                                    end: 8,
+                                                  ),
+                                              child: _buildCategoryIcon(
+                                                context,
+                                                category,
+                                                faIcon,
+                                                logoUrl,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      if (topic.closed)
+                                        iconGlyphSpan(
+                                          context,
+                                          Symbols.lock_rounded,
+                                          size: 12,
+                                          color: isUnread
+                                              ? theme.colorScheme.onSurface
+                                              : theme
+                                                    .colorScheme
+                                                    .onSurfaceVariant,
+                                          gap: 3,
+                                        ),
+                                      if (topic.hasAcceptedAnswer)
+                                        iconGlyphSpan(
+                                          context,
+                                          Symbols.check_box_rounded,
+                                          size: 12,
+                                          color: context.appColors.green,
+                                          gap: 3,
+                                        )
+                                      else if (topic.canHaveAnswer)
+                                        iconGlyphSpan(
+                                          context,
+                                          Symbols
+                                              .check_box_outline_blank_rounded,
+                                          size: 12,
+                                          color: theme.colorScheme.outline,
+                                          gap: 3,
+                                        ),
+                                      ...EmojiText.buildEmojiSpans(
+                                        context,
+                                        topic.title,
+                                        compactTitleStyle,
+                                      ),
+                                    ],
                                   ),
-                                if (topic.hasAcceptedAnswer)
-                                  iconGlyphSpan(
-                                    context,
-                                    Symbols.check_box_rounded,
-                                    size: 12,
-                                    color: Colors.green,
-                                    gap: 3,
-                                  )
-                                else if (topic.canHaveAnswer)
-                                  iconGlyphSpan(
-                                    context,
-                                    Symbols.check_box_outline_blank_rounded,
-                                    size: 12,
-                                    color: theme.colorScheme.outline,
-                                    gap: 3,
-                                  ),
-                                ...EmojiText.buildEmojiSpans(
-                                  context,
+                                  maxLines: grouped ? 2 : 1,
+                                  overflow: TextOverflow.ellipsis,
+                                )
+                              : Text(
                                   topic.title,
-                                  compactTitleStyle,
+                                  style: compactTitleStyle,
+                                  maxLines: grouped ? 2 : 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                        ),
+
+                        const SizedBox(width: 8),
+
+                        // 4. 未读数或简单状态
+                        if (topic.unread > 0)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: ShapeDecoration(
+                              color: theme.colorScheme.primaryContainer
+                                  .withValues(alpha: 0.7),
+                              shape: RoundedSuperellipseBorder(
+                                borderRadius: context.shapes.borderRadius(10),
+                              ),
+                            ),
+                            child: Text(
+                              '${topic.unread}',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: theme.colorScheme.onPrimaryContainer,
+                                fontWeight: FontWeight.w500,
+                                fontSize: 10,
+                              ),
+                            ),
+                          )
+                        else if (topic.postsCount > 1)
+                          // 单段落:字形 span 复刻 Icon(12)+SizedBox(2)+Text
+                          Text.rich(
+                            TextSpan(
+                              children: [
+                                iconGlyphSpan(
+                                  context,
+                                  Symbols.chat_bubble_rounded,
+                                  size: 12,
+                                  color: theme.colorScheme.outline.withValues(
+                                    alpha: 0.7,
+                                  ),
+                                  gap: 2,
+                                  textStyle: theme.textTheme.labelSmall
+                                      ?.copyWith(fontSize: 10),
+                                ),
+                                TextSpan(
+                                  text: '${topic.postsCount - 1}',
+                                  style: theme.textTheme.labelSmall?.copyWith(
+                                    color: theme.colorScheme.outline.withValues(
+                                      alpha: 0.7,
+                                    ),
+                                    fontSize: 10,
+                                  ),
                                 ),
                               ],
                             ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          )
-                        : Text(
-                            topic.title,
-                            style: compactTitleStyle,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
                           ),
+                      ],
+                    ),
                   ),
-
-                  const SizedBox(width: 8),
-
-                  // 4. 未读数或简单状态
-                  if (topic.unread > 0)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.primaryContainer.withValues(
-                          alpha: 0.7,
-                        ),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text(
-                        '${topic.unread}',
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: theme.colorScheme.onPrimaryContainer,
-                          fontWeight: FontWeight.w500,
-                          fontSize: 10,
-                        ),
-                      ),
-                    )
-                  else if (topic.postsCount > 1)
-                    // 单段落:字形 span 复刻 Icon(12)+SizedBox(2)+Text
-                    Text.rich(
-                      TextSpan(
-                        children: [
-                          iconGlyphSpan(
-                            context,
-                            Symbols.chat_bubble_rounded,
-                            size: 12,
-                            color: theme.colorScheme.outline.withValues(
-                              alpha: 0.7,
-                            ),
-                            gap: 2,
-                            textStyle: theme.textTheme.labelSmall?.copyWith(
-                              fontSize: 10,
-                            ),
-                          ),
-                          TextSpan(
-                            text: '${topic.postsCount - 1}',
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              color: theme.colorScheme.outline.withValues(
-                                alpha: 0.7,
-                              ),
-                              fontSize: 10,
-                            ),
-                          ),
-                        ],
+                ),
+              ],
+            ),
+          );
+    if (group != null) {
+      // 置顶分组：底色、圆角、分隔线与描边按分段卡片规则逐项绘制
+      return Padding(
+        padding: EdgeInsets.only(
+          bottom: group.index == group.count - 1
+              ? PinnedTopicsGroup.trailingGap
+              : 0,
+        ),
+        child: SegmentedCardItem(
+          index: group.index,
+          count: group.count,
+          outerRadius: PinnedTopicsGroup.outerRadius,
+          innerRadius: PinnedTopicsGroup.innerRadius,
+          gap: PinnedTopicsGroup.gap,
+          color: isSelected
+              ? selectedColor
+              : highlightColor ??
+                    (PageBackgroundScope.isActive(context)
+                        ? Colors.transparent
+                        : null),
+          side: isSelected ? selectedSide : BorderSide.none,
+          child: surface,
+        ),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: DecoratedBox(
+        decoration: ShapeDecoration(
+          color: isSelected
+              ? selectedColor
+              : highlightColor ??
+                    PageBackgroundScope.contentColor(
+                      context,
+                      theme.colorScheme.surfaceContainerLow.withValues(
+                        alpha: 0.5,
                       ),
                     ),
-                ],
-              ),
-            ),
+          shape: RoundedSuperellipseBorder(
+            borderRadius: cardRadius,
+            side: isSelected ? selectedSide : BorderSide.none,
           ),
         ),
+        child: surface,
       ),
     );
   }
 
-  Widget _buildCategoryDot(Category category) {
+  Widget _buildCategoryIcon(
+    BuildContext context,
+    Category category,
+    FaIconData? icon,
+    String? logoUrl,
+  ) {
+    if (icon != null) {
+      return FaIcon(
+        icon,
+        size: 12,
+        color: ColorUtils.category(category.color, Theme.of(context)),
+      );
+    }
+    if (logoUrl != null && logoUrl.isNotEmpty) {
+      return Image(
+        image: discourseImageProvider(UrlHelper.resolveUrlWithCdn(logoUrl)),
+        width: 12,
+        height: 12,
+        fit: BoxFit.contain,
+        errorBuilder: (context, error, stackTrace) =>
+            _buildCategoryDot(context, category),
+      );
+    }
+    return _buildCategoryDot(context, category);
+  }
+
+  Widget _buildCategoryDot(BuildContext context, Category category) {
     return Container(
       width: 6,
       height: 6,
       decoration: BoxDecoration(
-        color: _parseColor(category.color),
+        color: ColorUtils.category(category.color, Theme.of(context)),
         shape: BoxShape.circle,
       ),
     );
-  }
-
-  Color _parseColor(String hex) {
-    hex = hex.replaceAll('#', '');
-    if (hex.length == 6) {
-      return Color(int.parse('0xFF$hex'));
-    }
-    return Colors.grey;
   }
 }

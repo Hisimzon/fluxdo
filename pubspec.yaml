@@ -1,11 +1,11 @@
 name: fluxdo
 description: "A new Flutter project."
 publish_to: 'none'
-version: 0.2.29+2026102016
+version: 0.2.30+2026111316
 
 environment:
   sdk: ^3.13.0
-  flutter: ">=3.47.4"
+  flutter: ">=3.47.9"
 
 # sqlite3(经 sqflite_common_ffi 引入)的 build hook 默认在构建期从 GitHub
 # 下载预编译库,Flatpak 离线沙箱内必然失败;指向 vendored amalgamation
@@ -28,6 +28,7 @@ workspace:
   - packages/paper_shaders
 
 dependencies:
+  desktop_multi_window: ^0.3.1
   flutter:
     sdk: flutter
   flutter_localizations:
@@ -41,7 +42,6 @@ dependencies:
   http: ^1.6.0
   dio_cookie_manager: ^3.1.1
   cookie_jar: ^4.0.8
-  native_dio_adapter: ^1.6.0
   flutter_secure_storage: ^10.3.1
   flutter_inappwebview: ^6.2.0-beta.3
   # 编辑器 1:1 预览:跑 Discourse 官方 markdown-it cook bundle
@@ -57,7 +57,7 @@ dependencies:
   enhanced_cookie_jar:
     path: packages/enhanced_cookie_jar
   re_highlight: ^0.0.3
-  google_fonts: ^8.0.0
+  lunar: ^1.7.9  # 农历与节气（节日主题判定）
   share_plus: ^12.0.1
   cross_file: ^0.3.4+2
   open_filex: ^4.7.0
@@ -75,6 +75,7 @@ dependencies:
   flutter_displaymode: ^0.7.0  # Android 高刷新率支持
   dynamic_color: ^1.8.1
   scroll_to_index: ^3.0.1
+  positioned_sliver_list: 0.2.5
   visibility_detector: ^0.4.0+2
   markdown: ^7.3.1
   emoji_extension: ^1.3.0
@@ -124,7 +125,8 @@ dependencies:
   hive_ce: ^2.19.3
   hive_ce_flutter: ^2.3.4
   dns_client: ^1.3.1
-  cronet_http: ^1.8.0
+  # 安卓读取 Java 系统属性（系统代理），随配置下发给网络核心
+  jni: ^1.1.1
   package_info_plus: ^8.1.2
   pro_image_editor: ^11.18.4
   flutter_image_compress: ^2.4.0
@@ -132,7 +134,6 @@ dependencies:
   flutter_math_fork: ^0.7.4
   device_info_plus: 12.3.0
   connectivity_plus: 7.0.0
-  ua_client_hints: ^1.4.1
   ota_update: ^7.1.0
   app_links: ^7.1.1
   chat_bottom_container: ^0.4.0
@@ -193,17 +194,18 @@ dependencies:
   just_audio_platform_interface: ^4.6.0 # JustAudioGst 实现平台接口
   audioplayers_linux: ^4.3.0
   audioplayers_platform_interface: ^7.2.0
-  rhttp:
-    git:
-      url: https://github.com/Lingyan000/rhttp_plus.git
-      path: rhttp
-  dio_compatibility_layer: ^0.1.1
   ffi: any
   # 性能诊断:掉帧时 app 内连接自身 VM Service 抓取当帧 timeline,
   # 自动归并出耗时 widget(debug/profile 有效,release 无 VM Service)
   vm_service: ^15.2.0
   full_svg_flutter: ^1.3.0
 dependency_overrides:
+  # Android 12+ 标准免确认自更新，保留系统确认回退。
+  ota_update:
+    path: third_party/ota_update
+  # 固定 Dio 5.11.1，仅修复响应流订阅、背压、取消和接收计时。
+  dio:
+    path: third_party/dio
   # super_clipboard 0.9.1 要求 device_info_plus <12.0.0，
   # 但实际 12.x 接口兼容，强制使用项目版本
   device_info_plus: 12.3.0
@@ -213,9 +215,6 @@ dependency_overrides:
   # vendored 版本带 aliveGuard 修复
   flutter_inappwebview_windows:
     path: packages/flutter_inappwebview_windows
-  # 锁定 flutter_rust_bridge 版本，与 rhttp 插件的 codegen 版本保持一致。
-  # rhttp_plus 已同步 upstream 0.18.0，生成代码基于 2.12.0。
-  flutter_rust_bridge: 2.12.0
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -227,7 +226,7 @@ melos:
   useRootAsPackage: true
 
 flutter:
-  # 暂保留 CocoaPods：3.47.4 构建仍报告 flutter_avif、flutter_js、rhttp、
+  # 暂保留 CocoaPods：3.47.4 构建仍报告 flutter_avif、flutter_js、
   # super_native_extensions 等插件未支持 SwiftPM，不能只升级 SDK 就切换。
   # Apple 最低版本已同步 iOS 15 / macOS 12；待插件链路验证后独立迁移。
   config:
@@ -245,14 +244,10 @@ flutter:
     - assets/icons/thinking/
     - assets/polyfill/
     - assets/cook/
+    - assets/themes/
+    - assets/fonts/catalog.json
+    - assets/festivals/
 
-  fonts:
-    - family: MiSans
-      fonts:
-        # MiSans Variable Font，单文件覆盖 100-900 全部 weight。
-        # Flutter 3.41+ FontWeight 会映射到 wght variation axis，因此即使
-        # 不显式声明 weight，TextStyle(fontWeight: FontWeight.wXXX) 也能精准命中。
-        - asset: assets/fonts/MiSansVF.ttf
 
 
 

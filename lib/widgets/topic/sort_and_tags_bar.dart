@@ -1,5 +1,7 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
+
 import '../../providers/topic_list/filter_provider.dart';
 import '../../providers/topic_list/sort_provider.dart';
 import '../common/topic_badges.dart';
@@ -63,67 +65,68 @@ class SortAndTagsBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    return Container(
-      color: Theme.of(context).scaffoldBackgroundColor,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      child: Row(
-        children: [
-          // 筛选下拉
-          FilterDropdown(
-            currentFilter: currentFilter,
-            isLoggedIn: isLoggedIn,
-            onFilterChanged: onFilterChanged,
-          ),
-          // 「新话题」子过滤下拉
-          if (currentFilter == TopicListFilter.newTopics) ...[
-            const SizedBox(width: 4),
-            NewSubsetDropdown(
-              currentSubset: currentSubset,
-              onSubsetChanged: onSubsetChanged,
+    // 吸顶条属于「页面底」：有自定义背景时画对齐的背景副本
+    return PageBackdrop(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        child: Row(
+          children: [
+            // 筛选下拉
+            FilterDropdown(
+              currentFilter: currentFilter,
+              isLoggedIn: isLoggedIn,
+              onFilterChanged: onFilterChanged,
             ),
-          ],
-          const SizedBox(width: 4),
-          // 排序下拉
-          OrderDropdown(
-            currentOrder: currentOrder,
-            ascending: ascending,
-            onOrderChanged: onOrderChanged,
-            onToggleAscending: onToggleAscending,
-          ),
-          const SizedBox(width: 8),
-          // 标签区域
-          Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  ...selectedTags.map((tag) => Padding(
-                    padding: const EdgeInsets.only(right: 6),
-                    child: RemovableTagBadge(
-                      name: tag,
-                      onDeleted: () => onTagRemoved(tag),
-                      size: const BadgeSize(
-                        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        radius: 6,
-                        iconSize: 12,
-                        fontSize: 12,
+            // 「新话题」子过滤下拉
+            if (currentFilter == TopicListFilter.newTopics) ...[
+              const SizedBox(width: 4),
+              NewSubsetDropdown(
+                currentSubset: currentSubset,
+                onSubsetChanged: onSubsetChanged,
+              ),
+            ],
+            const SizedBox(width: 4),
+            // 排序下拉
+            OrderDropdown(
+              currentOrder: currentOrder,
+              ascending: ascending,
+              onOrderChanged: onOrderChanged,
+              onToggleAscending: onToggleAscending,
+            ),
+            const SizedBox(width: 8),
+            // 标签区域
+            Expanded(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    ...selectedTags.map(
+                      (tag) => Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: RemovableTagBadge(
+                          name: tag,
+                          onDeleted: () => onTagRemoved(tag),
+                          size: const BadgeSize(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            radius: 6,
+                            iconSize: 12,
+                            fontSize: 12,
+                          ),
+                        ),
                       ),
                     ),
-                  )),
-                  if (onAddTag != null)
-                    _AddTagButton(
-                      colorScheme: colorScheme,
-                      onTap: onAddTag!,
-                    ),
-                ],
+                    if (onAddTag != null)
+                      _AddTagButton(colorScheme: colorScheme, onTap: onAddTag!),
+                  ],
+                ),
               ),
             ),
-          ),
-          if (trailing != null) ...[
-            const SizedBox(width: 8),
-            trailing!,
+            if (trailing != null) ...[const SizedBox(width: 8), trailing!],
           ],
-        ],
+        ),
       ),
     );
   }
@@ -133,30 +136,39 @@ class _AddTagButton extends StatelessWidget {
   final ColorScheme colorScheme;
   final VoidCallback onTap;
 
-  const _AddTagButton({
-    required this.colorScheme,
-    required this.onTap,
-  });
+  const _AddTagButton({required this.colorScheme, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(6),
+      customBorder: RoundedSuperellipseBorder(
+        borderRadius: context.shapes.borderRadius(6),
+      ),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          border: Border.all(
-            color: colorScheme.outlineVariant.withValues(alpha: 0.5),
+        decoration: ShapeDecoration(
+          shape: RoundedSuperellipseBorder(
+            borderRadius: context.shapes.borderRadius(6),
+            side: BorderSide(
+              color: colorScheme.outlineVariant.withValues(alpha: 0.5),
+            ),
           ),
-          borderRadius: BorderRadius.circular(6),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Symbols.add_rounded, size: 14, color: colorScheme.onSurfaceVariant),
+            Icon(
+              Symbols.add_rounded,
+              size: 14,
+              color: colorScheme.onSurfaceVariant,
+            ),
             const SizedBox(width: 2),
-            Icon(Symbols.label_rounded, size: 14, color: colorScheme.onSurfaceVariant),
+            Icon(
+              Symbols.label_rounded,
+              size: 14,
+              color: colorScheme.onSurfaceVariant,
+            ),
           ],
         ),
       ),

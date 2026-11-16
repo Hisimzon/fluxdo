@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 
+import 'ui_shapes.dart';
+
 // 统一底部弹框外壳常量
 const double _kSheetCornerRadius = 20.0;
 const double _kHandleWidth = 32.0;
@@ -41,6 +43,7 @@ class AppSheetScaffold extends StatelessWidget {
     this.contentPadding = const EdgeInsets.fromLTRB(16, 0, 16, 16),
     this.maxHeightFactor = 0.9,
     this.expandToFill = false,
+    this.borderRadius,
     this.footer,
     required this.child,
   });
@@ -76,6 +79,9 @@ class AppSheetScaffold extends StatelessWidget {
   /// 此时内容用 [Expanded] 撑满,且不再叠加键盘内边距(交由内容自身处理)。
   final bool expandToFill;
 
+  /// 可展开的内容面板沿用公共外壳，仅在全屏或桌面时调整边角。
+  final BorderRadiusGeometry? borderRadius;
+
   /// 固定在内容下方、不随内容滚动的底部区域(如确认/提交按钮)。
   /// 位于内容滚动区之外,自带内边距,处于底部安全区内。
   final Widget? footer;
@@ -93,21 +99,26 @@ class AppSheetScaffold extends StatelessWidget {
     // 拖拽条默认:贴边式显示、卡片式隐藏;显式指定则以指定为准。
     final resolvedShowHandle = showDragHandle ?? !isCard;
 
+    final body = _SheetHeaderFade(
+      enabled: _hasTitle && !showTitleDivider,
+      color: cs.surface,
+      child: Padding(padding: contentPadding, child: child),
+    );
     final content = expandToFill
-        ? Expanded(
-            child: Padding(padding: contentPadding, child: child),
-          )
-        : Flexible(
-            child: Padding(padding: contentPadding, child: child),
-          );
+        ? Expanded(child: body)
+        : Flexible(child: body);
 
     // 用 Material(而非 Container)作外壳:Material 自带 ink 层,内部 ListTile/
     // InkWell 的水波纹与长按高亮才能画在背景之上、正常显示;Container 不提供
     // ink 层会导致点击反馈被不透明背景遮挡。
     final shell = Material(
       color: cs.surface,
-      borderRadius: const BorderRadius.vertical(
-        top: Radius.circular(_kSheetCornerRadius),
+      shape: RoundedSuperellipseBorder(
+        borderRadius:
+            borderRadius ??
+            BorderRadius.vertical(
+              top: context.shapes.radius(_kSheetCornerRadius),
+            ),
       ),
       clipBehavior: Clip.antiAlias,
       child: SafeArea(
@@ -151,9 +162,11 @@ class AppSheetScaffold extends StatelessWidget {
         child: Container(
           width: _kHandleWidth,
           height: _kHandleHeight,
-          decoration: BoxDecoration(
+          decoration: ShapeDecoration(
             color: cs.onSurfaceVariant.withValues(alpha: 0.4),
-            borderRadius: BorderRadius.circular(_kHandleHeight / 2),
+            shape: RoundedSuperellipseBorder(
+              borderRadius: BorderRadius.circular(_kHandleHeight / 2),
+            ),
           ),
         ),
       ),
@@ -190,4 +203,111 @@ class AppSheetScaffold extends StatelessWidget {
       ),
     );
   }
+}
+
+/// 保持原来的标题/内容占位，只在滚过顶部后绘制轻量渐隐遮罩。
+/// 滚动通知仅驱动 painter，不逐帧重建标题或内容，也不截断拖拽通知。
+class _SheetHeaderFade extends StatefulWidget {
+  const _SheetHeaderFade({
+    required this.enabled,
+    required this.color,
+    required this.child,
+  });
+  final bool enabled;
+  final Color color;
+  final Widget child;
+
+  @override
+  State<_SheetHeaderFade> createState() => _SheetHeaderFadeState();
+}
+
+class _SheetHeaderFadeState extends State<_SheetHeaderFade> {
+  final _strength = ValueNotifier(0.0);
+
+  void _update(ScrollMetrics metrics, int depth) {
+    if (depth == 0 && metrics.axisDirection == AxisDirection.down) {
+      _strength.value = (metrics.extentBefore / 16).clamp(0.0, 1.0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _strength.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Stack(
+    fit: StackFit.passthrough,
+    children: [
+      NotificationListener<ScrollMetricsNotification>(
+        onNotification: (notification) {
+          _update(notification.metrics, notification.depth);
+          return false;
+        },
+        child: NotificationListener<ScrollNotification>(
+          onNotification: (notification) {
+            _update(notification.metrics, notification.depth);
+            return false;
+          },
+          child: widget.child,
+        ),
+      ),
+      Positioned(
+        top: 0,
+        left: 0,
+        right: 0,
+        height: 16,
+        child: IgnorePointer(
+          child: ExcludeSemantics(
+            child: RepaintBoundary(
+              child: CustomPaint(
+                painter: _HeaderFadePainter(
+                  _strength,
+                  color: widget.color,
+                  enabled: widget.enabled,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ],
+  );
+}
+
+class _HeaderFadePainter extends CustomPainter {
+  _HeaderFadePainter(
+    this.strength, {
+    required this.color,
+    required this.enabled,
+  }) : super(repaint: strength);
+  final ValueNotifier<double> strength;
+  final Color color;
+  final bool enabled;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (!enabled || strength.value == 0) return;
+    final rect = Offset.zero & size;
+    canvas.drawRect(
+      rect,
+      Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            color.withValues(alpha: strength.value),
+            color.withValues(alpha: 0),
+          ],
+          stops: const [0, 1],
+        ).createShader(rect),
+    );
+  }
+
+  @override
+  bool shouldRepaint(_HeaderFadePainter oldDelegate) =>
+      color != oldDelegate.color ||
+      enabled != oldDelegate.enabled ||
+      strength != oldDelegate.strength;
 }

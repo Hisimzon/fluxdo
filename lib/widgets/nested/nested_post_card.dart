@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -670,11 +671,13 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
           duration: const Duration(milliseconds: 2500),
           curve: Curves.easeOut,
           builder: (context, value, child) => DecoratedBox(
-            decoration: BoxDecoration(
+            decoration: ShapeDecoration(
               color: theme.colorScheme.primaryContainer.withValues(
                 alpha: 0.35 * value,
               ),
-              borderRadius: BorderRadius.circular(8),
+              shape: RoundedSuperellipseBorder(
+                borderRadius: context.shapes.borderRadius(8),
+              ),
             ),
             child: child,
           ),
@@ -874,9 +877,11 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
           const SizedBox(width: 4),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-            decoration: BoxDecoration(
+            decoration: ShapeDecoration(
               color: theme.colorScheme.primaryContainer,
-              borderRadius: BorderRadius.circular(4),
+              shape: RoundedSuperellipseBorder(
+                borderRadius: context.shapes.borderRadius(4),
+              ),
             ),
             child: Text(
               'OP',
@@ -964,13 +969,13 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
           Icon(
             Symbols.add_circle_rounded,
             size: 14,
-            color: theme.colorScheme.primary,
+            color: context.emphasis.accent,
           ),
           const SizedBox(width: 4),
           Text(
             context.l10n.nested_repliesCount(_replyCount),
             style: theme.textTheme.labelSmall?.copyWith(
-              color: theme.colorScheme.primary,
+              color: context.emphasis.accent,
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -1168,13 +1173,13 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
           Icon(
             Symbols.subdirectory_arrow_right_rounded,
             size: 14,
-            color: theme.colorScheme.primary,
+            color: context.emphasis.accent,
           ),
           const SizedBox(width: 4),
           Text(
             context.l10n.nested_continueThread,
             style: theme.textTheme.labelSmall?.copyWith(
-              color: theme.colorScheme.primary,
+              color: context.emphasis.accent,
               fontWeight: FontWeight.w500,
             ),
           ),

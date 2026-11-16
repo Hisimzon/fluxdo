@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:app_icons/app_icons.dart';
@@ -221,7 +222,9 @@ class _TopicExpandableExcerptState
             height: height,
             child: Material(
               color: Theme.of(context).colorScheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(8),
+              shape: RoundedSuperellipseBorder(
+                borderRadius: context.shapes.borderRadius(8),
+              ),
               clipBehavior: Clip.antiAlias,
               child: InkWell(
                 onTap: () => ImageViewerPage.open(

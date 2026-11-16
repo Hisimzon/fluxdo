@@ -1,7 +1,10 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 
 import 'package:m3e_ui/m3e_ui.dart';
+
+import '../../l10n/s.dart';
 
 /// username/email + password 输入表单。提交逻辑 (调 DiscourseService 登录 +
 /// 处理 hcaptcha/2FA/跳转) 由父组件持有,form 本身只负责 UI 和数据校验。
@@ -19,7 +22,8 @@ class LoginForm extends StatefulWidget {
     required String identifier,
     required String password,
     required bool rememberCredentials,
-  }) onSubmit;
+  })
+  onSubmit;
 
   /// 忘记密码点击 (一般跳 webview)。
   final VoidCallback? onForgotPassword;
@@ -88,7 +92,7 @@ class _LoginFormState extends State<LoginForm> {
     Widget? suffixIcon,
   }) {
     OutlineInputBorder border(Color color, double width) => OutlineInputBorder(
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: context.shapes.borderRadius(14),
       borderSide: BorderSide(color: color, width: width),
     );
     return InputDecoration(
@@ -122,7 +126,7 @@ class _LoginFormState extends State<LoginForm> {
             autocorrect: false,
             decoration: _inputDecoration(
               scheme,
-              label: '用户名 / 邮箱',
+              label: context.l10n.login_identifier,
               icon: Symbols.person_rounded,
             ),
             onSubmitted: (_) => _passwordFocus.requestFocus(),
@@ -137,10 +141,12 @@ class _LoginFormState extends State<LoginForm> {
             obscureText: _obscure,
             decoration: _inputDecoration(
               scheme,
-              label: '密码',
+              label: context.l10n.login_password,
               icon: Symbols.lock_rounded,
               suffixIcon: IconButton(
-                tooltip: _obscure ? '显示密码' : '隐藏密码',
+                tooltip: _obscure
+                    ? context.l10n.login_showPassword
+                    : context.l10n.login_hidePassword,
                 icon: Icon(
                   _obscure
                       ? Symbols.visibility_rounded
@@ -166,13 +172,13 @@ class _LoginFormState extends State<LoginForm> {
                   onTap: _submitting
                       ? null
                       : () => setState(() => _remember = !_remember),
-                  child: const Text('记住密码'),
+                  child: Text(context.l10n.login_rememberPassword),
                 ),
               ),
               if (widget.onForgotPassword != null)
                 TextButton(
                   onPressed: _submitting ? null : widget.onForgotPassword,
-                  child: const Text('忘记密码?'),
+                  child: Text(context.l10n.login_forgotPassword),
                 ),
             ],
           ),
@@ -181,17 +187,17 @@ class _LoginFormState extends State<LoginForm> {
             onPressed: _submitting ? null : _submit,
             style: FilledButton.styleFrom(
               minimumSize: const Size(double.infinity, 56),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(28),
+              shape: RoundedSuperellipseBorder(
+                borderRadius: context.shapes.borderRadius(28),
               ),
               elevation: 8,
               shadowColor: scheme.primary.withValues(alpha: 0.4),
             ),
             child: _submitting
                 ? LoadingSpinner(size: 24, color: scheme.onPrimary)
-                : const Text(
-                    '登录',
-                    style: TextStyle(
+                : Text(
+                    context.l10n.common_login,
+                    style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
                       letterSpacing: 1,

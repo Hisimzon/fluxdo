@@ -1,12 +1,30 @@
 // 用户操作记录
+import 'package:fluxdo/utils/avatar_url.dart';
+
 import '../utils/time_utils.dart';
+import 'topic.dart';
+
+/// 活动中的帖子作者与发起点赞、回应的用户是两个身份。
+TopicUser? _readPostAuthor(Map<String, dynamic>? post) {
+  if (post == null) return null;
+  final embeddedUser = post['user'] as Map<String, dynamic>?;
+  final user = embeddedUser ?? post;
+  final username = user['username'] as String?;
+  if (username == null || username.isEmpty) return null;
+  return TopicUser(
+    id: (embeddedUser?['id'] ?? post['user_id']) as int? ?? 0,
+    username: username,
+    name: user['name'] as String?,
+    avatarTemplate: user['avatar_template'] as String? ?? '',
+  );
+}
 
 /// 用户操作类型
 class UserActionType {
-  static const int like = 1;        // 点赞
-  static const int wasLiked = 2;    // 被点赞
-  static const int newTopic = 4;    // 创建话题
-  static const int reply = 5;       // 回复
+  static const int like = 1; // 点赞
+  static const int wasLiked = 2; // 被点赞
+  static const int newTopic = 4; // 创建话题
+  static const int reply = 5; // 回复
 }
 
 class UserAction {
@@ -20,6 +38,7 @@ class UserAction {
   final DateTime? actingAt;
   final int? categoryId;
   final String? excerpt;
+  final TopicUser? author;
 
   const UserAction({
     this.actionType,
@@ -32,6 +51,7 @@ class UserAction {
     this.actingAt,
     this.categoryId,
     this.excerpt,
+    this.author,
   });
 
   factory UserAction.fromJson(Map<String, dynamic> json) {
@@ -41,17 +61,23 @@ class UserAction {
       title: json['title'] as String? ?? '',
       slug: json['slug'] as String?,
       postNumber: json['post_number'] as int?,
-      username: json['acting_username'] as String? ?? json['username'] as String?,
-      avatarTemplate: json['acting_avatar_template'] as String? ?? json['avatar_template'] as String?,
-      actingAt: TimeUtils.parseUtcTime(json['acting_at'] as String? ?? json['created_at'] as String?),
+      username:
+          json['acting_username'] as String? ?? json['username'] as String?,
+      avatarTemplate:
+          json['acting_avatar_template'] as String? ??
+          json['avatar_template'] as String?,
+      actingAt: TimeUtils.parseUtcTime(
+        json['acting_at'] as String? ?? json['created_at'] as String?,
+      ),
       categoryId: json['category_id'] as int?,
       excerpt: json['excerpt'] as String?,
+      author: _readPostAuthor(json),
     );
   }
 
   String getAvatarUrl({int size = 120}) {
     if (avatarTemplate == null) return '';
-    return avatarTemplate!.replaceAll('{size}', '$size');
+    return AvatarUrl.resolve(avatarTemplate!, size: size);
   }
 }
 
@@ -63,7 +89,9 @@ class UserActionResponse {
   factory UserActionResponse.fromJson(Map<String, dynamic> json) {
     final actionsJson = json['user_actions'] as List<dynamic>? ?? [];
     return UserActionResponse(
-      actions: actionsJson.map((e) => UserAction.fromJson(e as Map<String, dynamic>)).toList(),
+      actions: actionsJson
+          .map((e) => UserAction.fromJson(e as Map<String, dynamic>))
+          .toList(),
     );
   }
 }
@@ -78,6 +106,8 @@ class UserReaction {
   final String? excerpt;
   final String? reactionValue;
   final DateTime? createdAt;
+  final TopicUser? author;
+  final int? categoryId;
 
   const UserReaction({
     required this.id,
@@ -88,6 +118,8 @@ class UserReaction {
     this.excerpt,
     this.reactionValue,
     this.createdAt,
+    this.author,
+    this.categoryId,
   });
 
   factory UserReaction.fromJson(Map<String, dynamic> json) {
@@ -103,6 +135,8 @@ class UserReaction {
       excerpt: post?['excerpt'] as String?,
       reactionValue: reaction?['reaction_value'] as String?,
       createdAt: TimeUtils.parseUtcTime(json['created_at'] as String?),
+      author: _readPostAuthor(post),
+      categoryId: post?['category_id'] as int?,
     );
   }
 }
@@ -116,14 +150,21 @@ class UserReactionsResponse {
     // API 直接返回数组
     if (json is List) {
       return UserReactionsResponse(
-        reactions: json.map((e) => UserReaction.fromJson(e as Map<String, dynamic>)).toList(),
+        reactions: json
+            .map((e) => UserReaction.fromJson(e as Map<String, dynamic>))
+            .toList(),
       );
     }
     // 如果是对象包装的数组
     if (json is Map<String, dynamic>) {
-      final list = json['reactions'] as List<dynamic>? ?? json['posts'] as List<dynamic>? ?? [];
+      final list =
+          json['reactions'] as List<dynamic>? ??
+          json['posts'] as List<dynamic>? ??
+          [];
       return UserReactionsResponse(
-        reactions: list.map((e) => UserReaction.fromJson(e as Map<String, dynamic>)).toList(),
+        reactions: list
+            .map((e) => UserReaction.fromJson(e as Map<String, dynamic>))
+            .toList(),
       );
     }
     return const UserReactionsResponse(reactions: []);
@@ -140,6 +181,8 @@ class UserBoost {
   final String? excerpt;
   final String cooked;
   final DateTime? createdAt;
+  final TopicUser? author;
+  final int? categoryId;
 
   const UserBoost({
     required this.id,
@@ -150,6 +193,8 @@ class UserBoost {
     this.excerpt,
     required this.cooked,
     this.createdAt,
+    this.author,
+    this.categoryId,
   });
 
   factory UserBoost.fromJson(Map<String, dynamic> json) {
@@ -159,7 +204,9 @@ class UserBoost {
     int? postNumber;
     final url = post?['url'] as String?;
     if (url != null) {
-      final segments = Uri.parse(url).pathSegments.where((s) => s.isNotEmpty).toList();
+      final segments = Uri.parse(url).pathSegments
+          .where((s) => s.isNotEmpty)
+          .toList();
       if (segments.length >= 4) {
         postNumber = int.tryParse(segments.last);
       }
@@ -174,6 +221,8 @@ class UserBoost {
       excerpt: post?['excerpt'] as String?,
       cooked: json['cooked'] as String? ?? '',
       createdAt: TimeUtils.parseUtcTime(json['created_at'] as String?),
+      author: _readPostAuthor(post),
+      categoryId: post?['category_id'] as int?,
     );
   }
 }
@@ -186,7 +235,9 @@ class UserBoostsResponse {
   factory UserBoostsResponse.fromJson(Map<String, dynamic> json) {
     final list = json['boosts'] as List<dynamic>? ?? [];
     return UserBoostsResponse(
-      boosts: list.map((e) => UserBoost.fromJson(e as Map<String, dynamic>)).toList(),
+      boosts: list
+          .map((e) => UserBoost.fromJson(e as Map<String, dynamic>))
+          .toList(),
     );
   }
 }
@@ -199,6 +250,8 @@ class SolvedPost {
   final String? topicTitle;
   final String? excerpt;
   final DateTime? createdAt;
+  final TopicUser? author;
+  final int? categoryId;
 
   const SolvedPost({
     required this.postId,
@@ -207,6 +260,8 @@ class SolvedPost {
     this.topicTitle,
     this.excerpt,
     this.createdAt,
+    this.author,
+    this.categoryId,
   });
 
   factory SolvedPost.fromJson(Map<String, dynamic> json) {
@@ -217,6 +272,8 @@ class SolvedPost {
       topicTitle: json['topic_title'] as String?,
       excerpt: json['excerpt'] as String?,
       createdAt: TimeUtils.parseUtcTime(json['created_at'] as String?),
+      author: _readPostAuthor(json),
+      categoryId: json['category_id'] as int?,
     );
   }
 }
@@ -229,7 +286,9 @@ class SolvedPostsResponse {
   factory SolvedPostsResponse.fromJson(Map<String, dynamic> json) {
     final list = json['user_solved_posts'] as List<dynamic>? ?? [];
     return SolvedPostsResponse(
-      posts: list.map((e) => SolvedPost.fromJson(e as Map<String, dynamic>)).toList(),
+      posts: list
+          .map((e) => SolvedPost.fromJson(e as Map<String, dynamic>))
+          .toList(),
     );
   }
 }

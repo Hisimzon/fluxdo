@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -22,6 +23,7 @@ import '../widgets/common/error_view.dart';
 import '../l10n/s.dart';
 import '../widgets/desktop_refresh_indicator.dart';
 import 'topic_detail_page/topic_detail_page.dart';
+import '../theme/app_colors.dart';
 
 /// 浏览历史页面
 class BrowsingHistoryPage extends ConsumerStatefulWidget {
@@ -114,7 +116,7 @@ class _BrowsingHistoryPageState extends ConsumerState<BrowsingHistoryPage> {
     }
     Navigator.push(
       context,
-      MaterialPageRoute(
+      InteractionPageRoute(
         builder: (_) => TopicDetailPage(
           topicId: topic.id,
           scrollToPostNumber: scrollToPostNumber,
@@ -240,11 +242,11 @@ class _BrowsingHistoryPageState extends ConsumerState<BrowsingHistoryPage> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Symbols.history_rounded, size: 64, color: Colors.grey),
+                  Icon(Symbols.history_rounded, size: 64, color: context.appColors.grey),
                   const SizedBox(height: 16),
                   Text(
                     context.l10n.browsingHistory_empty,
-                    style: const TextStyle(color: Colors.grey),
+                    style: TextStyle(color: context.appColors.grey),
                   ),
                 ],
               ),

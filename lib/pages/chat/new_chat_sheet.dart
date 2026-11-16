@@ -1,3 +1,6 @@
+import 'package:common_ui/common_ui.dart';
+import 'package:fluxdo/utils/avatar_url.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -156,15 +159,15 @@ class _UserPickerBodyState extends ConsumerState<_UserPickerBody> {
                     fillColor: theme.colorScheme.surfaceContainerHighest
                         .withValues(alpha: 0.4),
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(20),
+                      borderRadius: context.shapes.borderRadius(20),
                       borderSide: BorderSide.none,
                     ),
                     enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(20),
+                      borderRadius: context.shapes.borderRadius(20),
                       borderSide: BorderSide.none,
                     ),
                     focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(20),
+                      borderRadius: context.shapes.borderRadius(20),
                       borderSide: BorderSide.none,
                     ),
                     contentPadding: const EdgeInsets.symmetric(
@@ -235,7 +238,7 @@ class _UserPickerBodyState extends ConsumerState<_UserPickerBody> {
   static String? _avatarUrl(MentionUser user) {
     final template = user.avatarTemplate;
     if (template == null || template.isEmpty) return null;
-    return UrlHelper.resolveUrlWithCdn(template.replaceAll('{size}', '96'));
+    return UrlHelper.resolveUrlWithCdn(AvatarUrl.resolve(template, size: 96));
   }
 }
 
@@ -257,7 +260,9 @@ class _UserResultTile extends StatelessWidget {
     final avatarUrl = _UserPickerBodyState._avatarUrl(user);
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
+      customBorder: RoundedSuperellipseBorder(
+        borderRadius: context.shapes.borderRadius(12),
+      ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         child: Row(
@@ -290,7 +295,7 @@ class _UserResultTile extends StatelessWidget {
                       Symbols.check_circle_rounded,
                       key: const ValueKey('on'),
                       fill: 1,
-                      color: theme.colorScheme.primary,
+                      color: context.emphasis.selected,
                     )
                   : Icon(
                       Symbols.circle_rounded,

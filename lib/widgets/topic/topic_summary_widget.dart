@@ -1,8 +1,10 @@
+import 'package:common_ui/common_ui.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../models/topic.dart';
 import '../../pages/topic_detail_page/topic_detail_page.dart';
 import '../../providers/discourse_providers.dart';
@@ -98,9 +100,11 @@ class TopicSummaryWidget extends ConsumerWidget {
   Widget _buildLoadingState(ThemeData theme) {
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(12),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: UiShapes.current.borderRadius(12),
+        ),
       ),
       child: Row(
         children: [
@@ -127,9 +131,11 @@ class TopicSummaryWidget extends ConsumerWidget {
   Widget _buildEmptyState(ThemeData theme) {
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(12),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: UiShapes.current.borderRadius(12),
+        ),
       ),
       child: Row(
         children: [
@@ -158,12 +164,14 @@ class TopicSummaryWidget extends ConsumerWidget {
   ) {
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: theme.colorScheme.outlineVariant.withValues(alpha:0.5),
-          width: 0.5,
+        shape: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(12),
+          side: BorderSide(
+            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
+            width: 0.5,
+          ),
         ),
       ),
       child: Column(
@@ -175,14 +183,14 @@ class TopicSummaryWidget extends ConsumerWidget {
               Icon(
                 Symbols.auto_awesome_rounded,
                 size: 18,
-                color: theme.colorScheme.primary,
+                color: context.emphasis.accent,
               ),
               const SizedBox(width: 8),
               Text(
                 S.current.topic_aiSummary,
                 style: theme.textTheme.titleSmall?.copyWith(
                   fontWeight: FontWeight.w500,
-                  color: theme.colorScheme.primary,
+                  color: context.emphasis.accent,
                 ),
               ),
               const Spacer(),
@@ -207,13 +215,20 @@ class TopicSummaryWidget extends ConsumerWidget {
               // 过期提示
               if (summary.outdated)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
+                  decoration: ShapeDecoration(
                     color: theme.colorScheme.tertiaryContainer,
-                    borderRadius: BorderRadius.circular(4),
+                    shape: RoundedSuperellipseBorder(
+                      borderRadius: context.shapes.borderRadius(4),
+                    ),
                   ),
                   child: Text(
-                    S.current.topic_newRepliesSinceSummary(summary.newPostsSinceSummary),
+                    S.current.topic_newRepliesSinceSummary(
+                      summary.newPostsSinceSummary,
+                    ),
                     style: theme.textTheme.labelSmall?.copyWith(
                       color: theme.colorScheme.onTertiaryContainer,
                     ),
@@ -228,7 +243,9 @@ class TopicSummaryWidget extends ConsumerWidget {
             text: summary.summarizedText,
             isStreaming: summary.isStreaming,
             onInternalLinkTap: (linkTopicId, topicSlug, postNumber) {
-              if (linkTopicId == topicId && postNumber != null && onJumpToPost != null) {
+              if (linkTopicId == topicId &&
+                  postNumber != null &&
+                  onJumpToPost != null) {
                 // 当前话题链接 → 跳转到对应帖子
                 onJumpToPost!(postNumber);
               } else {
@@ -243,7 +260,7 @@ class TopicSummaryWidget extends ConsumerWidget {
                   return;
                 }
                 Navigator.of(context).push(
-                  MaterialPageRoute(
+                  InteractionPageRoute(
                     builder: (_) => TopicDetailPage(
                       topicId: linkTopicId,
                       initialTitle: topicSlug,
@@ -304,7 +321,7 @@ class _StreamingMarkdownBody extends StatefulWidget {
   final String text;
   final bool isStreaming;
   final void Function(int topicId, String? topicSlug, int? postNumber)?
-      onInternalLinkTap;
+  onInternalLinkTap;
 
   const _StreamingMarkdownBody({
     super.key,
@@ -314,8 +331,7 @@ class _StreamingMarkdownBody extends StatefulWidget {
   });
 
   @override
-  State<_StreamingMarkdownBody> createState() =>
-      _StreamingMarkdownBodyState();
+  State<_StreamingMarkdownBody> createState() => _StreamingMarkdownBodyState();
 }
 
 class _StreamingMarkdownBodyState extends State<_StreamingMarkdownBody> {
@@ -412,7 +428,8 @@ class _StreamingMarkdownBodyState extends State<_StreamingMarkdownBody> {
         if (nextLength < _targetText.length) {
           final currentCodeUnit = _targetText.codeUnitAt(nextLength - 1);
           final nextCodeUnit = _targetText.codeUnitAt(nextLength);
-          final splitsSurrogatePair = currentCodeUnit >= 0xD800 &&
+          final splitsSurrogatePair =
+              currentCodeUnit >= 0xD800 &&
               currentCodeUnit <= 0xDBFF &&
               nextCodeUnit >= 0xDC00 &&
               nextCodeUnit <= 0xDFFF;
@@ -445,7 +462,7 @@ class _StreamingMarkdownBodyState extends State<_StreamingMarkdownBody> {
 /// 可折叠的话题摘要组件（懒加载：点击时才请求）
 class CollapsibleTopicSummary extends ConsumerStatefulWidget {
   final int topicId;
-  final TopicDetail? topicDetail;  // 新增：传入话题详情以检查 summarizable
+  final TopicDetail? topicDetail; // 新增：传入话题详情以检查 summarizable
   final Widget? headerExtra; // 新增：头部额外组件（如订阅按钮）
   /// 跳转到当前话题的指定帖子
   final void Function(int postNumber)? onJumpToPost;
@@ -477,8 +494,13 @@ class _CollapsibleTopicSummaryState
   void initState() {
     super.initState();
     _controller = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 300));
-    _animation = CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic);
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    );
+    _animation = CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOutCubic,
+    );
   }
 
   @override
@@ -496,7 +518,7 @@ class _CollapsibleTopicSummaryState
     if (topicDetail != null && !topicDetail.summarizable) {
       // 即使不可摘要，如果有 headerExtra 也要显示 headerExtra
       if (widget.headerExtra != null) {
-         return widget.headerExtra!;
+        return widget.headerExtra!;
       }
       return const SizedBox.shrink();
     }
@@ -515,7 +537,8 @@ class _CollapsibleTopicSummaryState
       _scheduleFinishRegeneration();
     }
 
-    final isLoading = summaryAsync?.isLoading == true ||
+    final isLoading =
+        summaryAsync?.isLoading == true ||
         summaryAsync?.value?.isStreaming == true;
     final isOutdated = summaryAsync?.value?.outdated == true;
     final hasCachedSummary =
@@ -530,12 +553,21 @@ class _CollapsibleTopicSummaryState
             // 摘要按钮
             InkWell(
               onTap: _toggleExpand,
-              borderRadius: BorderRadius.circular(8),
+              customBorder: RoundedSuperellipseBorder(
+                borderRadius: context.shapes.borderRadius(8),
+              ),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.primaryContainer.withValues(alpha:0.3),
-                  borderRadius: BorderRadius.circular(8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                decoration: ShapeDecoration(
+                  color: theme.colorScheme.primaryContainer.withValues(
+                    alpha: 0.3,
+                  ),
+                  shape: RoundedSuperellipseBorder(
+                    borderRadius: context.shapes.borderRadius(8),
+                  ),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -543,13 +575,15 @@ class _CollapsibleTopicSummaryState
                     Icon(
                       Symbols.auto_awesome_rounded,
                       size: 16,
-                      color: theme.colorScheme.primary,
+                      color: context.emphasis.accent,
                     ),
                     const SizedBox(width: 6),
                     Text(
-                      hasCachedSummary ? S.current.topic_aiSummary : S.current.topic_generateAiSummary,
+                      hasCachedSummary
+                          ? S.current.topic_aiSummary
+                          : S.current.topic_generateAiSummary,
                       style: theme.textTheme.labelMedium?.copyWith(
-                        color: theme.colorScheme.primary,
+                        color: context.emphasis.accent,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
@@ -562,7 +596,7 @@ class _CollapsibleTopicSummaryState
                       child: Icon(
                         Symbols.expand_more_rounded,
                         size: 18,
-                        color: theme.colorScheme.primary,
+                        color: context.emphasis.accent,
                       ),
                     ),
                     // 加载指示器
@@ -573,7 +607,7 @@ class _CollapsibleTopicSummaryState
                         height: 12,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          color: theme.colorScheme.primary,
+                          color: context.emphasis.accent,
                         ),
                       ),
                     ],

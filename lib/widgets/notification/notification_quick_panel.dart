@@ -1,6 +1,8 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../models/shortcut_binding.dart';
 import '../../l10n/s.dart';
 import '../../providers/discourse_providers.dart';
@@ -8,7 +10,6 @@ import '../../providers/shortcut_provider.dart';
 import '../../providers/preferences_provider.dart';
 import '../../pages/notifications_page.dart';
 import '../../services/dynamic_content_suspension_service.dart';
-import '../../theme/theme_resolver.dart';
 import '../../utils/blur_config.dart';
 import '../../utils/dialog_utils.dart';
 import '../../utils/responsive.dart';
@@ -19,6 +20,7 @@ import '../layout/master_detail_layout.dart';
 import '../topic/category_drawer.dart' show CategoryDrawerHost;
 import 'notification_item.dart';
 import 'notification_list_skeleton.dart';
+import '../../theme/app_colors.dart';
 
 /// 通知快捷面板控制器
 /// 侧栏模式：在 widget 树中渲染（低于路由层，新页面自然覆盖）
@@ -54,8 +56,8 @@ class NotificationQuickPanel {
         useRootNavigator: true,
         isScrollControlled: true,
         showDragHandle: true,
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.vertical(top: context.shapes.radius(20)),
         ),
         shortcutSurface: const ShortcutSurfaceConfig(
           id: ShortcutSurfaceIds.notifications,
@@ -65,15 +67,13 @@ class NotificationQuickPanel {
         builder: (_) => const _MobileNotificationPanel(),
       ).then<void>((_) {});
       _mobileFuture = future;
-      future
-          .whenComplete(() {
-            if (identical(_mobileFuture, future)) {
-              _mobileFuture = null;
-              _mobileRoute = null;
-              _mobileDismissPending = false;
-            }
-          })
-          .ignore();
+      future.whenComplete(() {
+        if (identical(_mobileFuture, future)) {
+          _mobileFuture = null;
+          _mobileRoute = null;
+          _mobileDismissPending = false;
+        }
+      }).ignore();
       return future;
     }
 
@@ -300,12 +300,14 @@ class _SidebarNotificationPanelState
             : Colors.black26;
 
         final panel = Material(
-          color: Theme.of(context).colorScheme.overlaySurface,
+          color: Theme.of(context).colorScheme.surface,
           clipBehavior: Clip.antiAlias,
           elevation: 8,
-          borderRadius: showRail
-              ? const BorderRadius.only(topRight: Radius.circular(20))
-              : const BorderRadius.vertical(top: Radius.circular(20)),
+          shape: RoundedSuperellipseBorder(
+            borderRadius: showRail
+                ? BorderRadius.only(topRight: context.shapes.radius(20))
+                : BorderRadius.vertical(top: context.shapes.radius(20)),
+          ),
           child: Column(
             children: [
               if (!showRail)
@@ -327,9 +329,12 @@ class _SidebarNotificationPanelState
           ),
         );
 
-        return showRail
-            ? _buildSidebarLayout(panel, dialogBlur, barrierColor)
-            : _buildMobileLayout(panel, dialogBlur, barrierColor);
+        return InteractionGate(
+          enabled: NotificationQuickPanel.visible,
+          child: showRail
+              ? _buildSidebarLayout(panel, dialogBlur, barrierColor)
+              : _buildMobileLayout(panel, dialogBlur, barrierColor),
+        );
       },
     );
   }
@@ -343,14 +348,14 @@ class _SidebarNotificationPanelState
 
     // 面板可见区域的圆角矩形（排除此区域避免模糊影响面板内容）
     final visiblePanelWidth = actualPanelWidth * _animation.value;
-    final panelRRect = RRect.fromRectAndCorners(
+    final panelRRect = RSuperellipse.fromRectAndCorners(
       Rect.fromLTWH(
         0,
         screenSize.height - panelHeight,
         visiblePanelWidth,
         panelHeight,
       ),
-      topRight: const Radius.circular(20),
+      topRight: context.shapes.radius(20),
     );
 
     return Stack(
@@ -407,15 +412,15 @@ class _SidebarNotificationPanelState
       0.0,
       panelHeight,
     );
-    final panelRRect = RRect.fromRectAndCorners(
+    final panelRRect = RSuperellipse.fromRectAndCorners(
       Rect.fromLTWH(
         0,
         screenSize.height - visibleHeight,
         screenSize.width,
         visibleHeight,
       ),
-      topLeft: const Radius.circular(20),
-      topRight: const Radius.circular(20),
+      topLeft: context.shapes.radius(20),
+      topRight: context.shapes.radius(20),
     );
 
     return Stack(
@@ -467,14 +472,14 @@ class _SidebarNotificationPanelState
 /// 面板圆角外侧（弧线与包围盒之间的三角区）仍在模糊范围内，
 /// 因此圆角处可自然透出模糊背景。
 class _ExcludeRRectClipper extends CustomClipper<Path> {
-  final RRect excludeRRect;
+  final RSuperellipse excludeRRect;
   const _ExcludeRRectClipper(this.excludeRRect);
 
   @override
   Path getClip(Size size) {
     return Path()
       ..addRect(Rect.fromLTWH(0, 0, size.width, size.height))
-      ..addRRect(excludeRRect)
+      ..addRSuperellipse(excludeRRect)
       ..fillType = PathFillType.evenOdd;
   }
 
@@ -496,9 +501,11 @@ class _DragHandle extends StatelessWidget {
         margin: const EdgeInsets.only(top: 12),
         width: 32,
         height: 4,
-        decoration: BoxDecoration(
+        decoration: ShapeDecoration(
           color: colorScheme.outlineVariant.withValues(alpha: 0.5),
-          borderRadius: BorderRadius.circular(2),
+          shape: RoundedSuperellipseBorder(
+            borderRadius: context.shapes.borderRadius(2),
+          ),
         ),
       ),
     );
@@ -544,7 +551,7 @@ class _MobileNotificationPanelState extends State<_MobileNotificationPanel> {
     final navigator = Navigator.of(context, rootNavigator: true);
     navigator.pop();
     navigator.push(
-      MaterialPageRoute(builder: (_) => const NotificationsPage()),
+      InteractionPageRoute(builder: (_) => const NotificationsPage()),
     );
   }
 
@@ -615,7 +622,7 @@ class _NotificationHeader extends ConsumerWidget {
                 () {
                   onClose();
                   Navigator.of(context, rootNavigator: true).push(
-                    MaterialPageRoute(
+                    InteractionPageRoute(
                       builder: (_) => const NotificationsPage(),
                     ),
                   );
@@ -688,15 +695,15 @@ class _NotificationBodyState extends ConsumerState<_NotificationBody> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(
+                  Icon(
                     Symbols.notifications_rounded,
                     size: 48,
-                    color: Colors.grey,
+                    color: context.appColors.grey,
                   ),
                   const SizedBox(height: 12),
                   Text(
                     context.l10n.notification_empty,
-                    style: const TextStyle(color: Colors.grey),
+                    style: TextStyle(color: context.appColors.grey),
                   ),
                 ],
               ),
@@ -739,7 +746,11 @@ class _NotificationBodyState extends ConsumerState<_NotificationBody> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Symbols.error_rounded, size: 48, color: Colors.grey),
+              Icon(
+                Symbols.error_rounded,
+                size: 48,
+                color: context.appColors.grey,
+              ),
               const SizedBox(height: 12),
               Text(
                 context.l10n.common_loadFailed,

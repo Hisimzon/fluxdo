@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 
 import '../l10n/ai_l10n.dart';
@@ -27,10 +28,36 @@ class _IconEmojiPickerState extends State<IconEmojiPicker>
   late final TextEditingController _emojiController;
 
   static const List<String> _suggestedEmoji = [
-    '🎨', '🖼️', '✏️', '📝', '🎯', '💡', '⭐', '🔥',
-    '✨', '🌈', '🎬', '📷', '🗺️', '❤️', '🌟', '🎭',
-    '🌸', '🌿', '🪐', '🎮', '🍿', '☕', '🛹', '🧸',
-    '📚', '🧠', '👀', '🤖', '🦄', '🍀',
+    '🎨',
+    '🖼️',
+    '✏️',
+    '📝',
+    '🎯',
+    '💡',
+    '⭐',
+    '🔥',
+    '✨',
+    '🌈',
+    '🎬',
+    '📷',
+    '🗺️',
+    '❤️',
+    '🌟',
+    '🎭',
+    '🌸',
+    '🌿',
+    '🪐',
+    '🎮',
+    '🍿',
+    '☕',
+    '🛹',
+    '🧸',
+    '📚',
+    '🧠',
+    '👀',
+    '🤖',
+    '🦄',
+    '🍀',
   ];
 
   @override
@@ -70,9 +97,11 @@ class _IconEmojiPickerState extends State<IconEmojiPicker>
               width: 44,
               height: 44,
               alignment: Alignment.center,
-              decoration: BoxDecoration(
+              decoration: ShapeDecoration(
                 color: theme.colorScheme.surfaceContainerHigh,
-                borderRadius: BorderRadius.circular(8),
+                shape: RoundedSuperellipseBorder(
+                  borderRadius: context.shapes.borderRadius(8),
+                ),
               ),
               child: PresetIcon(iconRaw: widget.value, size: 24),
             ),
@@ -130,16 +159,15 @@ class _IconEmojiPickerState extends State<IconEmojiPicker>
                       textAlign: TextAlign.center,
                       style: const TextStyle(fontSize: 22),
                       decoration: InputDecoration(
-                        hintText:
-                            AiL10n.current.quickPromptsEmojiInputHint,
-                        border: const OutlineInputBorder(),
+                        hintText: AiL10n.current.quickPromptsEmojiInputHint,
+                        border: OutlineInputBorder(
+                            borderRadius: context.shapes.borderRadius(4)),
                         isDense: true,
                       ),
                       onChanged: (value) {
                         // 只取第一个字符（防止用户输入多个 emoji 串）
                         if (value.isEmpty) return;
-                        final first =
-                            String.fromCharCodes([value.runes.first]);
+                        final first = String.fromCharCodes([value.runes.first]);
                         if (first.runes.first >= 0x80) {
                           widget.onChanged(first);
                         }
@@ -190,10 +218,12 @@ class _IconCell extends StatelessWidget {
       color: selected
           ? theme.colorScheme.primaryContainer
           : theme.colorScheme.surfaceContainerHigh,
-      borderRadius: BorderRadius.circular(6),
+      shape: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(6)),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(6),
+        customBorder: RoundedSuperellipseBorder(
+            borderRadius: context.shapes.borderRadius(6)),
         child: Center(
           child: PresetIcon(
             iconRaw: name,
@@ -224,15 +254,18 @@ class _EmojiCell extends StatelessWidget {
     final theme = Theme.of(context);
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(6),
+      customBorder: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(6)),
       child: Container(
         width: 36,
         height: 36,
-        decoration: BoxDecoration(
+        decoration: ShapeDecoration(
           color: selected
               ? theme.colorScheme.primaryContainer
               : theme.colorScheme.surfaceContainerHigh,
-          borderRadius: BorderRadius.circular(6),
+          shape: RoundedSuperellipseBorder(
+            borderRadius: context.shapes.borderRadius(6),
+          ),
         ),
         alignment: Alignment.center,
         child: Text(emoji, style: const TextStyle(fontSize: 20)),

@@ -1,5 +1,7 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
+
 import '../../l10n/s.dart';
 import '../../models/topic.dart';
 import '../../pages/topic_detail_page/topic_detail_page.dart';
@@ -17,17 +19,14 @@ class PostLinks extends StatefulWidget {
   /// 最大折叠显示数量
   static const int maxCollapsedLinks = 5;
 
-  const PostLinks({
-    super.key,
-    this.linkCounts,
-    this.defaultExpanded = false,
-  });
+  const PostLinks({super.key, this.linkCounts, this.defaultExpanded = false});
 
   @override
   State<PostLinks> createState() => _PostLinksState();
 }
 
-class _PostLinksState extends State<PostLinks> with SingleTickerProviderStateMixin {
+class _PostLinksState extends State<PostLinks>
+    with SingleTickerProviderStateMixin {
   late bool _expanded = widget.defaultExpanded;
   bool _showAll = false; // 链接列表内部的"查看更多"
 
@@ -37,7 +36,13 @@ class _PostLinksState extends State<PostLinks> with SingleTickerProviderStateMix
 
     // 过滤：内部链接 + reflection + 有标题
     final filtered = widget.linkCounts!
-        .where((l) => l.internal && l.reflection && l.title != null && l.title!.isNotEmpty)
+        .where(
+          (l) =>
+              l.internal &&
+              l.reflection &&
+              l.title != null &&
+              l.title!.isNotEmpty,
+        )
         .toList();
 
     // 按标题去重
@@ -82,7 +87,7 @@ class _PostLinksState extends State<PostLinks> with SingleTickerProviderStateMix
         return;
       }
       Navigator.of(context).push(
-        MaterialPageRoute(
+        InteractionPageRoute(
           builder: (_) => TopicDetailPage(
             topicId: topicInfo.topicId,
             initialTitle: link.title,
@@ -101,11 +106,13 @@ class _PostLinksState extends State<PostLinks> with SingleTickerProviderStateMix
 
     return Container(
       margin: const EdgeInsets.only(top: 16),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerLow.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(12),
+          side: BorderSide(
+            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3),
+          ),
         ),
       ),
       child: Column(
@@ -114,12 +121,14 @@ class _PostLinksState extends State<PostLinks> with SingleTickerProviderStateMix
           // 可点击的标题栏
           InkWell(
             onTap: () => setState(() => _expanded = !_expanded),
-            borderRadius: _expanded
-                ? const BorderRadius.only(
-                    topLeft: Radius.circular(12),
-                    topRight: Radius.circular(12),
-                  )
-                : BorderRadius.circular(12),
+            customBorder: RoundedSuperellipseBorder(
+              borderRadius: _expanded
+                  ? BorderRadius.only(
+                      topLeft: context.shapes.radius(12),
+                      topRight: context.shapes.radius(12),
+                    )
+                  : context.shapes.borderRadius(12),
+            ),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               child: Row(
@@ -139,10 +148,17 @@ class _PostLinksState extends State<PostLinks> with SingleTickerProviderStateMix
                   ),
                   const SizedBox(width: 6),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.primaryContainer.withValues(alpha: 0.5),
-                      borderRadius: BorderRadius.circular(8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 1,
+                    ),
+                    decoration: ShapeDecoration(
+                      color: theme.colorScheme.primaryContainer.withValues(
+                        alpha: 0.5,
+                      ),
+                      shape: RoundedSuperellipseBorder(
+                        borderRadius: context.shapes.borderRadius(8),
+                      ),
                     ),
                     child: Text(
                       '${links.length}',
@@ -181,15 +197,21 @@ class _PostLinksState extends State<PostLinks> with SingleTickerProviderStateMix
                       Divider(
                         height: 1,
                         thickness: 0.5,
-                        color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3),
+                        color: theme.colorScheme.outlineVariant.withValues(
+                          alpha: 0.3,
+                        ),
                       ),
-                      ..._displayedLinks.map((link) => _buildLinkItem(link, theme)),
+                      ..._displayedLinks.map(
+                        (link) => _buildLinkItem(link, theme),
+                      ),
                       if (_canShowMore)
                         InkWell(
                           onTap: () => setState(() => _showAll = true),
-                          borderRadius: const BorderRadius.only(
-                            bottomLeft: Radius.circular(12),
-                            bottomRight: Radius.circular(12),
+                          customBorder: RoundedSuperellipseBorder(
+                            borderRadius: BorderRadius.only(
+                              bottomLeft: context.shapes.radius(12),
+                              bottomRight: context.shapes.radius(12),
+                            ),
                           ),
                           child: Container(
                             width: double.infinity,
@@ -200,13 +222,13 @@ class _PostLinksState extends State<PostLinks> with SingleTickerProviderStateMix
                                 Icon(
                                   Symbols.more_horiz_rounded,
                                   size: 16,
-                                  color: theme.colorScheme.primary,
+                                  color: context.emphasis.accent,
                                 ),
                                 const SizedBox(width: 4),
                                 Text(
                                   context.l10n.post_moreLinks(_remainingCount),
                                   style: theme.textTheme.labelMedium?.copyWith(
-                                    color: theme.colorScheme.primary,
+                                    color: context.emphasis.accent,
                                   ),
                                 ),
                               ],
@@ -248,9 +270,11 @@ class _PostLinksState extends State<PostLinks> with SingleTickerProviderStateMix
               const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
+                decoration: ShapeDecoration(
                   color: theme.colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(8),
+                  shape: RoundedSuperellipseBorder(
+                    borderRadius: context.shapes.borderRadius(8),
+                  ),
                 ),
                 child: Text(
                   _formatClicks(link.clicks),

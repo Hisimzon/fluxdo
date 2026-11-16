@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'package:ua_client_hints/ua_client_hints.dart';
+
 import 'config/site_customization.dart';
 import 'config/sites/linuxdo.dart';
+import 'services/network/client_hints.dart';
 import 'services/windows_webview_environment_service.dart';
 
 /// 应用常量
@@ -27,18 +29,23 @@ class AppConstants {
   static String? _cachedMacSafariVersion;
 
   /// 与原生层通信的系统信息 channel（目前只有 macOS 用到）
-  static const MethodChannel _systemInfoChannel = MethodChannel('com.fluxdo/system_info');
+  static const MethodChannel _systemInfoChannel = MethodChannel(
+    'com.fluxdo/system_info',
+  );
 
-  /// 缓存的 Client Hints 请求头（仅移动端可用）
+  /// 缓存的 Client Hints 请求头（仅安卓；iOS 的 Safari 内核不支持 Client Hints）
   static Map<String, String>? _cachedClientHints;
 
   /// 初始化 User-Agent（应用启动时调用一次）
   /// 获取 WebView 的真实 UA 并移除 wv 标识（解决 Google 登录问题）
   static Future<void> initUserAgent() async {
-    if (_uaInitialized) return;
+    if (_uaInitialized) {
+      await _uaCompleter.future;
+      return;
+    }
     _uaInitialized = true;
 
-    if (Platform.isWindows || Platform.isLinux) {
+    if (Platform.isWindows) {
       try {
         final runtimeUa = await _getDesktopWebViewUserAgent();
         if (runtimeUa != null && runtimeUa.isNotEmpty) {
@@ -58,7 +65,7 @@ class AppConstants {
         _cachedUserAgent = _buildDefaultUserAgent();
       }
       _uaCompleter.complete(_cachedUserAgent!);
-      await _initClientHints();
+      _initClientHints();
       return;
     }
 
@@ -80,9 +87,13 @@ class AppConstants {
     }
     _uaCompleter.complete(_cachedUserAgent!);
 
-    // 初始化 Client Hints（仅 Android/iOS）
-    await _initClientHints();
+    // 初始化 Client Hints（仅移动端）
+    _initClientHints();
   }
+
+  /// 核心首次启动时 Windows 尚未创建带正确代理的 WebView2 环境。
+  /// 代理就绪后，现有指纹采样会用真实 UA 核对缓存模板。
+  static String? get initializedUserAgent => _cachedUserAgent;
 
   static Future<String?> _getDesktopWebViewUserAgent() async {
     if (Platform.isWindows) {
@@ -96,27 +107,19 @@ class AppConstants {
       headlessWebView = HeadlessInAppWebView(
         webViewEnvironment:
             WindowsWebViewEnvironmentService.instance.environment,
-        initialData: InAppWebViewInitialData(
-          data: '<!DOCTYPE html><html><head></head><body></body></html>',
-          mimeType: 'text/html',
-          encoding: 'utf-8',
-        ),
+
         initialSettings: InAppWebViewSettings(
-          javaScriptEnabled: true,
+          javaScriptEnabled: false,
           isInspectable: false,
         ),
-        onLoadStop: (controller, url) async {
+        onWebViewCreated: (controller) async {
           if (completer.isCompleted) return;
           try {
-            final result = await controller.evaluateJavascript(
-              source: 'navigator.userAgent',
-            );
-            completer.complete(result?.toString());
+            final settings = await controller.getSettings();
+            if (!completer.isCompleted) completer.complete(settings?.userAgent);
           } catch (e) {
-            debugPrint(
-              '[AppConstants] 读取 WebView navigator.userAgent 失败: $e',
-            );
-            completer.complete(null);
+            debugPrint('[AppConstants] 读取 WebView 原生 UA 设置失败: $e');
+            if (!completer.isCompleted) completer.complete(null);
           }
         },
         onReceivedError: (controller, request, error) {
@@ -143,18 +146,14 @@ class AppConstants {
   }
 
   /// 初始化 User-Agent Client Hints 请求头
-  /// ua_client_hints 仅支持 Android/iOS，桌面端跳过
-  static Future<void> _initClientHints() async {
+  ///
+  /// 由实际发送的 UA 推导，与真实浏览器一致：只发三个低熵头，品牌与 UA 对应。
+  /// iOS 的 UA 不含 Chrome 内核标识，推导结果为 null（Safari 不发 Client Hints）。
+  /// 桌面端暂不发送，WebView2 的品牌列表未实测，留给网络核心按采样模板处理。
+  static void _initClientHints() {
     if (!Platform.isAndroid && !Platform.isIOS) return;
-    try {
-      final hints = await userAgentClientHintsHeader();
-      // 移除包自带的 User-Agent（我们用自己清理过的）
-      hints.remove('User-Agent');
-      _cachedClientHints = hints;
-      debugPrint('[AppConstants] Client Hints: $_cachedClientHints');
-    } catch (e) {
-      debugPrint('[AppConstants] 获取 Client Hints 失败: $e');
-    }
+    _cachedClientHints = ClientHints.fromUserAgent(_cachedUserAgent!);
+    debugPrint('[AppConstants] Client Hints: $_cachedClientHints');
   }
 
   /// 获取缓存的 Client Hints 请求头（可能为 null）
@@ -193,9 +192,8 @@ class AppConstants {
       // 不跟 iOS 的补丁号（iOS 18_3_2 → Version/18.3）
 
       // 提取 iOS 主版本号和次版本号（仅取前两段）
-      final versionMatch = RegExp(
-        r'CPU (?:iPhone )?OS (\d+)[_\.](\d+)',
-      ).firstMatch(sanitized);
+      final versionMatch = RegExp(r'CPU (?:iPhone )?OS (\d+)[_\.](\d+)')
+          .firstMatch(sanitized);
       final version = versionMatch != null
           ? '${versionMatch.group(1)}.${versionMatch.group(2)}'
           : '18.0';
@@ -220,7 +218,8 @@ class AppConstants {
       sanitized = sanitized.replaceAll(RegExp(r'\s*Electron/[\d.]+'), '');
       if (!sanitized.contains('Safari/')) {
         // 从原始 UA 抓 AppleWebKit 版本号，真 Safari 里 Safari/<num> 永远等于 AppleWebKit/<num>
-        final webKitMatch = RegExp(r'AppleWebKit/([^\s]+)').firstMatch(sanitized);
+        final webKitMatch = RegExp(r'AppleWebKit/([^\s]+)')
+            .firstMatch(sanitized);
         final webKitVersion = webKitMatch?.group(1) ?? '605.1.15';
         final safariVersion = _cachedMacSafariVersion ?? '18.5';
         sanitized = '$sanitized Version/$safariVersion Safari/$webKitVersion';
@@ -235,7 +234,9 @@ class AppConstants {
   /// 读不到时返回 null，由 sanitize / fallback 处使用保守默认值。
   static Future<String?> _readMacSafariVersion() async {
     try {
-      final version = await _systemInfoChannel.invokeMethod<String>('getSafariVersion');
+      final version = await _systemInfoChannel.invokeMethod<String>(
+        'getSafariVersion',
+      );
       if (version == null || version.isEmpty) return null;
       debugPrint('[AppConstants] macOS Safari version: $version');
       return version;

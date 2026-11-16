@@ -1,11 +1,14 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../../l10n/s.dart';
 import '../../../pages/webview_page.dart';
 import '../../../utils/dialog_utils.dart';
 import '../../../services/toast_service.dart';
 import '../providers/ldc_reward_provider.dart';
+import '../../../theme/app_colors.dart';
 
 /// LDC 打赏凭证配置卡片（元宇宙页面用）
 class LdcRewardConfigTile extends ConsumerWidget {
@@ -22,15 +25,17 @@ class LdcRewardConfigTile extends ConsumerWidget {
       elevation: 0,
       color: theme.colorScheme.surfaceContainerHigh,
       margin: EdgeInsets.zero,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(24),
+      shape: RoundedSuperellipseBorder(
+        borderRadius: context.shapes.borderRadius(24),
         side: BorderSide(
           color: theme.colorScheme.outlineVariant.withValues(alpha: 0.2),
         ),
       ),
       child: InkWell(
         onTap: () => _showConfigDialog(context, ref, isConfigured),
-        borderRadius: BorderRadius.circular(24),
+        customBorder: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(24),
+        ),
         child: Padding(
           padding: const EdgeInsets.all(20),
           child: Row(
@@ -38,9 +43,11 @@ class LdcRewardConfigTile extends ConsumerWidget {
               Container(
                 width: 64,
                 height: 64,
-                decoration: BoxDecoration(
+                decoration: ShapeDecoration(
                   color: theme.colorScheme.secondaryContainer,
-                  borderRadius: BorderRadius.circular(16),
+                  shape: RoundedSuperellipseBorder(
+                    borderRadius: context.shapes.borderRadius(16),
+                  ),
                 ),
                 child: Icon(
                   Symbols.volunteer_activism_rounded,
@@ -77,7 +84,7 @@ class LdcRewardConfigTile extends ConsumerWidget {
                     ? Symbols.check_circle_rounded
                     : Symbols.settings_rounded,
                 color: isConfigured
-                    ? Colors.green
+                    ? context.appColors.green
                     : theme.colorScheme.onSurfaceVariant,
               ),
             ],
@@ -128,9 +135,11 @@ class LdcRewardConfigTile extends ConsumerWidget {
               const SizedBox(height: 16),
               TextField(
                 controller: clientIdController,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Client ID',
-                  border: OutlineInputBorder(),
+                  border: OutlineInputBorder(
+                    borderRadius: context.shapes.borderRadius(4),
+                  ),
                   isDense: true,
                 ),
               ),
@@ -138,9 +147,11 @@ class LdcRewardConfigTile extends ConsumerWidget {
               TextField(
                 controller: clientSecretController,
                 obscureText: true,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Client Secret',
-                  border: OutlineInputBorder(),
+                  border: OutlineInputBorder(
+                    borderRadius: context.shapes.borderRadius(4),
+                  ),
                   isDense: true,
                 ),
               ),

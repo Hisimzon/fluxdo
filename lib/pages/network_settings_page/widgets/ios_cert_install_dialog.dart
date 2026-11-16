@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
@@ -99,7 +100,7 @@ class _IosCertInstallSheetState extends State<_IosCertInstallSheet> {
       contentPadding: EdgeInsets.zero,
       titleWidget: Row(
         children: [
-          Icon(Symbols.security_rounded, color: theme.colorScheme.primary),
+          Icon(Symbols.security_rounded, color: context.emphasis.accent),
           const SizedBox(width: 8),
           Text(
             l10n.dohSettings_certDialogTitle,
@@ -354,14 +355,16 @@ class _IosCertInstallSheetState extends State<_IosCertInstallSheet> {
   }) {
     return Container(
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: theme.colorScheme.primaryContainer.withValues(alpha: 0.3),
-        borderRadius: BorderRadius.circular(12),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(12),
+        ),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 20, color: theme.colorScheme.primary),
+          Icon(icon, size: 20, color: context.emphasis.accent),
           const SizedBox(width: 10),
           Expanded(
             child: Text(

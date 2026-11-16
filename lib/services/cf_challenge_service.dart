@@ -4,10 +4,13 @@ import 'dart:io' as io;
 import 'dart:math' as math;
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
+import 'package:common_ui/common_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../constants.dart';
 import 'network/cookie/boundary_sync_service.dart';
 import 'network/cookie/cookie_jar_service.dart';
@@ -21,6 +24,7 @@ import 'windows_webview_environment_service.dart';
 import '../l10n/s.dart';
 import '../providers/preferences_provider.dart';
 import '../utils/blur_config.dart';
+import '../widgets/common/cloudflare_mark.dart';
 import '../widgets/draggable_floating_pill.dart';
 
 CookieManager get _cfCookieManager =>
@@ -36,6 +40,28 @@ enum _CompatPromptChoice {
 
   /// 什么都不做(含关闭弹窗)。
   dismiss,
+}
+
+/// 一次验证诉求对界面的打扰等级，按打扰程度递增。
+///
+/// 同一轮验证被多个请求共享时取所有等待者里的最高档，且只升不降：
+/// 后台静默过盾期间有用户正在等的请求加入，展示随之立刻升级。
+enum CfVerifyPresentation {
+  /// 完全不可见：不影响当前使用的后台流程（如 WebView session bootstrap）。
+  /// 需要人工操作或超时即静默放弃，不计失败、不进冷却，留给下一个
+  /// 真正阻塞用户的请求再升级处理。
+  hidden,
+
+  /// 后台静默请求（timings / csrf 等）：显示胶囊；需要人工操作时只把
+  /// 胶囊切到「点按完成」，不主动弹面板。
+  pill,
+
+  /// 用户正在等结果的请求：立即显示状态（胶囊，或启动页文案）；需要
+  /// 人工操作或超时则自动弹出验证面板。
+  blocking,
+
+  /// 用户主动发起的验证：直接前台显示面板。
+  foreground,
 }
 
 /// CF 验证服务
@@ -84,6 +110,42 @@ class CfChallengeService {
     null,
   );
 
+  /// 当前验证轮次的展示等级（null=空闲）。验证页与启动页订阅它决定呈现方式。
+  final ValueNotifier<CfVerifyPresentation?> presentationNotifier =
+      ValueNotifier<CfVerifyPresentation?>(null);
+
+  /// 自带验证状态展示的宿主数量（如启动页）。大于 0 时验证页不显示胶囊，
+  /// 状态交给宿主呈现。
+  final ValueNotifier<int> statusHostCount = ValueNotifier<int>(0);
+
+  void registerStatusHost() => statusHostCount.value++;
+
+  void unregisterStatusHost() {
+    if (statusHostCount.value > 0) statusHostCount.value--;
+  }
+
+  /// 抬高当前验证轮次的展示等级（只升不降）；空闲时无效。
+  void raisePresentation(CfVerifyPresentation level) {
+    if (!_isVerifying) return;
+    final current = presentationNotifier.value;
+    if (current != null && current.index >= level.index) return;
+    presentationNotifier.value = level;
+  }
+
+  /// 等待当前验证轮次（含原生析构冷却）结束；空闲时立即返回。
+  Future<void> waitUntilIdle() {
+    if (!_isVerifying) return Future.value();
+    final completer = Completer<void>();
+    void listener() {
+      if (inProgressNotifier.value || completer.isCompleted) return;
+      inProgressNotifier.removeListener(listener);
+      completer.complete();
+    }
+
+    inProgressNotifier.addListener(listener);
+    return completer.future;
+  }
+
   void _setVerifying(bool value) {
     if (_isVerifying == value) return;
     _isVerifying = value;
@@ -107,6 +169,7 @@ class CfChallengeService {
     }
     inProgressNotifier.value = value;
     if (!value) {
+      presentationNotifier.value = null;
       _completedVerificationResult = null;
       final teardown = _manualTeardownCompleter;
       if (teardown != null && !teardown.isCompleted) {
@@ -146,8 +209,6 @@ class CfChallengeService {
   /// 上次拒绝「切兼容」的时刻;超过 [_sessionCompatDeclineTtl] 后可再问。
   DateTime? _sessionCompatDeclinedAt;
   Completer<BuildContext>? _contextReadyCompleter;
-  VoidCallback? _activePromoteToForeground;
-  bool _pendingPromoteToForeground = false;
 
   /// 冷却机制：连续失败 N 次后进入冷却期
   DateTime? _cooldownUntil;
@@ -300,7 +361,7 @@ class CfChallengeService {
     }
     if (context == null || !context.mounted) return false;
 
-    final choice = await showDialog<_CompatPromptChoice>(
+    final choice = await showInteractionDialog<_CompatPromptChoice>(
       context: context,
       useRootNavigator: true,
       builder: (dialogContext) {
@@ -326,9 +387,9 @@ class CfChallengeService {
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     visualDensity: VisualDensity.compact,
                   ),
-                  onPressed: () => Navigator.of(
-                    dialogContext,
-                  ).pop(_CompatPromptChoice.disableAutoVerify),
+                  onPressed: () =>
+                      Navigator.of(dialogContext)
+                          .pop(_CompatPromptChoice.disableAutoVerify),
                   child: Text(
                     S.current.cf_sessionCompatDisableAuto,
                     style: theme.textTheme.bodyMedium?.copyWith(
@@ -350,9 +411,9 @@ class CfChallengeService {
               ),
             ),
             FilledButton(
-              onPressed: () => Navigator.of(
-                dialogContext,
-              ).pop(_CompatPromptChoice.enableCompat),
+              onPressed: () =>
+                  Navigator.of(dialogContext)
+                      .pop(_CompatPromptChoice.enableCompat),
               child: Text(S.current.cf_sessionCompatEnable),
             ),
           ],
@@ -487,11 +548,26 @@ class CfChallengeService {
 
   /// 显示手动验证页面
   /// 返回值：true=验证成功, false=验证失败, null=冷却期内暂不可用或无 context
-  /// [forceForeground] 是否强制前台显示（默认为 true）
+  /// [forceForeground] 为 true 时直接前台显示，否则按 [CfVerifyPresentation.pill]
+  /// 在后台尝试。
   Future<bool?> showManualVerify([
     BuildContext? context,
     bool forceForeground = true,
-  ]) async {
+  ]) {
+    return verify(
+      context: context,
+      presentation: forceForeground
+          ? CfVerifyPresentation.foreground
+          : CfVerifyPresentation.pill,
+    );
+  }
+
+  /// 发起（或合流到进行中的）CF 验证，[presentation] 声明本次诉求的打扰等级。
+  /// 返回值语义同 [showManualVerify]。
+  Future<bool?> verify({
+    BuildContext? context,
+    CfVerifyPresentation presentation = CfVerifyPresentation.foreground,
+  }) async {
     // 检查冷却期
     if (isInCooldown) {
       debugPrint('[CfChallenge] In cooldown, skipping manual verify');
@@ -501,6 +577,7 @@ class CfChallengeService {
 
     final verifyUrl = '${AppConstants.baseUrl}/challenge';
     CfChallengeLogger.logVerifyStart(verifyUrl);
+    CfChallengeLogger.log('[VERIFY] Presentation: ${presentation.name}');
 
     // 尝试获取 context：传入的 > 已设置的 > 全局 navigatorKey
     BuildContext? ctx = context ?? _context;
@@ -548,17 +625,8 @@ class CfChallengeService {
       // 结果；不能再加入等待列表，否则旧流程已经清空列表后将无人完成它。
       final completedResult = _completedVerificationResult;
       if (completedResult != null) return completedResult;
-      if (forceForeground) {
-        final promote = _activePromoteToForeground;
-        if (promote == null) {
-          _pendingPromoteToForeground = true;
-        } else {
-          promote();
-        }
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _activePromoteToForeground?.call();
-        });
-      }
+      // 共享同一轮验证，展示按最新加入者的诉求升级（验证页订阅后自行处理）。
+      raisePresentation(presentation);
 
       final completer = Completer<bool>();
       _verifyCompleter.add(completer);
@@ -566,6 +634,7 @@ class CfChallengeService {
     }
 
     _setVerifying(true);
+    presentationNotifier.value = presentation;
 
     // ignore: use_build_context_synchronously
     final overlayState =
@@ -575,7 +644,6 @@ class CfChallengeService {
       debugPrint('[CfChallenge] No overlay available for manual verify');
       CfChallengeLogger.log('[VERIFY] No overlay available');
       _setVerifying(false);
-      _pendingPromoteToForeground = false;
       return null;
     }
 
@@ -610,7 +678,6 @@ class CfChallengeService {
       debugPrint('[CfChallenge] Overlay no longer mounted');
       CfChallengeLogger.log('[VERIFY] Overlay not mounted');
       _setVerifying(false);
-      _pendingPromoteToForeground = false;
       return null;
     }
 
@@ -624,15 +691,7 @@ class CfChallengeService {
 
     // Page Key 用于触发内部弹窗
     final pageKey = GlobalKey<_CfChallengePageState>();
-    _activePromoteToForeground = () {
-      pageKey.currentState?._promoteToForeground();
-    };
-    if (_pendingPromoteToForeground) {
-      _pendingPromoteToForeground = false;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _activePromoteToForeground?.call();
-      });
-    }
+    final BuildContext navigatorContext = ctx;
 
     // 清理资源
     void cleanup() {
@@ -674,8 +733,6 @@ class CfChallengeService {
           }
         });
       }
-      _activePromoteToForeground = null;
-      _pendingPromoteToForeground = false;
       // 延迟释放 _isVerifying：给原生 WebView2 控制器留出真正销毁的时间，
       // 这段时间内的新验证请求会走上面的排队合流分支，而不是立刻起新
       // WebView 撞上销毁中的旧实例（见 _postCleanupCooldown 处注释）。
@@ -698,7 +755,7 @@ class CfChallengeService {
       }
 
       // Push 透明 Route 用于拦截返回键
-      interceptorRoute = PageRouteBuilder(
+      interceptorRoute = InteractionPageRouteBuilder(
         opaque: false,
         barrierColor: Colors.transparent,
         pageBuilder: (context, _, _) {
@@ -735,30 +792,26 @@ class CfChallengeService {
       builder: (context) => CfChallengePage(
         key: pageKey,
         verifyUrl: verifyUrl,
-        startInBackground: !forceForeground,
+        presentation: presentationNotifier,
         onResult: finish,
-        onPromoteRequest: () => onPromoteToForeground(context),
+        // 优先用调用方的 navigator context；它已失效时退回 OverlayEntry 自身的。
+        onPromoteRequest: () => onPromoteToForeground(
+          navigatorContext.mounted ? navigatorContext : context,
+        ),
         oldCfClearanceValue: backupCfClearance != null
             ? CookieValueCodec.decode(backupCfClearance.value)
             : null,
         oldCfClearanceValues: oldWebViewClearances,
       ),
     );
+    // 初始即前台时，页面在首帧后自行请求 promote（见 initState）。
     overlayState.insert(entry);
 
-    // 如果初始就是前台，立即执行 promote
-    if (forceForeground) {
-      // Post frame callback to ensure overlay is mounted and context is valid
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        // 注意：这里的 ctx 是 Service 传入的 ctx，可能不是 Overlay 的 context
-        // 但 Navigator.of(ctx) 应该能找到正确的 Navigator
-        // 我们最好使用 OverlayEntry builder 里的 context，但这里访问不到。
-        // 使用 ctx 应该是安全的。
-        onPromoteToForeground(ctx!);
-      });
-    }
-
     final result = await resultCompleter.future;
+    // 只剩 hidden 诉求的一轮：放弃不代表用户失败，不计数、不冷却。
+    final abandonedQuietly =
+        result != true &&
+        presentationNotifier.value == CfVerifyPresentation.hidden;
 
     // 通知所有等待者
     for (final c in _verifyCompleter) {
@@ -787,6 +840,12 @@ class CfChallengeService {
       if (backupCfClearance != null) {
         await cookieJarService.restoreCfClearance(backupCfClearance);
         debugPrint('[CfChallenge] 验证失败，已恢复备份 cf_clearance');
+      }
+      if (abandonedQuietly) {
+        CfChallengeLogger.log(
+          '[VERIFY] Hidden verify abandoned, defer to next blocking request',
+        );
+        return result;
       }
       // 验证失败，启动冷却期
       startCooldown();
@@ -817,7 +876,7 @@ class CfChallengePage extends StatefulWidget {
   const CfChallengePage({
     super.key,
     required this.verifyUrl,
-    this.startInBackground = false,
+    required this.presentation,
     this.onResult,
     this.onPromoteRequest,
     this.oldCfClearanceValue,
@@ -826,8 +885,9 @@ class CfChallengePage extends StatefulWidget {
 
   final String verifyUrl;
 
-  /// 先后台尝试验证，超时后再切到前台
-  final bool startInBackground;
+  /// 本轮验证的展示等级（由 [CfChallengeService] 维护、只升不降）。非 foreground 时先在
+  /// 后台尝试，需要人工操作或超时后按等级决定如何升级。
+  final ValueListenable<CfVerifyPresentation?> presentation;
   final ValueChanged<bool>? onResult;
   final VoidCallback? onPromoteRequest;
 
@@ -866,7 +926,23 @@ class _CfChallengePageState extends State<CfChallengePage> {
   Timer? _noChallengeCheckTimer;
   Timer? _loadStopFallbackTimer;
   Timer? _pageReadyFallbackTimer;
-  static const _backgroundMaxCheckCount = 10;
+  Timer? _pillRevealTimer;
+  Timer? _pillAttentionTimer;
+
+  /// 后台验证已判定需要人工操作（Turnstile 进入交互态或后台超时）。
+  bool _needsInteraction = false;
+
+  /// 胶囊是否已到可显示时机（pill 等级延迟出现，blocking 立即出现）。
+  bool _pillRevealed = false;
+
+  /// 自动通过的验证实测多在 1s 内结束，pill 等级延迟出现，避免一闪而过。
+  static const _pillRevealDelay = Duration(seconds: 2);
+
+  /// pill 等级需要人工操作后等待用户点按的上限，超时按失败收尾。
+  static const _pillAttentionTimeout = Duration(seconds: 60);
+
+  /// 实测无需操作的自动通过最慢约 5s，超过即视为需要人工操作。
+  static const _backgroundMaxCheckCount = 8;
   static const _foregroundMaxCheckCount = 60;
   static const _noChallengeCheckDelay = Duration(milliseconds: 1200);
   static const _revealStateWatchInterval = Duration(milliseconds: 150);
@@ -882,12 +958,105 @@ class _CfChallengePageState extends State<CfChallengePage> {
   int get _activeMaxCheckCount =>
       _isBackground ? _backgroundMaxCheckCount : _foregroundMaxCheckCount;
 
+  CfVerifyPresentation get _presentation =>
+      widget.presentation.value ?? CfVerifyPresentation.foreground;
+
+  bool get _showPill =>
+      _isBackground &&
+      _presentation != CfVerifyPresentation.hidden &&
+      _pillRevealed &&
+      // 启动页等宿主自带状态展示时让位；需要用户点按时仍然露出入口。
+      (CfChallengeService().statusHostCount.value == 0 || _needsInteraction);
+
   @override
   void initState() {
     super.initState();
-    _isBackground = widget.startInBackground;
+    _isBackground = _presentation != CfVerifyPresentation.foreground;
     _needsManualAttention = false;
+    widget.presentation.addListener(_onPresentationChanged);
+    CfChallengeService().statusHostCount.addListener(_onStatusHostChanged);
+    if (!_isBackground) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && !_hasPopped) widget.onPromoteRequest?.call();
+      });
+    } else {
+      _syncPillReveal();
+    }
     _snapshotInitialClearance();
+  }
+
+  /// 展示等级被新加入的诉求抬高：按新等级立即调整呈现。
+  void _onPresentationChanged() {
+    if (!mounted || _hasPopped || !_isBackground) return;
+    final presentation = _presentation;
+    if (presentation == CfVerifyPresentation.foreground ||
+        (presentation == CfVerifyPresentation.blocking && _needsInteraction)) {
+      _promoteToForeground(dueToTimeout: _hasBackgroundTimedOut);
+      return;
+    }
+    _syncPillReveal();
+    setState(() {});
+  }
+
+  void _onStatusHostChanged() {
+    if (mounted && !_hasPopped && _isBackground) setState(() {});
+  }
+
+  void _syncPillReveal() {
+    if (_pillRevealed) return;
+    switch (_presentation) {
+      case CfVerifyPresentation.hidden:
+        return;
+      case CfVerifyPresentation.pill:
+        _pillRevealTimer ??= Timer(_pillRevealDelay, () {
+          if (!mounted || _hasPopped) return;
+          setState(() => _pillRevealed = true);
+        });
+      case CfVerifyPresentation.blocking:
+      case CfVerifyPresentation.foreground:
+        _pillRevealTimer?.cancel();
+        _pillRevealed = true;
+    }
+  }
+
+  bool get _hasBackgroundTimedOut => _checkCount > _backgroundMaxCheckCount;
+
+  /// 后台验证判定需要人工操作后，按当前展示等级决定如何升级。
+  void _escalateNeedsInteraction({
+    required String reason,
+    required bool dueToTimeout,
+  }) {
+    if (_hasPopped || !mounted || _finishingFromVerifyResponse) return;
+    if (!_isBackground || _needsInteraction) return;
+    _needsInteraction = true;
+    final presentation = _presentation;
+    CfChallengeLogger.log(
+      '[VERIFY] Needs interaction ($reason), presentation=${presentation.name}',
+    );
+    switch (presentation) {
+      case CfVerifyPresentation.hidden:
+        _timeoutTimer?.cancel();
+        _finish(false);
+      case CfVerifyPresentation.pill:
+        _pillRevealTimer?.cancel();
+        _pillAttentionTimer = Timer(_pillAttentionTimeout, () {
+          if (!mounted || _hasPopped || !_isBackground) return;
+          CfChallengeLogger.log('[VERIFY] Pill attention timeout, giving up');
+          _finish(false);
+        });
+        setState(() => _pillRevealed = true);
+      case CfVerifyPresentation.blocking:
+      case CfVerifyPresentation.foreground:
+        _promoteToForeground(dueToTimeout: dueToTimeout);
+    }
+  }
+
+  /// Turnstile iframe 上报交互态（见 [_documentStartMaskScript] 的 message 监听）。
+  void _onChallengeInteractive(List<dynamic> args) {
+    if (_hasPopped || !mounted || _finishingFromVerifyResponse) return;
+    final event = args.isNotEmpty ? args.first.toString() : 'unknown';
+    CfChallengeLogger.log('[VERIFY] Turnstile event: $event');
+    _escalateNeedsInteraction(reason: 'turnstile $event', dueToTimeout: false);
   }
 
   /// 记录本轮开始前 jar 与 WebView 中可见的旧值。两者可能不同，不能只
@@ -930,10 +1099,14 @@ class _CfChallengePageState extends State<CfChallengePage> {
 
   @override
   void dispose() {
+    widget.presentation.removeListener(_onPresentationChanged);
+    CfChallengeService().statusHostCount.removeListener(_onStatusHostChanged);
     _timeoutTimer?.cancel();
     _noChallengeCheckTimer?.cancel();
     _loadStopFallbackTimer?.cancel();
     _pageReadyFallbackTimer?.cancel();
+    _pillRevealTimer?.cancel();
+    _pillAttentionTimer?.cancel();
     // InAppWebView 自身会随 Widget 销毁平台 Controller；这里再次手动
     // dispose 会让 Windows 插件对同一个原生对象执行双重释放。
     _controller = null;
@@ -1216,6 +1389,18 @@ class _CfChallengePageState extends State<CfChallengePage> {
   }
   window.addEventListener('beforeunload', function(){ notifyNav('beforeunload'); });
   window.addEventListener('pagehide', function(){ notifyNav('pagehide'); });
+
+  // Turnstile iframe 经 postMessage 向宿主页上报状态，格式见其 api.js：
+  // {source:'cloudflare-challenge', event, widgetId}。interactiveBegin 表示
+  // CF 判定需要人工操作（勾选框等），后台验证据此立即升级，不必干等超时。
+  window.addEventListener('message', function(e) {
+    var d = e.data;
+    if (!d || typeof d !== 'object' || d.source !== 'cloudflare-challenge') return;
+    if (d.event !== 'interactiveBegin' && d.event !== 'interactiveTimeout') return;
+    try {
+      window.flutter_inappwebview.callHandler('onChallengeInteractive', d.event);
+    } catch(e) {}
+  });
 })();
 ''';
   }
@@ -1292,10 +1477,11 @@ class _CfChallengePageState extends State<CfChallengePage> {
 
       if (_checkCount > _activeMaxCheckCount) {
         if (_isBackground) {
-          CfChallengeLogger.log(
-            '[VERIFY] Background timeout after $_activeMaxCheckCount seconds, prompting manual verify',
+          // 继续每秒轮询页面：pill 等级等待点按期间页面仍可能自行通过。
+          _escalateNeedsInteraction(
+            reason: 'background timeout after $_activeMaxCheckCount seconds',
+            dueToTimeout: true,
           );
-          _promoteToForeground(dueToTimeout: true);
           return;
         }
         if (!_hasTimedOut) {
@@ -1522,12 +1708,16 @@ class _CfChallengePageState extends State<CfChallengePage> {
 
   void _promoteToForeground({bool dueToTimeout = false}) {
     if (!_isBackground) return;
+    _pillRevealTimer?.cancel();
+    _pillAttentionTimer?.cancel();
     setState(() {
       _isBackground = false;
       _needsManualAttention = true;
       _hasTimedOut = false;
       _checkCount = 0;
     });
+    // 同步到本轮共享状态：之后加入的诉求不再触发重复升级。
+    CfChallengeService().raisePresentation(CfVerifyPresentation.foreground);
     widget.onPromoteRequest?.call();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1799,8 +1989,7 @@ document.readyState === 'complete' && document.body && document.body.innerHTML.t
 
         try {
           final html = await controller.evaluateJavascript(
-            source:
-                'document.documentElement ? document.documentElement.innerHTML : ""',
+            source: 'document.documentElement ? document.documentElement.innerHTML : ""',
           );
           if (_hasPopped || !mounted || _finishingFromVerifyResponse) return;
           if (watcherGeneration != _revealStateWatchGeneration) return;
@@ -1895,7 +2084,9 @@ document.readyState === 'complete' && document.body && document.body.innerHTML.t
 
     return Material(
       color: backgroundColor,
-      borderRadius: BorderRadius.circular(8),
+      shape: RoundedSuperellipseBorder(
+        borderRadius: context.shapes.borderRadius(8),
+      ),
       clipBehavior: Clip.antiAlias,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -2010,8 +2201,7 @@ document.readyState === 'complete' && document.body && document.body.innerHTML.t
     if (generation != _loadGeneration) return;
     try {
       final html = await controller.evaluateJavascript(
-        source:
-            'document.documentElement ? document.documentElement.innerHTML : ""',
+        source: 'document.documentElement ? document.documentElement.innerHTML : ""',
       );
       if (_hasPopped ||
           !mounted ||
@@ -2105,6 +2295,11 @@ document.readyState === 'complete' && document.body && document.body.innerHTML.t
             controller.addJavaScriptHandler(
               handlerName: 'onChallengeNavigation',
               callback: _onChallengeNavigation,
+            );
+            // 注册 JS Handler，Turnstile 进入交互态时触发，后台验证据此升级
+            controller.addJavaScriptHandler(
+              handlerName: 'onChallengeInteractive',
+              callback: _onChallengeInteractive,
             );
           },
           onLoadStart: (controller, url) {
@@ -2250,7 +2445,11 @@ document.readyState === 'complete' && document.body && document.body.innerHTML.t
               onPressed: showExitConfirmation,
             ),
             const SizedBox(width: 4),
-            Icon(Symbols.shield_rounded, size: 16, color: colorScheme.primary),
+            Icon(
+              Symbols.shield_rounded,
+              size: 16,
+              color: context.emphasis.accent,
+            ),
             const SizedBox(width: 6),
             Expanded(
               child: Text(
@@ -2292,7 +2491,9 @@ document.readyState === 'complete' && document.body && document.body.innerHTML.t
     return Material(
       color: colorScheme.surface,
       elevation: 0,
-      borderRadius: BorderRadius.circular(20),
+      shape: RoundedSuperellipseBorder(
+        borderRadius: context.shapes.borderRadius(20),
+      ),
       clipBehavior: Clip.antiAlias,
       child: Column(
         children: [
@@ -2450,9 +2651,8 @@ document.readyState === 'complete' && document.body && document.body.innerHTML.t
                             width: double.infinity,
                             height: panelHeight,
                             child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(20),
-                                boxShadow: [
+                              decoration: ShapeDecoration(
+                                shadows: [
                                   BoxShadow(
                                     color: Colors.black.withValues(
                                       alpha: theme.brightness == Brightness.dark
@@ -2463,9 +2663,11 @@ document.readyState === 'complete' && document.body && document.body.innerHTML.t
                                     offset: const Offset(0, 12),
                                   ),
                                 ],
-                                border: Border.all(
-                                  color: colorScheme.outlineVariant.withValues(
-                                    alpha: 0.35,
+                                shape: RoundedSuperellipseBorder(
+                                  borderRadius: context.shapes.borderRadius(20),
+                                  side: BorderSide(
+                                    color: colorScheme.outlineVariant
+                                        .withValues(alpha: 0.35),
                                   ),
                                 ),
                               ),
@@ -2597,12 +2799,24 @@ document.readyState === 'complete' && document.body && document.body.innerHTML.t
             ],
           ),
 
-        // 悬浮验证胶囊：默认收起，点击展开，再次点击进入前台
-        if (_isBackground)
+        // 悬浮验证胶囊：默认收起，点击展开，再次点击进入前台；
+        // 进行中带进度环，需要人工操作时换强调色并直接展开提示点按
+        if (_showPill)
           DraggableFloatingPill(
+            key: ValueKey(_needsInteraction),
             initialTop: 100,
+            initiallyExpanded: _needsInteraction,
+            busy: !_needsInteraction,
+            emphasized: _needsInteraction,
+            icon: Symbols.touch_app_rounded,
+            // 进行中显示 Cloudflare 标志；需要操作时换回点按手势强调动作
+            mark: _needsInteraction ? null : const CloudflareMark(width: 13),
             onTap: _promoteToForeground,
-            child: Text(S.current.cf_backgroundVerifying),
+            child: Text(
+              _needsInteraction
+                  ? S.current.cf_backgroundNeedsAction
+                  : S.current.cf_backgroundVerifying,
+            ),
           ),
       ],
     );
@@ -2773,15 +2987,15 @@ class _ChallengeFallbackOverlayState extends State<_ChallengeFallbackOverlay>
           Container(
             width: 56,
             height: 56,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: colorScheme.primary.withValues(alpha: 0.12),
+            decoration: ShapeDecoration(
+              color: context.emphasis.accent.withValues(alpha: 0.12),
+              shape: context.shapes.circle(),
             ),
             alignment: Alignment.center,
             child: Icon(
               Symbols.verified_user_rounded,
               size: 28,
-              color: colorScheme.primary,
+              color: context.emphasis.accent,
             ),
           ),
           const SizedBox(height: 18),

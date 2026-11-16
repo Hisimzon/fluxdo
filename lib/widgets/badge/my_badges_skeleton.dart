@@ -1,4 +1,6 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
+
 import '../common/skeleton.dart';
 import '../../../../../l10n/s.dart';
 
@@ -27,7 +29,9 @@ class MyBadgesSkeleton extends StatelessWidget {
                     end: Alignment.bottomRight,
                     colors: [
                       colorScheme.surface,
-                      colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                      colorScheme.surfaceContainerHighest.withValues(
+                        alpha: 0.5,
+                      ),
                     ],
                   ),
                 ),
@@ -106,9 +110,11 @@ class MyBadgesSkeleton extends StatelessWidget {
     final theme = Theme.of(context);
 
     return Container(
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(20),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(20),
+        ),
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,

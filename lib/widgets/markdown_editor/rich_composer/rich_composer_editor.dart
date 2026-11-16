@@ -34,6 +34,8 @@ import 'package:flutter/foundation.dart'
         listEquals,
         visibleForTesting;
 import 'package:flutter/material.dart';
+import 'package:common_ui/common_ui.dart'
+    show showInteractionDialog, UiShapesContext, UiEmphasisContext;
 import 'package:flutter/services.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:fluxdo_render/editor.dart';
@@ -324,7 +326,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     try {
       if (restore) {
         // lastRaw 相同也不能证明是同一篇文章，始终要求用户确认替换。
-        final confirmed = await showDialog<bool>(
+        final confirmed = await showInteractionDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
             title: Text(S.current.createTopic_restoreDraft),
@@ -2831,7 +2833,11 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     });
   }
 
-  Future<void> _showTableStructureMenu(String tableId, bool row, Rect anchor) async {
+  Future<void> _showTableStructureMenu(
+    String tableId,
+    bool row,
+    Rect anchor,
+  ) async {
     final target = _tableContext.value;
     if (target == null || target.tableId != tableId) return;
     final releaseChrome = ComposerChromeScope.maybeOf(context)?.hold();
@@ -3111,7 +3117,9 @@ class RichComposerEditorState extends State<RichComposerEditor> {
               waitDuration: const Duration(milliseconds: 600),
               child: InkWell(
                 onTap: onTap,
-                borderRadius: BorderRadius.circular(8),
+                customBorder: RoundedSuperellipseBorder(
+                  borderRadius: context.shapes.borderRadius(8),
+                ),
                 child: Padding(
                   padding: const EdgeInsets.all(8),
                   child: Icon(icon, size: 17, color: scheme.onSurfaceVariant),
@@ -3180,7 +3188,9 @@ class RichComposerEditorState extends State<RichComposerEditor> {
                             onTap: href.isEmpty
                                 ? null
                                 : () => launchContentLink(this.context, href),
-                            borderRadius: BorderRadius.circular(8),
+                            customBorder: RoundedSuperellipseBorder(
+                              borderRadius: context.shapes.borderRadius(8),
+                            ),
                             child: Padding(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 8,
@@ -3948,19 +3958,18 @@ class RichComposerEditorState extends State<RichComposerEditor> {
                                                       radius: 8,
                                                       child: child,
                                                     ),
-                                            caretViewportInsets:
-                                                EdgeInsets.only(
-                                                  // 创建/编辑页的顶栏覆盖在滚动区上方。
-                                                  top:
-                                                      ComposerChromeScope.topInsetOf(
-                                                        context,
-                                                      ),
-                                                  bottom:
-                                                      bottomInset +
-                                                      _toolsAnchor
-                                                          .contextExtent
-                                                          .value,
-                                                ),
+                                            caretViewportInsets: EdgeInsets.only(
+                                              // 创建/编辑页的顶栏覆盖在滚动区上方。
+                                              top:
+                                                  ComposerChromeScope.topInsetOf(
+                                                    context,
+                                                  ),
+                                              bottom:
+                                                  bottomInset +
+                                                  _toolsAnchor
+                                                      .contextExtent
+                                                      .value,
+                                            ),
                                             showTrailingParagraph: true,
                                             emptyParagraphHint:
                                                 isEmpty &&
@@ -4005,8 +4014,18 @@ class RichComposerEditorState extends State<RichComposerEditor> {
                                             // cook 替换
                                             onTableEdited: _onTableEdited,
                                             onTableCommit: _onTableEdited,
-                                            tableStructureControlsBuilder: _isDesktop ? null : (context, cell, open) => ComposerTableControls(cell: cell, onOpen: open),
-                                            onTableStructureMenuRequested: _isDesktop ? null : _showTableStructureMenu,
+                                            tableStructureControlsBuilder:
+                                                _isDesktop
+                                                ? null
+                                                : (context, cell, open) =>
+                                                      ComposerTableControls(
+                                                        cell: cell,
+                                                        onOpen: open,
+                                                      ),
+                                            onTableStructureMenuRequested:
+                                                _isDesktop
+                                                ? null
+                                                : _showTableStructureMenu,
                                             onTableContextChanged: _isDesktop
                                                 ? null
                                                 : _updateTableContext,
@@ -4514,19 +4533,27 @@ class _RichToolbarState extends State<_RichToolbar> {
             ? child!
             : Tooltip(
                 message: context.l10n.editor.table_format_unavailable,
-                child: ExcludeFocus(child: AbsorbPointer(
-                  child: Opacity(opacity: .45, child: Row(
-                    key: const ValueKey('table-format-tools'),
-                    children: [
-                      _buildEmojiButton(theme),
-                      Expanded(child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(children: _buildMiddleTools(theme)),
-                      )),
-                      if (widget.onToggleTools != null) _buildToolsButton(theme),
-                    ],
-                  )),
-                )),
+                child: ExcludeFocus(
+                  child: AbsorbPointer(
+                    child: Opacity(
+                      opacity: .45,
+                      child: Row(
+                        key: const ValueKey('table-format-tools'),
+                        children: [
+                          _buildEmojiButton(theme),
+                          Expanded(
+                            child: SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: Row(children: _buildMiddleTools(theme)),
+                            ),
+                          ),
+                          if (widget.onToggleTools != null)
+                            _buildToolsButton(theme),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               ),
         child: ValueListenableBuilder<ComposerObjectSelection?>(
           valueListenable: widget.objectSelection,
@@ -4689,9 +4716,11 @@ class _MarkdownInputDialogState extends State<_MarkdownInputDialog> {
           autofocus: true,
           maxLines: 10,
           style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
-          decoration: const InputDecoration(
+          decoration: InputDecoration(
             hintText: '任意 Discourse markdown/bbcode…',
-            border: OutlineInputBorder(),
+            border: OutlineInputBorder(
+              borderRadius: context.shapes.borderRadius(4),
+            ),
           ),
         ),
       ),
@@ -4741,7 +4770,11 @@ class _SingleLineInputDialogState extends State<_SingleLineInputDialog> {
       content: TextField(
         controller: _controller,
         autofocus: true,
-        decoration: const InputDecoration(border: OutlineInputBorder()),
+        decoration: InputDecoration(
+          border: OutlineInputBorder(
+            borderRadius: context.shapes.borderRadius(4),
+          ),
+        ),
         onSubmitted: (v) => Navigator.pop(context, v),
       ),
       actions: [
@@ -4770,17 +4803,19 @@ class _FloatingPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Container(
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: scheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.5)),
-        boxShadow: [
+        shadows: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.18),
             blurRadius: 24,
             offset: const Offset(0, 8),
           ),
         ],
+        shape: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(12),
+          side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.5)),
+        ),
       ),
       clipBehavior: Clip.antiAlias,
       // Material 祖先:面板内容常含 InkWell/TextField(图片工具条按钮、
@@ -4838,10 +4873,14 @@ class _MentionRow extends StatelessWidget {
         color: selected
             ? scheme.primary.withValues(alpha: 0.12)
             : Colors.transparent,
-        borderRadius: BorderRadius.circular(8),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(8),
+        ),
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(8),
+          customBorder: RoundedSuperellipseBorder(
+            borderRadius: context.shapes.borderRadius(8),
+          ),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
             child: Row(
@@ -4924,10 +4963,14 @@ class _EmojiCandidateRow extends StatelessWidget {
         color: selected
             ? scheme.primary.withValues(alpha: 0.12)
             : Colors.transparent,
-        borderRadius: BorderRadius.circular(8),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(8),
+        ),
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(8),
+          customBorder: RoundedSuperellipseBorder(
+            borderRadius: context.shapes.borderRadius(8),
+          ),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
             child: Row(
@@ -4989,10 +5032,14 @@ class _EmojiMoreRow extends StatelessWidget {
         color: selected
             ? scheme.primary.withValues(alpha: 0.12)
             : Colors.transparent,
-        borderRadius: BorderRadius.circular(8),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(8),
+        ),
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(8),
+          customBorder: RoundedSuperellipseBorder(
+            borderRadius: context.shapes.borderRadius(8),
+          ),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
             child: Row(
@@ -5000,7 +5047,7 @@ class _EmojiMoreRow extends StatelessWidget {
                 Icon(
                   Symbols.more_horiz_rounded,
                   size: 20,
-                  color: scheme.primary,
+                  color: context.emphasis.accent,
                 ),
                 const SizedBox(width: 8),
                 Text(
@@ -5008,7 +5055,7 @@ class _EmojiMoreRow extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w500,
-                    color: scheme.primary,
+                    color: context.emphasis.accent,
                   ),
                 ),
               ],

@@ -1,16 +1,20 @@
 import 'package:ai_model_manager/ai_model_manager.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+
 import '../../services/app_error_handler.dart';
 import '../../services/notion/notion_bookmark_auto_sync.dart';
+
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart' show RenderSliver, RenderViewport;
 import 'package:flutter/services.dart';
+
 import '../../utils/idle_task.dart';
+
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:scroll_to_index/scroll_to_index.dart';
 import 'package:share_plus/share_plus.dart';
+
 import '../../l10n/s.dart';
 import '../../utils/frame_jank_monitor.dart';
 import '../../utils/html_text_mapper.dart';
@@ -18,12 +22,14 @@ import '../../utils/html_to_markdown.dart';
 import '../../utils/code_selection_context.dart';
 import '../../utils/link_launcher.dart';
 import '../../utils/quote_builder.dart';
-import '../../utils/scroll_jump.dart';
+
 import 'package:fluxdo_render/fluxdo_render.dart'
     show SelectionCoordinator, TocEntry;
 import 'package:uuid/uuid.dart';
+
 import 'dart:async';
 import 'dart:math' as math;
+
 import '../../models/draft.dart';
 import '../../models/nested_topic.dart';
 import '../../models/nested_reading_position.dart';
@@ -56,8 +62,10 @@ import '../../widgets/post/post_revision/revision_modal.dart';
 import '../../widgets/post/reply_sheet.dart';
 import '../../widgets/topic/topic_progress.dart';
 import '../../widgets/topic/topic_notification_button.dart';
+
 import 'package:common_ui/common_ui.dart';
 import 'package:m3e_ui/m3e_ui.dart';
+
 import '../../widgets/common/emoji_text.dart';
 import '../../widgets/common/error_view.dart';
 import '../../providers/nested_topic_provider.dart';
@@ -91,6 +99,7 @@ import '../../models/shortcut_binding.dart';
 import '../../providers/shortcut_provider.dart';
 import '../../widgets/desktop_refresh_indicator.dart';
 import '../../widgets/topic/assign_sheet.dart';
+import '../../theme/app_colors.dart';
 
 part 'actions/_scroll_actions.dart';
 part 'actions/_user_actions.dart';
@@ -203,12 +212,6 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
 
   // UI State
   final GlobalKey _headerKey = GlobalKey();
-  final GlobalKey _centerKey = GlobalKey();
-
-  /// 视口 anchor（center 零点在视口内的位置，0 = 顶部）。
-  /// 目标帖下方内容不足一屏时由 _updateBottomAnchorIfNeeded 按真实几何
-  /// 抬高，使 offset 0 = 底边贴齐，底部空白被排除在滚动范围之外
-  double _viewportAnchor = 0.0;
   bool _hasFirstPost = false;
   bool _isCheckTitleVisibilityScheduled = false;
   bool _isRefreshing = false;
@@ -323,7 +326,8 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     _isParentActive = widget.parentActive;
     _providerPostNumber = widget.scrollToPostNumber;
     _nestedReadingStore = ref.read(nestedReadingStoreProvider);
-    _hadNestedSession = _nestedReadingStore.existingSession(_instanceId) != null;
+    _hadNestedSession =
+        _nestedReadingStore.existingSession(_instanceId) != null;
     _nestedReadingSession = _nestedReadingStore.session(_instanceId);
     if (!_hadNestedSession) {
       _nestedReadingSession.sort = _nestedReadingStore.sort;
@@ -340,7 +344,8 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     _nestedTargetPostNumber = _hadNestedSession
         ? _nestedReadingSession.contextTarget
         : (widget.scrollToPostNumber != null && widget.scrollToPostNumber! > 1
-            ? widget.scrollToPostNumber : null);
+              ? widget.scrollToPostNumber
+              : null);
     _searchFocusNode = FocusNode(onKeyEvent: _handleSearchKeyEvent);
 
     _expandController = AnimationController(
@@ -533,10 +538,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     final scrolling = _idleFlushPosition?.isScrollingNotifier.value ?? true;
     if (scrolling) return;
     if (_deferredPostUpdates.isEmpty) return;
-    // 推迟一帧回放:isScrollingNotifier 翻 false 发生在惯性最后一个 tick
-    // 的同一帧,若同帧内直接回放,布局时 pixels 相对上一帧仍在变,
-    // AnchorGuardSliver 的"偏移与基线一致"守卫会判为不可比,回放引发的
-    // 高度位移就漏掉锚定修正。推一帧让更新落在纯空闲帧,位移被全额补偿。
+    // 在滚动通知结束后的下一帧合并回放更新。
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       // 帧间隙内可能又开始滚动:保持冻结,等下一次滚停
@@ -1129,7 +1131,9 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
       if (mounted &&
           _nestedTargetPostNumber == saved.postNumber &&
           data.sort != saved.sort) {
-        await ref.read(nestedTopicProvider(params).notifier).changeSort(saved.sort);
+        await ref
+            .read(nestedTopicProvider(params).notifier)
+            .changeSort(saved.sort);
       }
     } catch (_) {
       // 定位接口失败由树形视图的错误/平铺回落入口处理。
@@ -1247,16 +1251,14 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     if (searchState.isSearchMode) {
       return AppBar(
         automaticallyImplyLeading: false,
-        backgroundColor: theme.colorScheme.surface,
         title: TextField(
           controller: _searchController,
           focusNode: _searchFocusNode,
           autofocus: true,
           decoration: InputDecoration(
             hintText: context.l10n.topicDetail_searchHint,
-            border: InputBorder.none,
             hintStyle: TextStyle(color: theme.colorScheme.onSurfaceVariant),
-          ),
+          ).withoutBorder(),
           style: theme.textTheme.bodyLarge,
           textInputAction: TextInputAction.search,
           onSubmitted: (query) {
@@ -1314,7 +1316,11 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
                 surfaceTintColor: theme.colorScheme.surfaceTint.withValues(
                   alpha: (1.0 - expandProgress).clamp(0.0, 1.0),
                 ),
-                backgroundColor: theme.colorScheme.surface,
+                // 有页面背景时平时透明，内容滚到下面才铺底
+                backgroundColor:
+                    isScrolledUnder || !PageBackgroundScope.isActive(context)
+                    ? theme.colorScheme.surface
+                    : Colors.transparent,
                 title: _buildAppBarTitle(
                   theme: theme,
                   detail: detail,
@@ -1363,7 +1369,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
                     child: Icon(
                       Symbols.mail_rounded,
                       size: 18,
-                      color: theme.colorScheme.primary,
+                      color: context.emphasis.accent,
                     ),
                   ),
                 ),
@@ -1389,7 +1395,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
                     child: Icon(
                       Symbols.check_box_rounded,
                       size: 18,
-                      color: Colors.green,
+                      color: context.appColors.green,
                     ),
                   ),
                 ),
@@ -1433,7 +1439,9 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     return MobileTopicWorkspaceAppBar(
       backButtonKey: const ValueKey('bookmark-workspace-mobile-back'),
       closeButtonKey: const ValueKey('bookmark-workspace-mobile-close'),
-      backgroundColor: theme.colorScheme.surface,
+      backgroundColor: elevation > 0 || !PageBackgroundScope.isActive(context)
+          ? theme.colorScheme.surface
+          : Colors.transparent,
       elevation: elevation,
       scrolledUnderElevation: elevation,
       shadowColor: Colors.transparent,
@@ -1481,7 +1489,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
                   child: Icon(
                     Symbols.mail_rounded,
                     size: 16,
-                    color: theme.colorScheme.primary,
+                    color: context.emphasis.accent,
                   ),
                 ),
               ),
@@ -1505,7 +1513,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
                   child: Icon(
                     Symbols.check_box_rounded,
                     size: 16,
-                    color: Colors.green,
+                    color: context.appColors.green,
                   ),
                 ),
               ),
@@ -1557,9 +1565,8 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     final hasAiModel = ref.watch(hasAvailableAiModelProvider);
     final isAiGenerating = hasAiModel
         ? ref.watch(
-            topicAiChatProvider(
-              widget.topicId,
-            ).select((state) => state.isGenerating),
+            topicAiChatProvider(widget.topicId)
+                .select((state) => state.isGenerating),
           )
         : false;
 
@@ -1704,7 +1711,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
           submenu: MenuQuickActionSubmenu(
             icon: Symbols.filter_list_rounded,
             label: context.l10n.topicDetail_filter,
-            iconColor: hasFilter ? Theme.of(context).colorScheme.primary : null,
+            iconColor: hasFilter ? context.emphasis.selected : null,
             children: [
               // 问答话题:默认按票排序,可切按活动(时间流)
               if (detail.isPostVoting)
@@ -1860,7 +1867,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
           onReadingSettings: () {
             Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => const ReadingSettingsPage()),
+              InteractionPageRoute(builder: (_) => const ReadingSettingsPage()),
             );
           },
         );
@@ -2248,7 +2255,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
       case ProgressGestureAction.readingSettings:
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (_) => const ReadingSettingsPage()),
+          InteractionPageRoute(builder: (_) => const ReadingSettingsPage()),
         );
       case ProgressGestureAction.search:
         ref
@@ -2942,8 +2949,10 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
                           child: Material(
                             color: Theme.of(context).colorScheme.surface,
                             elevation: 0,
-                            borderRadius: const BorderRadius.vertical(
-                              bottom: Radius.circular(16),
+                            shape: RoundedSuperellipseBorder(
+                              borderRadius: BorderRadius.vertical(
+                                bottom: context.shapes.radius(16),
+                              ),
                             ),
                             clipBehavior: Clip.antiAlias,
                             child: SingleChildScrollView(
@@ -2997,7 +3006,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     TopicDetailNotifier notifier,
     bool isLoggedIn,
   ) {
-    // 本地屏蔽过滤统一在此出口完成：页面内所有 postIndex（centerPostIndex/
+    // 本地屏蔽过滤统一在此出口完成：页面内所有 postIndex（initialPostIndex/
     // dividerPostIndex/滚动映射）都基于同一份过滤后列表，语义天然一致。
     // watch 保证名单变化时整页重建。
     final blockedUsernames = ref.watch(
@@ -3044,10 +3053,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
       }
     }
 
-    // 初始定位：center 直接锚在目标帖，首帧布局即 offset 0 = 目标顶对齐，
-    // 无爬行、无估算。收尾（贴底 anchor + markPositioned）在帧后完成。
-    // _viewportAnchor 不在此处重置：残留值由 _finalizeInitialPosition
-    // 按真实几何重新评估（避免刷新场景闪一帧顶对齐）。
+    // 目标楼层转换为分块索引，列表引擎在首帧布局时完成精确定位。
     if (!_isNestedView && !_controller.hasInitialScrolled && posts.isNotEmpty) {
       final target = _resolveInitialTarget(posts, dividerPostIndex);
       _controller.markInitialScrolled(
@@ -3072,7 +3078,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
       }
     }
 
-    final centerPostIndex = _controller.findCenterPostIndex(posts);
+    final initialPostIndex = _controller.findInitialPostIndex(posts);
 
     // 嵌套视图模式
     if (_isNestedView) {
@@ -3123,6 +3129,9 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
         data: (nestedState) => NestedPostList(
           key: ValueKey('nested-$_instanceId-${_nestedReadingStore.sortKey}'),
           nestedState: nestedState,
+          onWithdrawPendingPost: isLoggedIn ? _handleWithdrawPending : null,
+          onWithdrawAndEditPendingPost:
+              isLoggedIn ? _handleWithdrawAndEditPending : null,
           params: nestedParams,
           session: _nestedReadingSession,
           resumePosition: (_nestedResumePosition?.postNumber ?? 0) > 1
@@ -3130,18 +3139,22 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
               : null,
           restorePosition: _nestedRestorePosition,
           fullTargetPostNumber: _nestedFullTarget,
-          active: _isRouteVisible &&
+          active:
+              _isRouteVisible &&
               _isParentActive &&
               !ref.read(topicSearchProvider(widget.topicId)).isSearchMode,
           onViewportPostChanged: (postNumber) {
             if (!_controller.isPositioned) _controller.markPositioned();
             _controller.updateViewportPostNumber(postNumber);
             ref
-                .read(detailScrollPositionProvider((
-                  topicId: widget.topicId,
-                  instanceId: _instanceId,
-                )).notifier)
-                .state = postNumber;
+                    .read(
+                      detailScrollPositionProvider((
+                        topicId: widget.topicId,
+                        instanceId: _instanceId,
+                      )).notifier,
+                    )
+                    .state =
+                postNumber;
           },
           onPositionChanged: (position) =>
               _nestedReadingStore.save(widget.topicId, position),
@@ -3204,8 +3217,8 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
             return TopicPostList(
               detail: detail,
               scrollController: _controller.scrollController,
-              centerKey: _centerKey,
-              viewportAnchor: _viewportAnchor,
+              listController: _controller.postListController,
+              positionRevision: _controller.positionRevision,
               headerKey: _headerKey,
               hideHeaderTitle: widget.hideInlineHeaderTitle,
               canAssignPost:
@@ -3240,11 +3253,12 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
                   notifier.loadPreviousFailedListenable,
               onRetryLoadMore: () => notifier.retryLoadMore(),
               onRetryLoadPrevious: () => notifier.retryLoadPrevious(),
-              centerPostIndex: centerPostIndex,
+              initialPostIndex: initialPostIndex,
               dividerPostIndex: dividerPostIndex,
               onFirstVisiblePostChanged: _updateStreamIndexForPostNumber,
               onVisiblePostsChanged: _updateVisiblePosts,
-              onScrollIndexMappingChanged: _controller.updateScrollIndexMapping,
+              onScrollIndexMappingChanged: (mapping) =>
+                  _controller.updateScrollIndexMapping(mapping, posts),
               onScrollIndexToPostNumberChanged:
                   _controller.updateScrollIndexToPostNumber,
               onPostSegmentRangesChanged: _controller.updatePostSegmentRanges,
@@ -3261,6 +3275,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
               onQuoteSelection: isLoggedIn ? _handleQuoteSelection : null,
               onQuoteImage: isLoggedIn ? _handleImageQuote : null,
               onScrollNotification: _controller.handleScrollNotification,
+              onLayoutChanged: _onScroll,
               onPointerScroll: _controller.handlePointerScroll,
               onFillGapBefore: (postId) => notifier.fillGapBefore(postId),
               onFillGapAfter: (postId) => notifier.fillGapAfter(postId),

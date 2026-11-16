@@ -1,7 +1,9 @@
 import 'dart:ui' show lerpDouble;
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
 import '../../l10n/s.dart';
 
@@ -40,46 +42,53 @@ class SearchCapsule extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
     // 固定 40px 高的胶囊必须钳制系统字体缩放（AppBar 标题同款处理）：
     // HyperOS 等大字体档位下 hint 会被放大到撑破胶囊、顶着上下边缘
-    return MediaQuery.withClampedTextScaling(
-      maxScaleFactor: 1.2,
-      child: Material(
-        color: colorScheme.surfaceContainerHighest.withValues(
-          alpha: 0.5 * backgroundOpacity,
-        ),
-        borderRadius: BorderRadius.circular(20),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(20),
-          child: Row(
-            children: [
-              SizedBox(width: iconLeftPadding),
-              Icon(
-                Symbols.search_rounded,
-                size: iconSize,
-                color: colorScheme.onSurfaceVariant,
-              ),
-              Expanded(
-                child: hintOpacity <= 0
-                    ? const SizedBox.shrink()
-                    : Padding(
-                        padding: const EdgeInsets.only(left: 8, right: 12),
-                        child: Opacity(
-                          opacity: hintOpacity,
-                          child: Text(
-                            S.current.topics_searchHint,
-                            maxLines: 1,
-                            softWrap: false,
-                            overflow: TextOverflow.clip,
-                            style: TextStyle(
-                              color: colorScheme.onSurfaceVariant,
-                              fontSize: 14,
+    return M3eElasticPress(
+      enabled: onTap != null && backgroundOpacity > 0,
+      child: MediaQuery.withClampedTextScaling(
+        maxScaleFactor: 1.2,
+        child: Material(
+          color: colorScheme.surfaceContainerHighest.withValues(
+            alpha: 0.5 * backgroundOpacity,
+          ),
+          shape: RoundedSuperellipseBorder(
+            borderRadius: context.shapes.borderRadius(20),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onTap,
+            customBorder: RoundedSuperellipseBorder(
+              borderRadius: context.shapes.borderRadius(20),
+            ),
+            child: Row(
+              children: [
+                SizedBox(width: iconLeftPadding),
+                Icon(
+                  Symbols.search_rounded,
+                  size: iconSize,
+                  color: context.emphasis.accent,
+                ),
+                Expanded(
+                  child: hintOpacity <= 0
+                      ? const SizedBox.shrink()
+                      : Padding(
+                          padding: const EdgeInsets.only(left: 8, right: 12),
+                          child: Opacity(
+                            opacity: hintOpacity,
+                            child: Text(
+                              S.current.topics_searchHint,
+                              maxLines: 1,
+                              softWrap: false,
+                              overflow: TextOverflow.clip,
+                              style: TextStyle(
+                                color: colorScheme.onSurfaceVariant,
+                                fontSize: 14,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-              ),
-            ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -181,7 +190,9 @@ class _SearchCapsuleFlight extends StatelessWidget {
             color: colorScheme.surfaceContainerHighest.withValues(
               alpha: 0.5 * bgOpacity,
             ),
-            borderRadius: BorderRadius.circular(20),
+            shape: RoundedSuperellipseBorder(
+              borderRadius: context.shapes.borderRadius(20),
+            ),
             clipBehavior: Clip.antiAlias,
             child: Stack(
               children: [
@@ -195,7 +206,7 @@ class _SearchCapsuleFlight extends StatelessWidget {
                       child: Icon(
                         Symbols.search_rounded,
                         size: iconSize,
-                        color: colorScheme.onSurfaceVariant,
+                        color: context.emphasis.accent,
                       ),
                     ),
                   ),

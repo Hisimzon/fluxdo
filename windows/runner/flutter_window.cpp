@@ -3,11 +3,17 @@
 #include <optional>
 
 #include "flutter/generated_plugin_registrant.h"
+#include "desktop_multi_window/desktop_multi_window_plugin.h"
+#include "mini_app_window.h"
+#include "windows_update.h"
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
     : project_(project) {}
 
-FlutterWindow::~FlutterWindow() {}
+FlutterWindow::~FlutterWindow() {
+  // 主消息循环结束时也必须先清空成员，再析构可能产生窗口消息的插件。
+  OnDestroy();
+}
 
 bool FlutterWindow::OnCreate() {
   if (!Win32Window::OnCreate()) {
@@ -25,15 +31,22 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
   RegisterPlugins(flutter_controller_->engine());
+  RegisterWindowsUpdate(flutter_controller_->engine()->messenger(), GetHandle());
+  DesktopMultiWindowSetWindowCreatedCallback([](void* controller) {
+    auto* child = reinterpret_cast<flutter::FlutterViewController*>(controller);
+    RegisterMiniAppWindowPlugins(child->engine());
+    RegisterMiniAppWindow(child);
+  });
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
   return true;
 }
 
 void FlutterWindow::OnDestroy() {
-  if (flutter_controller_) {
-    flutter_controller_ = nullptr;
-  }
+  // 销毁插件/WebView 子窗口会同步重入父窗口消息。先移出成员，避免
+  // MessageHandler 向正在析构、内部 view 已为空的 controller 转发消息。
+  auto controller = std::move(flutter_controller_);
+  controller.reset();
 
   Win32Window::OnDestroy();
 }
@@ -43,7 +56,7 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
   // Give Flutter, including plugins, an opportunity to handle window messages.
-  if (flutter_controller_) {
+  if (flutter_controller_ && flutter_controller_->view()) {
     std::optional<LRESULT> result =
         flutter_controller_->HandleTopLevelWindowProc(hwnd, message, wparam,
                                                       lparam);

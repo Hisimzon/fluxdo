@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:common_ui/common_ui.dart';
 import 'package:app_icons/app_icons.dart';
 
 import '../../../l10n/s.dart';
@@ -11,6 +12,9 @@ import '../../common/smart_avatar.dart';
 enum BoostAuthorPopoverAction {
   /// 点击作者行：弹标准用户卡片
   authorCard,
+
+  /// 点击「回复」：引用该 boost 并 @ 作者
+  reply,
 
   /// 点击「主页」：直接进入个人主页
   profile,
@@ -34,6 +38,7 @@ Future<BoostAuthorPopoverAction?> showBoostAuthorPopover({
   required Rect anchorRect,
   required Boost boost,
   bool canViewAuthor = false,
+  bool canReply = false,
   bool canFlag = false,
   bool canDelete = false,
 }) {
@@ -42,6 +47,7 @@ Future<BoostAuthorPopoverAction?> showBoostAuthorPopover({
       anchorRect: anchorRect,
       boost: boost,
       canViewAuthor: canViewAuthor,
+      canReply: canReply,
       canFlag: canFlag,
       canDelete: canDelete,
     ),
@@ -52,6 +58,7 @@ class _BoostAuthorPopoverRoute extends PopupRoute<BoostAuthorPopoverAction> {
   final Rect anchorRect;
   final Boost boost;
   final bool canViewAuthor;
+  final bool canReply;
   final bool canFlag;
   final bool canDelete;
 
@@ -59,6 +66,7 @@ class _BoostAuthorPopoverRoute extends PopupRoute<BoostAuthorPopoverAction> {
     required this.anchorRect,
     required this.boost,
     required this.canViewAuthor,
+    required this.canReply,
     required this.canFlag,
     required this.canDelete,
   });
@@ -80,14 +88,17 @@ class _BoostAuthorPopoverRoute extends PopupRoute<BoostAuthorPopoverAction> {
   Widget buildModalBarrier() {
     // 非模态 barrier：卡外按下立即关闭 popover，同时不消费事件，
     // 让下层页面继续响应（滚动/点击一步到位）。
-    return Listener(
-      behavior: HitTestBehavior.translucent,
-      onPointerDown: (_) {
-        if (isCurrent) {
-          navigator?.pop();
-        }
-      },
-      child: const SizedBox.expand(),
+    return RouteInputGate(
+      route: this,
+      child: Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerDown: (_) {
+          if (isCurrent) {
+            navigator?.pop();
+          }
+        },
+        child: const SizedBox.expand(),
+      ),
     );
   }
 
@@ -105,6 +116,7 @@ class _BoostAuthorPopoverRoute extends PopupRoute<BoostAuthorPopoverAction> {
       child: _BoostAuthorPopoverCard(
         boost: boost,
         canViewAuthor: canViewAuthor,
+        canReply: canReply,
         canFlag: canFlag,
         canDelete: canDelete,
       ),
@@ -122,11 +134,14 @@ class _BoostAuthorPopoverRoute extends PopupRoute<BoostAuthorPopoverAction> {
       parent: animation,
       curve: Curves.easeOutCubic,
     );
-    return FadeTransition(
-      opacity: curved,
-      child: ScaleTransition(
-        scale: Tween<double>(begin: 0.95, end: 1).animate(curved),
-        child: child,
+    return RouteInputGate(
+      route: this,
+      child: FadeTransition(
+        opacity: curved,
+        child: ScaleTransition(
+          scale: Tween<double>(begin: 0.95, end: 1).animate(curved),
+          child: RouteContentInteraction(route: this, child: child),
+        ),
       ),
     );
   }
@@ -150,8 +165,7 @@ class _BoostPopoverLayoutDelegate extends SingleChildLayoutDelegate {
   @override
   BoxConstraints getConstraintsForChild(BoxConstraints constraints) {
     final maxWidth = math.min(_maxWidth, constraints.maxWidth - _margin * 2);
-    final maxHeight =
-        constraints.maxHeight - safeInsets.vertical - _margin * 2;
+    final maxHeight = constraints.maxHeight - safeInsets.vertical - _margin * 2;
     return BoxConstraints(
       maxWidth: math.max(0, maxWidth),
       maxHeight: math.max(0, maxHeight),
@@ -184,12 +198,14 @@ class _BoostPopoverLayoutDelegate extends SingleChildLayoutDelegate {
 class _BoostAuthorPopoverCard extends StatelessWidget {
   final Boost boost;
   final bool canViewAuthor;
+  final bool canReply;
   final bool canFlag;
   final bool canDelete;
 
   const _BoostAuthorPopoverCard({
     required this.boost,
     required this.canViewAuthor,
+    required this.canReply,
     required this.canFlag,
     required this.canDelete,
   });
@@ -210,6 +226,12 @@ class _BoostAuthorPopoverCard extends StatelessWidget {
         : user.getAvatarUrl(size: 96);
 
     final actions = <Widget>[
+      if (canReply)
+        _PopoverActionButton(
+          icon: Symbols.reply_rounded,
+          label: context.l10n.common_reply,
+          onTap: () => _select(context, BoostAuthorPopoverAction.reply),
+        ),
       if (canViewAuthor)
         _PopoverActionButton(
           icon: Symbols.person_rounded,
@@ -239,7 +261,9 @@ class _BoostAuthorPopoverCard extends StatelessWidget {
           color: theme.colorScheme.surfaceContainer,
           elevation: 4,
           shadowColor: Colors.black.withValues(alpha: 0.35),
-          borderRadius: BorderRadius.circular(16),
+          shape: RoundedSuperellipseBorder(
+            borderRadius: context.shapes.borderRadius(16),
+          ),
           clipBehavior: Clip.antiAlias,
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -247,7 +271,8 @@ class _BoostAuthorPopoverCard extends StatelessWidget {
             children: [
               InkWell(
                 onTap: canViewAuthor
-                    ? () => _select(context, BoostAuthorPopoverAction.authorCard)
+                    ? () =>
+                          _select(context, BoostAuthorPopoverAction.authorCard)
                     : null,
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
@@ -333,7 +358,9 @@ class _PopoverActionButton extends StatelessWidget {
 
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
+      customBorder: RoundedSuperellipseBorder(
+        borderRadius: context.shapes.borderRadius(10),
+      ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
         child: Row(

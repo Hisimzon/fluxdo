@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -307,8 +308,10 @@ class _TopicsFabState extends ConsumerState<TopicsFab>
                                   ? context.l10n.common_close
                                   : context.l10n.topicsScreen_createTopic,
                               elevation: _expanded ? 0 : 3,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16 + 8 * t),
+                              shape: RoundedSuperellipseBorder(
+                                borderRadius: context.shapes.borderRadius(
+                                  16 + 8 * t,
+                                ),
                               ),
                               backgroundColor: Color.lerp(
                                 scheme.primaryContainer,
@@ -491,7 +494,9 @@ class _TopicsFabState extends ConsumerState<TopicsFab>
               foregroundColor: theme.colorScheme.onPrimaryContainer,
               minimumSize: const Size(0, 56),
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-              shape: const StadiumBorder(),
+              shape: RoundedSuperellipseBorder(
+                borderRadius: BorderRadius.all(context.shapes.radius(9999)),
+              ),
               textStyle: theme.textTheme.labelLarge,
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),

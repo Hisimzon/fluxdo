@@ -1,4 +1,11 @@
 {
+  "appearance_themeLibrary": "全部主题",
+  "appearance_interface": "界面",
+  "appearance_backgroundEffects": "背景与效果",
+  "appearance_previewText": "让阅读更合你的习惯",
+  "appearance_colorSettings": "配色与风格",
+  "appearance_bgNone": "未设置背景",
+  "appearance_fontPreview": "当前字体与代码预览",
   "@@locale": "zh",
   "appearance_appIcon": "应用图标",
   "appearance_bgBlur": "背景模糊",
@@ -30,14 +37,93 @@
   "appearance_displayMode": "屏幕帧率",
   "appearance_displayModeAuto": "自动",
   "appearance_displayModeRestartHint": "部分设备需重启应用后生效",
+  "appearance_emojiStyle": "表情风格",
+  "appearance_emojiStyleDesc": "帖子、回应等处标准表情的画风，仅 Noto Emoji 播放动态表情",
+  "appearance_emojiStyleFollowSite": "跟随站点",
+  "appearance_emojiStyleStandard": "标准",
   "appearance_font": "字体",
   "appearance_fontSystem": "系统默认",
+  "appearance_fontBody": "正文字体",
+  "appearance_fontMono": "等宽字体",
+  "appearance_fontFollowTheme": "跟随主题",
+  "appearance_fontThemeSuggests": "主题推荐：{name}",
+  "@appearance_fontThemeSuggests": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "appearance_fontThemeNone": "主题未指定，使用系统字体",
+  "appearance_fontMonoSystem": "系统等宽",
+  "appearance_fontNotDownloaded": "未下载 · {size}",
+  "@appearance_fontNotDownloaded": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "appearance_fontQueued": "等待下载",
+  "appearance_fontDownloading": "下载中 {percent}%",
+  "@appearance_fontDownloading": {
+    "placeholders": {
+      "percent": {
+        "type": "String"
+      }
+    }
+  },
+  "appearance_fontVerifying": "校验中…",
+  "appearance_fontReady": "已就绪 · {size}",
+  "@appearance_fontReady": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "appearance_fontDownload": "下载",
+  "appearance_fontDelete": "删除字体",
+  "appearance_fontCancel": "取消下载",
+  "appearance_fontRetry": "重试",
+  "appearance_fontNetworkError": "网络连接失败",
+  "appearance_fontCorrupted": "下载内容校验失败",
+  "appearance_fontInvalidSource": "自定义镜像地址无效",
+  "appearance_fontStorageError": "无法写入本地存储",
+  "appearance_fontPinnedSourceFailed": "指定的下载源不可用，可改用「自动」重试",
+  "appearance_fontSource": "字体下载源",
+  "appearance_fontSourceAuto": "自动（测速选最快）",
+  "appearance_fontSourceNpmmirror": "npmmirror（国内推荐）",
+  "appearance_fontSourceCustom": "自定义镜像",
+  "appearance_fontSourceCustomHint": "镜像地址模板，需包含包名、版本与文件路径占位",
+  "appearance_fontSourceTest": "测速",
+  "appearance_fontSourceUnreachable": "不可达",
+  "appearance_fontChangeSource": "换源",
+  "appearance_fontMigrationTitle": "需要下载 MiSans 字体",
+  "appearance_fontMigrationBody": "MiSans 不再随安装包内置。下载后（约 {size}）即可继续使用，下载完成前暂用系统字体。",
+  "@appearance_fontMigrationBody": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "appearance_fontMigrationLater": "先用系统字体",
+  "appearance_fontMigrationBackground": "后台下载",
+  "appearance_fontReadyToast": "{name} 已就绪",
+  "@appearance_fontReadyToast": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "appearance_glass": "玻璃效果",
   "appearance_glassEnabled": "启用玻璃效果",
   "appearance_glassScope": "统一控制底栏与编辑工具岛的玻璃效果，不影响顶栏、弹窗模糊或壁纸模糊。关闭后使用实色表面。",
   "appearance_glassEffectLevel": "效果档位",
   "appearance_glassAuto": "自动",
-  "appearance_glassAutoDesc": "默认选项：根据当前渲染后端选择完整玻璃或基础磨砂，不评估设备性能。",
+  "appearance_glassAutoDesc": "默认选项：根据当前渲染后端和主题选择完整玻璃或基础磨砂，不评估设备性能。",
   "appearance_glassBasic": "基础磨砂",
   "appearance_glassBasicDesc": "保留背景模糊与色罩，不使用光学折射。",
   "appearance_glassFull": "完整玻璃",
@@ -59,20 +145,130 @@
   "appearance_modeBlack": "纯黑",
   "appearance_modeDark": "深色",
   "appearance_modeLight": "浅色",
-  "appearance_neutral": "中性",
-  "appearance_neutralDesc": "表面不随主题色彩染色",
+  "appearance_theme": "主题",
+  "appearance_themeGroupGenerated": "动态取色",
+  "appearance_themeGroupClean": "素雅",
+  "appearance_themeGroupReading": "阅读",
+  "appearance_themeGroupCode": "代码配色",
+  "appearance_themeGroupCustom": "我的主题",
+  "appearance_themeMaterial": "Material",
+  "appearance_themeMinimal": "简约",
+  "appearance_themeVariant": "口味",
+  "appearance_themeAccent": "强调色",
+  "appearance_themeCustomAccent": "自定义",
+  "appearance_customThemeNew": "新建主题",
+  "appearance_customThemeDuplicate": "复制并编辑",
+  "appearance_customThemeCopyCode": "复制主题代码",
+  "appearance_customThemeCodeCopied": "主题代码已复制",
+  "appearance_customThemeImport": "从剪贴板导入",
+  "appearance_customThemeImported": "已导入「{name}」",
+  "@appearance_customThemeImported": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "appearance_customThemeImportFailed": "剪贴板里没有可用的主题代码",
+  "appearance_themeResetConfirm": "恢复默认的主题、强调色、配色风格和圆角？自定义的颜色与主题会保留。",
+  "appearance_customThemeDeleteConfirm": "删除主题「{name}」？",
+  "@appearance_customThemeDeleteConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "appearance_customThemeName": "主题名称",
+  "appearance_customThemeCopyName": "{name} 副本",
+  "@appearance_customThemeCopyName": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "appearance_themeEditorTitle": "编辑主题",
+  "appearance_themeEditorBase": "基础色",
+  "appearance_themeEditorBg": "背景",
+  "appearance_themeEditorFg": "文字",
+  "appearance_themeEditorFgMuted": "次要文字",
+  "appearance_themeEditorBorder": "分割线",
+  "appearance_themeEditorHues": "色相",
+  "appearance_themeEditorAccentHint": "点按修改，长按删除",
+  "appearance_themeEditorAdjusted": "对比度不足，显示时已自动调整",
+  "appearance_themeEditorStyle": "界面风格",
+  "appearance_styleSurfaces": "卡片与分组",
+  "appearance_styleSurfacesFilled": "色块",
+  "appearance_styleSurfacesOutlined": "描边",
+  "appearance_styleSurfacesFlat": "平铺",
+  "appearance_styleSurfacesRaised": "浮起",
+  "appearance_styleControls": "按钮与开关",
+  "appearance_styleControlsAccent": "强调色",
+  "appearance_styleControlsInk": "墨色",
+  "appearance_styleNav": "导航选中标记",
+  "appearance_styleNavPill": "胶囊",
+  "appearance_styleNavBar": "短横",
+  "appearance_styleNavTint": "浅底",
+  "appearance_styleInputs": "输入框",
+  "appearance_styleInputsFilled": "填充",
+  "appearance_styleInputsOutlined": "描边",
+  "appearance_styleInputsUnderline": "下划线",
+  "appearance_styleQuote": "引用块",
+  "appearance_styleQuoteCard": "底块",
+  "appearance_styleQuoteBar": "竖条",
+  "appearance_styleDataColors": "分类与标签颜色",
+  "appearance_styleDataColorsVivid": "原色",
+  "appearance_styleDataColorsHarmonized": "协调",
+  "appearance_styleDataColorsMuted": "柔和",
+  "appearance_styleDataColorsMono": "单色",
+  "appearance_styleShadows": "阴影",
+  "appearance_styleTexture": "纸张纹理",
+  "appearance_styleGlass": "玻璃质感",
+  "appearance_hueRed": "红",
+  "appearance_hueOrange": "橙",
+  "appearance_hueYellow": "黄",
+  "appearance_hueGreen": "绿",
+  "appearance_hueCyan": "青",
+  "appearance_hueBlue": "蓝",
+  "appearance_huePurple": "紫",
+  "appearance_shape": "圆角风格",
+  "appearance_shapeFollow": "跟随主题",
+  "appearance_shapeStandard": "标准",
+  "appearance_shapeCompact": "适中",
+  "appearance_shapeSharp": "方正",
+  "appearance_festival": "节日主题",
+  "appearance_festivalDesc": "春节、端午、中秋等传统节日期间自动换上节日配色",
+  "appearance_festivalGreeting": "节日问候",
+  "appearance_festivalGreetingDesc": "节日期间首次打开时显示一次问候",
+  "appearance_festivalDecor": "节日装饰",
+  "appearance_festivalDecorDesc": "节日期间在标题栏、下拉刷新、空页面和页面背景加入节日图案",
+  "appearance_festivalDebugPreview": "预览节日（调试）",
+  "appearance_festivalDebugFollowDate": "按日期",
+  "appearance_festivalActive": "{name}主题生效中 · 至 {date}",
+  "@appearance_festivalActive": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "appearance_festivalSkip": "本次关闭",
+  "appearance_festivalApplied": "已换上节日配色",
   "appearance_panguSpacing": "阅读混排优化",
   "appearance_panguSpacingDesc": "浏览帖子时自动优化中英文间距",
   "appearance_reading": "阅读",
   "appearance_schemeVariant": "配色风格",
   "appearance_small": "小",
-  "appearance_styleTransparent": "透明",
+  "appearance_styleTransparent": "显示背景图",
   "appearance_surfaceStyle": "表面质感",
   "appearance_switchIconFailed": "切换图标失败，请稍后重试",
-  "appearance_themeColor": "主题色彩",
   "appearance_themeMode": "主题模式",
   "appearance_title": "外观",
-  "appearance_transparentDesc": "界面半透明，透出背景图片",
+  "appearance_transparentDesc": "背景图显示在话题列表和正文下方，可调整遮罩与模糊以保证阅读清晰",
   "layout_selectTopicHint": "选择一个话题查看详情",
   "progressGesture_action_aiAssistant": "AI 助手",
   "progressGesture_action_bookmark": "收藏",

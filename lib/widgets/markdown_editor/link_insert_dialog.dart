@@ -1,6 +1,8 @@
 import 'dart:async';
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
+
 import '../../../../../l10n/s.dart';
 import '../../models/search_result.dart';
 import '../../services/discourse/discourse_service.dart';
@@ -82,8 +84,10 @@ class _LinkInsertDialogState extends State<LinkInsertDialog> {
       setState(() => _searching = true);
       List<SearchTopic> topics = const [];
       try {
-        final result =
-            await DiscourseService().search(query: q, typeFilter: 'topic');
+        final result = await DiscourseService().search(
+          query: q,
+          typeFilter: 'topic',
+        );
         // 话题信息挂在 posts[].topic 上,按话题去重
         final seen = <int>{};
         topics = [
@@ -141,7 +145,9 @@ class _LinkInsertDialogState extends State<LinkInsertDialog> {
                 decoration: InputDecoration(
                   labelText: 'URL / 搜索站内话题',
                   hintText: 'https://… 或输入关键词搜话题',
-                  border: const OutlineInputBorder(),
+                  border: OutlineInputBorder(
+                    borderRadius: context.shapes.borderRadius(4),
+                  ),
                   suffixIcon: _searching
                       ? const Padding(
                           padding: EdgeInsets.all(12),
@@ -169,11 +175,13 @@ class _LinkInsertDialogState extends State<LinkInsertDialog> {
                 Container(
                   margin: const EdgeInsets.only(top: 6),
                   constraints: const BoxConstraints(maxHeight: 210),
-                  decoration: BoxDecoration(
+                  decoration: ShapeDecoration(
                     color: scheme.surfaceContainerLow,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: scheme.outlineVariant.withValues(alpha: 0.5),
+                    shape: RoundedSuperellipseBorder(
+                      borderRadius: context.shapes.borderRadius(8),
+                      side: BorderSide(
+                        color: scheme.outlineVariant.withValues(alpha: 0.5),
+                      ),
                     ),
                   ),
                   child: ListView.builder(
@@ -186,22 +194,29 @@ class _LinkInsertDialogState extends State<LinkInsertDialog> {
                         onTap: () => _selectTopic(t),
                         child: Padding(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 7),
-                          child: Row(children: [
-                            if (t.closed || t.archived) ...[
-                              Icon(Icons.lock_outline_rounded,
-                                  size: 13, color: scheme.onSurfaceVariant),
-                              const SizedBox(width: 4),
-                            ],
-                            Expanded(
-                              child: Text(
-                                t.title,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontSize: 13),
+                            horizontal: 10,
+                            vertical: 7,
+                          ),
+                          child: Row(
+                            children: [
+                              if (t.closed || t.archived) ...[
+                                Icon(
+                                  Icons.lock_outline_rounded,
+                                  size: 13,
+                                  color: scheme.onSurfaceVariant,
+                                ),
+                                const SizedBox(width: 4),
+                              ],
+                              Expanded(
+                                child: Text(
+                                  t.title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 13),
+                                ),
                               ),
-                            ),
-                          ]),
+                            ],
+                          ),
                         ),
                       );
                     },
@@ -213,7 +228,9 @@ class _LinkInsertDialogState extends State<LinkInsertDialog> {
                 decoration: InputDecoration(
                   labelText: S.current.link_textLabel,
                   hintText: '可空,默认用 URL',
-                  border: const OutlineInputBorder(),
+                  border: OutlineInputBorder(
+                    borderRadius: context.shapes.borderRadius(4),
+                  ),
                 ),
                 textInputAction: TextInputAction.done,
                 onFieldSubmitted: (_) => _submit(),

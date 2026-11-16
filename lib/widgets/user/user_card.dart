@@ -15,18 +15,20 @@ import '../../services/app_error_handler.dart';
 import '../../services/discourse_cache_manager.dart';
 import '../../services/preloaded_data_service.dart';
 import '../../services/toast_service.dart';
-import '../../theme/theme_resolver.dart';
 import '../../utils/dialog_utils.dart';
 import '../../utils/number_utils.dart';
 import '../../utils/platform_utils.dart';
 import '../../utils/time_utils.dart';
 import '../common/flair_badge.dart';
+
 import 'package:common_ui/common_ui.dart';
+
 import '../common/skeleton.dart';
 import '../common/smart_avatar.dart';
 import '../../utils/fluxdo_render_callbacks.dart';
 import 'avatar_action_menu.dart';
 import 'ignore_duration_picker.dart';
+import '../../theme/app_colors.dart';
 
 /// 卡片与锚点之间的间隙
 const double _kGap = 10.0;
@@ -53,9 +55,10 @@ bool canShowUserCardPreview(BuildContext context) {
       preloaded.siteSettingsSync?['hide_user_profiles_from_public'] == true;
   if (!hideProfilesFromPublic) return true;
 
-  final currentUser = ProviderScope.containerOf(context, listen: false)
-      .read(currentUserProvider)
-      .value;
+  final currentUser = ProviderScope.containerOf(
+    context,
+    listen: false,
+  ).read(currentUserProvider).value;
   return currentUser != null || preloaded.currentUserSync != null;
 }
 
@@ -84,30 +87,35 @@ void showUserCard({
   if (!canShowUserCardPreview(context)) return;
 
   final anchorContext = context;
-  final menuNavigatorKey =
-      PlatformUtils.isDesktop ? GlobalKey<NavigatorState>() : null;
+  final menuNavigatorKey = PlatformUtils.isDesktop
+      ? GlobalKey<NavigatorState>()
+      : null;
 
   Widget buildCard(VoidCallback onClose) => _UserCardContent(
-        username: username,
-        topicId: topicId,
-        topicTitle: topicTitle,
-        postNumber: postNumber,
-        avatarFallbackUrl: avatarFallbackUrl,
-        nameFallback: nameFallback,
-        flairUrl: flairUrl,
-        flairName: flairName,
-        flairBgColor: flairBgColor,
-        flairColor: flairColor,
-        anchorContext: anchorContext,
-        menuNavigatorKey: menuNavigatorKey,
-        onClose: onClose,
-      );
+    username: username,
+    topicId: topicId,
+    topicTitle: topicTitle,
+    postNumber: postNumber,
+    avatarFallbackUrl: avatarFallbackUrl,
+    nameFallback: nameFallback,
+    flairUrl: flairUrl,
+    flairName: flairName,
+    flairBgColor: flairBgColor,
+    flairColor: flairColor,
+    anchorContext: anchorContext,
+    menuNavigatorKey: menuNavigatorKey,
+    onClose: onClose,
+  );
 
   if (PlatformUtils.isDesktop) {
     // 桌面端：非模态浮层，不挡背景滚动（对齐网页版 PC）。
     // 用 OverlayEntry（无 barrier）+ 半透明 Listener：卡外按下即关闭，
     // 滚轮/拖动等事件穿透到下层页面，背景照常滚动。
     final overlay = Overlay.of(context, rootOverlay: true);
+    final anchorBox = context.findRenderObject();
+    final anchorOffset = anchorBox is RenderBox && anchorBox.hasSize
+        ? anchorBox.globalToLocal(anchorRect.topLeft)
+        : null;
     OverlayEntry? entry;
     var removed = false;
     void close() {
@@ -119,57 +127,32 @@ void showUserCard({
     entry = OverlayEntry(
       builder: (ctx) {
         final animatedCard = _CardEntryAnimation(child: buildCard(close));
-        // 有 LayerLink：卡片跟随头像滚动（对齐网页版）；否则按锚点矩形静态定位。
-        // 边界处理：锚点在下半屏 → 卡片底对齐锚点底向上生长；右侧放不下
-        // 宽度 → 挂到锚点左侧。maxHeight 按实际可用空间收紧,不再溢出屏幕。
-        final screen = MediaQuery.of(ctx).size;
-        final alignBottom = anchorRect.center.dy > screen.height * 0.55;
-        final placeLeft =
-            anchorRect.right + _kGap + _kFloatingWidth >
-            screen.width - _kScreenMargin;
-        final availableHeight = alignBottom
-            ? anchorRect.bottom - _kScreenMargin
-            : screen.height - anchorRect.top - _kScreenMargin;
-        final maxHeight = availableHeight
-            .clamp(200.0, screen.height * 0.8)
-            .toDouble();
-        final Widget positioned = layerLink != null
-            ? CompositedTransformFollower(
-                link: layerLink,
-                showWhenUnlinked: false,
-                targetAnchor: placeLeft
-                    ? (alignBottom
-                          ? Alignment.bottomLeft
-                          : Alignment.topLeft)
-                    : (alignBottom
-                          ? Alignment.bottomRight
-                          : Alignment.topRight),
-                followerAnchor: placeLeft
-                    ? (alignBottom
-                          ? Alignment.bottomRight
-                          : Alignment.topRight)
-                    : (alignBottom
-                          ? Alignment.bottomLeft
-                          : Alignment.topLeft),
-                offset: Offset(placeLeft ? -_kGap : _kGap, alignBottom ? 8 : -8),
-                child: Align(
-                  alignment: alignBottom
-                      ? (placeLeft
-                            ? Alignment.bottomRight
-                            : Alignment.bottomLeft)
-                      : (placeLeft
-                            ? Alignment.topRight
-                            : Alignment.topLeft),
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxWidth: _kFloatingWidth,
-                      maxHeight: maxHeight,
-                    ),
-                    child: animatedCard,
-                  ),
-                ),
-              )
-            : _FloatingLayer(anchorRect: anchorRect, child: animatedCard);
+        final positioned = LayoutBuilder(
+          builder: (_, _) {
+            // 窗口缩放后头像可能换位，在布局阶段读取更新后的坐标。
+            final currentAnchorRect =
+                anchorBox is RenderBox &&
+                    anchorBox.attached &&
+                    anchorBox.hasSize &&
+                    anchorOffset != null
+                ? anchorBox.localToGlobal(anchorOffset) & anchorRect.size
+                : anchorRect;
+            final floatingLayer = _FloatingLayer(
+              anchorRect: currentAnchorRect,
+              child: animatedCard,
+            );
+            // 共用屏幕边界定位，再还原跟随层的坐标原点；
+            // 页面滚动仍由 LayerLink 直接跟随，无需逐帧重建卡片。
+            return layerLink != null
+                ? CompositedTransformFollower(
+                    link: layerLink,
+                    showWhenUnlinked: false,
+                    offset: -currentAnchorRect.topLeft,
+                    child: floatingLayer,
+                  )
+                : floatingLayer;
+          },
+        );
 
         return Stack(
           children: [
@@ -196,10 +179,14 @@ void showUserCard({
       barrierDismissible: true,
       barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
       transitionDuration: const Duration(milliseconds: 200),
-      pageBuilder: (dialogContext, _, _) =>
-          _DockedLayer(child: buildCard(() => Navigator.of(dialogContext).pop())),
+      pageBuilder: (dialogContext, _, _) => _DockedLayer(
+        child: buildCard(() => Navigator.of(dialogContext).pop()),
+      ),
       transitionBuilder: (context, animation, secondaryAnimation, child) {
-        final curved = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
+        final curved = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+        );
         return FadeTransition(
           opacity: curved,
           child: ScaleTransition(
@@ -236,7 +223,9 @@ class _UserCardMenuNavigatorHost extends StatefulWidget {
       _UserCardMenuNavigatorHostState();
 }
 
-class _UserCardMenuNavigatorHostState extends State<_UserCardMenuNavigatorHost> {
+class _UserCardMenuNavigatorHostState
+    extends State<_UserCardMenuNavigatorHost> {
+  final _routeInteractionObserver = RouteInteractionObserver();
   late final _UserCardMenuNavigatorObserver _observer =
       _UserCardMenuNavigatorObserver(_setMenuActive);
   bool _menuActive = false;
@@ -253,10 +242,11 @@ class _UserCardMenuNavigatorHostState extends State<_UserCardMenuNavigatorHost> 
       child: Navigator(
         key: widget.navigatorKey,
         clipBehavior: Clip.none,
-        observers: [_observer],
-        onGenerateRoute: (_) => PageRouteBuilder<void>(
-          settings:
-              const RouteSettings(name: _UserCardMenuNavigator._hostRouteName),
+        observers: [_routeInteractionObserver, _observer],
+        onGenerateRoute: (_) => InteractionPageRouteBuilder<void>(
+          settings: const RouteSettings(
+            name: _UserCardMenuNavigator._hostRouteName,
+          ),
           opaque: false,
           transitionDuration: Duration.zero,
           reverseTransitionDuration: Duration.zero,
@@ -333,8 +323,10 @@ class _CardEntryAnimationState extends State<_CardEntryAnimation>
     duration: const Duration(milliseconds: 180),
     vsync: this,
   )..forward();
-  late final Animation<double> _anim =
-      CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic);
+  late final Animation<double> _anim = CurvedAnimation(
+    parent: _controller,
+    curve: Curves.easeOutCubic,
+  );
 
   @override
   void dispose() {
@@ -370,9 +362,16 @@ class _DockedLayer extends StatelessWidget {
         child: Padding(
           // 顶部多留出头像戳出的高度，避免被状态栏/安全区裁剪
           padding: const EdgeInsets.fromLTRB(
-              _kScreenMargin, _kAvatarOverflow + 6, _kScreenMargin, _kScreenMargin),
+            _kScreenMargin,
+            _kAvatarOverflow + 6,
+            _kScreenMargin,
+            _kScreenMargin,
+          ),
           child: ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: _kDockedMaxWidth, maxHeight: maxHeight),
+            constraints: BoxConstraints(
+              maxWidth: _kDockedMaxWidth,
+              maxHeight: maxHeight,
+            ),
             child: child,
           ),
         ),
@@ -409,13 +408,23 @@ class _FloatingLayoutDelegate extends SingleChildLayoutDelegate {
 
   @override
   BoxConstraints getConstraintsForChild(BoxConstraints constraints) {
-    final maxWidth = math.min(_kFloatingWidth, constraints.maxWidth - _kScreenMargin * 2);
-    final maxHeight = constraints.maxHeight - safeInsets.vertical - _kScreenMargin * 2;
+    final maxWidth = math.min(
+      _kFloatingWidth,
+      math.max(
+        0.0,
+        constraints.maxWidth - safeInsets.horizontal - _kScreenMargin * 2,
+      ),
+    );
+    final maxHeight =
+        constraints.maxHeight -
+        safeInsets.vertical -
+        _kScreenMargin * 2 -
+        _kAvatarOverflow;
     return BoxConstraints(
       minWidth: 0,
       maxWidth: maxWidth,
       minHeight: 0,
-      maxHeight: math.max(160.0, maxHeight),
+      maxHeight: math.max(0.0, maxHeight),
     );
   }
 
@@ -424,34 +433,38 @@ class _FloatingLayoutDelegate extends SingleChildLayoutDelegate {
     // 顶部额外留出头像戳出的高度，避免被裁
     final topLimit = safeInsets.top + _kScreenMargin + _kAvatarOverflow;
     final bottomLimit = size.height - safeInsets.bottom - _kScreenMargin;
+    final leftLimit = safeInsets.left + _kScreenMargin;
+    final rightLimit = size.width - safeInsets.right - _kScreenMargin;
 
     double clampY(double y) =>
         y.clamp(topLimit, math.max(topLimit, bottomLimit - childSize.height));
 
     // 优先右侧
     final rightX = anchorRect.right + _kGap;
-    if (rightX + childSize.width <= size.width - _kScreenMargin) {
+    if (rightX + childSize.width <= rightLimit) {
       return Offset(rightX, clampY(anchorRect.top));
     }
     // 其次左侧
     final leftX = anchorRect.left - _kGap - childSize.width;
-    if (leftX >= _kScreenMargin) {
+    if (leftX >= leftLimit) {
       return Offset(leftX, clampY(anchorRect.top));
     }
     // 再次下方/上方，水平以锚点居中并 clamp
     final dx = (anchorRect.center.dx - childSize.width / 2)
-        .clamp(_kScreenMargin, size.width - childSize.width - _kScreenMargin);
+        .clamp(leftLimit, math.max(leftLimit, rightLimit - childSize.width))
+        .toDouble();
     final belowTop = anchorRect.bottom + _kGap;
     if (belowTop + childSize.height <= bottomLimit) {
-      return Offset(dx, belowTop);
+      return Offset(dx, clampY(belowTop));
     }
     final aboveTop = anchorRect.top - _kGap - childSize.height;
-    return Offset(dx, math.max(topLimit, aboveTop));
+    return Offset(dx, clampY(aboveTop));
   }
 
   @override
   bool shouldRelayout(_FloatingLayoutDelegate oldDelegate) =>
-      anchorRect != oldDelegate.anchorRect || safeInsets != oldDelegate.safeInsets;
+      anchorRect != oldDelegate.anchorRect ||
+      safeInsets != oldDelegate.safeInsets;
 }
 
 /// 用户卡片内容
@@ -521,8 +534,8 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
         _notificationLevel = user.ignored == true
             ? 'ignore'
             : user.muted == true
-                ? 'mute'
-                : 'normal';
+            ? 'mute'
+            : 'normal';
         _loading = false;
       });
     } catch (e, s) {
@@ -553,17 +566,17 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
     final anchorContext = widget.anchorContext;
     widget.onClose();
     try {
-      final channel = await ProviderScope.containerOf(
-        anchorContext,
-        listen: false,
-      ).read(discourseServiceProvider).createDirectMessageChannel(
-        targetUsernames: [widget.username],
-        upsert: true,
-      );
+      final channel =
+          await ProviderScope.containerOf(anchorContext, listen: false)
+              .read(discourseServiceProvider)
+              .createDirectMessageChannel(
+                targetUsernames: [widget.username],
+                upsert: true,
+              );
       if (!anchorContext.mounted) return;
       await Navigator.push(
         anchorContext,
-        MaterialPageRoute(
+        InteractionPageRoute(
           builder: (_) => ChatChannelPage(channelId: channel.id),
         ),
       );
@@ -640,7 +653,9 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
       listen: false,
     );
     if (!container.exists(topicDetailProvider(params))) return false;
-    return container.read(topicDetailProvider(params).notifier).usernameFilter ==
+    return container
+            .read(topicDetailProvider(params).notifier)
+            .usernameFilter ==
         widget.username;
   }
 
@@ -689,7 +704,9 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final user = _user;
+    final current = ref.watch(currentUserProvider.select((value) =>
+      value.value?.id == _user?.id ? value.value : null));
+    final user = current == null ? _user : _user?.copyWith(identity: current);
     final bg = user?.backgroundUrl;
     final hasBg = bg != null && bg.isNotEmpty;
     final surface = theme.colorScheme.surface;
@@ -723,10 +740,9 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
     );
 
     final card = Container(
-      decoration: BoxDecoration(
-        color: theme.colorScheme.overlaySurface,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
+      decoration: ShapeDecoration(
+        color: theme.colorScheme.surface,
+        shadows: [
           // 桌面端无遮罩，靠更重的投影把卡片从背景中托起来
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.28),
@@ -740,9 +756,12 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
             offset: const Offset(0, 2),
           ),
         ],
-        border: Border.all(
-          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3),
-          width: 0.5,
+        shape: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(20),
+          side: BorderSide(
+            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3),
+            width: 0.5,
+          ),
         ),
       ),
       clipBehavior: Clip.antiAlias,
@@ -752,7 +771,10 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
       child: hasBg
           ? DecoratedBox(
               decoration: BoxDecoration(
-                image: DecorationImage(image: discourseImageProvider(bg), fit: BoxFit.cover),
+                image: DecorationImage(
+                  image: discourseImageProvider(bg),
+                  fit: BoxFit.cover,
+                ),
               ),
               child: DecoratedBox(
                 decoration: BoxDecoration(
@@ -790,7 +812,6 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
 
   bool _hasBio(User user) => user.bio != null && user.bio!.trim().isNotEmpty;
 
-
   /// 大头像（带白色描边 + flair），点击进个人页
   Widget _buildAvatar(ThemeData theme, User? user) {
     // 与各调用方传入的 fallback 尺寸保持一致（144），保证 loading 前后 URL 相同、命中缓存不重载
@@ -801,10 +822,10 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
         flairSize: 18,
         flairRight: -2,
         flairBottom: -2,
-        flairUrl: user?.flairUrl ?? widget.flairUrl,
-        flairName: user?.flairName ?? widget.flairName,
-        flairBgColor: user?.flairBgColor ?? widget.flairBgColor,
-        flairColor: user?.flairColor ?? widget.flairColor,
+        flairUrl: user != null ? user.flairUrl : widget.flairUrl,
+        flairName: user != null ? user.flairName : widget.flairName,
+        flairBgColor: user != null ? user.flairBgColor : widget.flairBgColor,
+        flairColor: user != null ? user.flairColor : widget.flairColor,
         avatar: SmartAvatar(
           imageUrl: (avatarUrl?.isNotEmpty ?? false) ? avatarUrl : null,
           radius: _kAvatarRadius,
@@ -820,12 +841,14 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
     final displayName = (user?.name?.isNotEmpty ?? false)
         ? user!.name!
         : (widget.nameFallback?.isNotEmpty ?? false)
-            ? widget.nameFallback!
-            : widget.username;
+        ? widget.nameFallback!
+        : widget.username;
 
     // 背景图上给文字加阴影，保证可读
     final shadows = hasBg
-        ? <Shadow>[Shadow(color: Colors.black.withValues(alpha: 0.5), blurRadius: 6)]
+        ? <Shadow>[
+            Shadow(color: Colors.black.withValues(alpha: 0.5), blurRadius: 6),
+          ]
         : null;
 
     return Padding(
@@ -836,6 +859,7 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
         children: [
           GestureDetector(
             onTap: _openProfile,
+            onLongPress: () => copyUsernameToClipboard(widget.username),
             child: Text(
               displayName,
               style: theme.textTheme.titleLarge?.copyWith(
@@ -854,6 +878,7 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
                   behavior: HitTestBehavior.opaque,
                   // 点击 @username 复制用户名
                   onTap: () => copyUsernameToClipboard(widget.username),
+                  onLongPress: () => copyUsernameToClipboard(widget.username),
                   child: Text(
                     '@${widget.username}',
                     style: theme.textTheme.bodyMedium?.copyWith(
@@ -870,10 +895,15 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
               if (user != null) ...[
                 const SizedBox(width: 8),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                  decoration: BoxDecoration(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 1,
+                  ),
+                  decoration: ShapeDecoration(
                     color: theme.colorScheme.primaryContainer,
-                    borderRadius: BorderRadius.circular(4),
+                    shape: RoundedSuperellipseBorder(
+                      borderRadius: context.shapes.borderRadius(4),
+                    ),
                   ),
                   child: Text(
                     user.trustLevelString,
@@ -899,44 +929,58 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
       child: _ClampedFadeBox(
         maxHeight: 66,
         // 用户卡 bio 属只读预览：走新引擎 FluxdoRender，关闭划词选区。
-        child: FluxdoRenderCallbacks.generic(
-          heroTagNamespace: 'user_card_bio_${user.username}',
-        ).render(
-          cookedHtml: user.bio!,
-          baseTextStyle: theme.textTheme.bodyMedium?.copyWith(height: 1.4),
-          compact: true,
-          selectionEnabled: false,
-        ),
+        child:
+            FluxdoRenderCallbacks.generic(
+              heroTagNamespace: 'user_card_bio_${user.username}',
+            ).render(
+              cookedHtml: user.bio!,
+              baseTextStyle: theme.textTheme.bodyMedium?.copyWith(height: 1.4),
+              compact: true,
+              selectionEnabled: false,
+            ),
       ),
     );
   }
 
   Widget _buildRestrictionBanner(ThemeData theme, User user) {
     final isSuspended = user.isSuspended;
-    final color = isSuspended ? theme.colorScheme.error : Colors.orange;
+    final color = isSuspended ? theme.colorScheme.error : context.appColors.orange;
     final label = isSuspended
         ? (user.isSuspendedForever
-            ? S.current.userProfile_permanentlySuspended
-            : S.current.userProfile_suspendedUntil(TimeUtils.formatFullDate(user.suspendedTill)))
+              ? S.current.userProfile_permanentlySuspended
+              : S.current.userProfile_suspendedUntil(
+                  TimeUtils.formatFullDate(user.suspendedTill),
+                ))
         : (user.isSilencedForever
-            ? S.current.userProfile_permanentlySilenced
-            : S.current.userProfile_silencedUntil(TimeUtils.formatFullDate(user.silencedTill)));
+              ? S.current.userProfile_permanentlySilenced
+              : S.current.userProfile_silencedUntil(
+                  TimeUtils.formatFullDate(user.silencedTill),
+                ));
     return Container(
       margin: const EdgeInsets.only(top: 12),
       padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: color.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color.withValues(alpha: 0.2)),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(10),
+          side: BorderSide(color: color.withValues(alpha: 0.2)),
+        ),
       ),
       child: Row(
         children: [
-          Icon(isSuspended ? Symbols.block_rounded : Symbols.mic_off_rounded, size: 16, color: color),
+          Icon(
+            isSuspended ? Symbols.block_rounded : Symbols.mic_off_rounded,
+            size: 16,
+            color: color,
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               label,
-              style: theme.textTheme.bodySmall?.copyWith(color: color, fontWeight: FontWeight.w500),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: color,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ),
         ],
@@ -948,22 +992,26 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
   Widget _buildLocationWebsite(ThemeData theme, User user) {
     final items = <Widget>[];
     void add(IconData icon, String text) {
-      items.add(Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: theme.colorScheme.onSurfaceVariant),
-          const SizedBox(width: 4),
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 220),
-            child: Text(
-              text,
-              style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+      items.add(
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: theme.colorScheme.onSurfaceVariant),
+            const SizedBox(width: 4),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 220),
+              child: Text(
+                text,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
-          ),
-        ],
-      ));
+          ],
+        ),
+      );
     }
 
     if (user.location?.isNotEmpty ?? false) {
@@ -972,8 +1020,8 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
     final site = (user.websiteName?.isNotEmpty ?? false)
         ? user.websiteName!
         : (user.website?.isNotEmpty ?? false)
-            ? user.website!
-            : null;
+        ? user.website!
+        : null;
     if (site != null) add(Symbols.link_rounded, site);
 
     if (items.isEmpty) return const SizedBox.shrink();
@@ -987,16 +1035,31 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
   Widget _buildFacts(ThemeData theme, User user) {
     final items = <Widget>[];
     if (user.lastPostedAt != null) {
-      items.add(_metaItem(theme, S.current.userCard_lastPosted,
-          TimeUtils.formatRelativeTime(user.lastPostedAt!)));
+      items.add(
+        _metaItem(
+          theme,
+          S.current.userCard_lastPosted,
+          TimeUtils.formatRelativeTime(user.lastPostedAt!),
+        ),
+      );
     }
     if (user.createdAt != null) {
-      items.add(_metaItem(theme, S.current.userProfile_joinDate,
-          TimeUtils.formatShortDate(user.createdAt)));
+      items.add(
+        _metaItem(
+          theme,
+          S.current.userProfile_joinDate,
+          TimeUtils.formatShortDate(user.createdAt),
+        ),
+      );
     }
     if ((user.timeRead ?? 0) > 0) {
-      items.add(_metaItem(theme, S.current.profileStats_timeRead,
-          NumberUtils.formatDurationLong(user.timeRead!)));
+      items.add(
+        _metaItem(
+          theme,
+          S.current.profileStats_timeRead,
+          NumberUtils.formatDurationLong(user.timeRead!),
+        ),
+      );
     }
 
     if (items.isEmpty) return const SizedBox.shrink();
@@ -1010,17 +1073,35 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
   Widget _buildStatsRow(ThemeData theme, User user) {
     final items = <Widget>[];
     if (user.totalFollowing != null) {
-      items.add(_metaItem(theme, S.current.userProfile_following,
-          NumberUtils.formatCount(user.totalFollowing!), bold: true));
+      items.add(
+        _metaItem(
+          theme,
+          S.current.userProfile_following,
+          NumberUtils.formatCount(user.totalFollowing!),
+          bold: true,
+        ),
+      );
     }
     if (user.totalFollowers != null) {
-      items.add(_metaItem(theme, S.current.userProfile_followers,
-          NumberUtils.formatCount(user.totalFollowers!), bold: true));
+      items.add(
+        _metaItem(
+          theme,
+          S.current.userProfile_followers,
+          NumberUtils.formatCount(user.totalFollowers!),
+          bold: true,
+        ),
+      );
     }
     if (user.gamificationScore != null) {
-      items.add(_metaItem(theme, S.current.userCard_score,
+      items.add(
+        _metaItem(
+          theme,
+          S.current.userCard_score,
           NumberUtils.formatCount(user.gamificationScore!),
-          bold: true, valueColor: theme.colorScheme.primary));
+          bold: true,
+          valueColor: theme.colorScheme.primary,
+        ),
+      );
     }
 
     if (items.isEmpty) return const SizedBox.shrink();
@@ -1031,14 +1112,21 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
   }
 
   /// 标签（灰）+ 值 的行内项
-  Widget _metaItem(ThemeData theme, String label, String value,
-      {bool bold = false, Color? valueColor}) {
+  Widget _metaItem(
+    ThemeData theme,
+    String label,
+    String value, {
+    bool bold = false,
+    Color? valueColor,
+  }) {
     return Text.rich(
       TextSpan(
         children: [
           TextSpan(
             text: '$label ',
-            style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
           TextSpan(
             text: value,
@@ -1097,37 +1185,43 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
 
     final primary = <Widget>[];
     if (canChat) {
-      primary.add(FilledButton.icon(
-        onPressed: _openChat,
-        icon: const Icon(Symbols.chat_rounded, size: 18),
-        label: Text(S.current.userCard_chat),
-      ));
+      primary.add(
+        FilledButton.icon(
+          onPressed: _openChat,
+          icon: const Icon(Symbols.chat_rounded, size: 18),
+          label: Text(S.current.userCard_chat),
+        ),
+      );
     }
     if (canMessage) {
-      primary.add(canChat
-          ? FilledButton.tonalIcon(
-              onPressed: _composeMessage,
-              icon: const Icon(Symbols.mail_rounded, size: 18),
-              label: Text(S.current.userProfile_message),
-            )
-          : FilledButton.icon(
-              onPressed: _composeMessage,
-              icon: const Icon(Symbols.mail_rounded, size: 18),
-              label: Text(S.current.userProfile_message),
-            ));
+      primary.add(
+        canChat
+            ? FilledButton.tonalIcon(
+                onPressed: _composeMessage,
+                icon: const Icon(Symbols.mail_rounded, size: 18),
+                label: Text(S.current.userProfile_message),
+              )
+            : FilledButton.icon(
+                onPressed: _composeMessage,
+                icon: const Icon(Symbols.mail_rounded, size: 18),
+                label: Text(S.current.userProfile_message),
+              ),
+      );
     }
     if (canFollow) {
-      primary.add(_isFollowed
-          ? OutlinedButton.icon(
-              onPressed: _followLoading ? null : _toggleFollow,
-              icon: const Icon(Symbols.how_to_reg_rounded, size: 18),
-              label: Text(S.current.userProfile_followed),
-            )
-          : FilledButton.tonalIcon(
-              onPressed: _followLoading ? null : _toggleFollow,
-              icon: const Icon(Symbols.person_add_alt_rounded, size: 18),
-              label: Text(S.current.userProfile_follow),
-            ));
+      primary.add(
+        _isFollowed
+            ? OutlinedButton.icon(
+                onPressed: _followLoading ? null : _toggleFollow,
+                icon: const Icon(Symbols.how_to_reg_rounded, size: 18),
+                label: Text(S.current.userProfile_followed),
+              )
+            : FilledButton.tonalIcon(
+                onPressed: _followLoading ? null : _toggleFollow,
+                icon: const Icon(Symbols.person_add_alt_rounded, size: 18),
+                label: Text(S.current.userProfile_follow),
+              ),
+      );
     }
     if (isLoggedIn) {
       primary.add(isSeeking
@@ -1147,27 +1241,23 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
     // 竖排折行),每行最多两个,超出的换行铺满
     final primaryRows = <Widget>[];
     for (var i = 0; i < primary.length; i += 2) {
-      final rowButtons = primary.sublist(
-        i,
-        (i + 2).clamp(0, primary.length),
-      );
-      primaryRows.add(Row(
-        children: [
-          for (var j = 0; j < rowButtons.length; j++) ...[
-            if (j > 0) const SizedBox(width: 8),
-            Expanded(child: rowButtons[j]),
+      final rowButtons = primary.sublist(i, (i + 2).clamp(0, primary.length));
+      primaryRows.add(
+        Row(
+          children: [
+            for (var j = 0; j < rowButtons.length; j++) ...[
+              if (j > 0) const SizedBox(width: 8),
+              Expanded(child: rowButtons[j]),
+            ],
           ],
-        ],
-      ));
+        ),
+      );
     }
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        for (final row in primaryRows) ...[
-          row,
-          const SizedBox(height: 8),
-        ],
+        for (final row in primaryRows) ...[row, const SizedBox(height: 8)],
         if (canFilter) ...[
           OutlinedButton.icon(
             onPressed: _toggleFilterPosts,
@@ -1212,8 +1302,12 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
       tooltip: '',
       icon: const Icon(Symbols.more_horiz_rounded),
       style: IconButton.styleFrom(
-        side: BorderSide(color: theme.colorScheme.outline.withValues(alpha: 0.5)),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        side: BorderSide(
+          color: theme.colorScheme.outline.withValues(alpha: 0.5),
+        ),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(8),
+        ),
         minimumSize: const Size(48, 40),
       ),
       onSelected: _setNotificationLevel,
@@ -1221,12 +1315,28 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
       itemBuilder: (context) => [
         if (canMute)
           _notificationLevel == 'mute'
-              ? _menuItem('normal', Symbols.volume_up_rounded, S.current.userProfile_restored)
-              : _menuItem('mute', Symbols.volume_off_rounded, S.current.userCard_mute),
+              ? _menuItem(
+                  'normal',
+                  Symbols.volume_up_rounded,
+                  S.current.userProfile_restored,
+                )
+              : _menuItem(
+                  'mute',
+                  Symbols.volume_off_rounded,
+                  S.current.userCard_mute,
+                ),
         if (canIgnore)
           _notificationLevel == 'ignore'
-              ? _menuItem('normal', Symbols.visibility_rounded, S.current.userProfile_restored)
-              : _menuItem('ignore', Symbols.visibility_off_rounded, S.current.userCard_ignore),
+              ? _menuItem(
+                  'normal',
+                  Symbols.visibility_rounded,
+                  S.current.userProfile_restored,
+                )
+              : _menuItem(
+                  'ignore',
+                  Symbols.visibility_off_rounded,
+                  S.current.userCard_ignore,
+                ),
       ],
     );
   }

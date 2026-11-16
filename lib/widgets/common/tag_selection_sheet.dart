@@ -1,15 +1,19 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:m3e_ui/m3e_ui.dart';
+
 import 'dart:async';
+
 import 'package:fluxdo/l10n/s.dart';
 import 'package:fluxdo/models/tag_search_result.dart';
 import 'package:fluxdo/services/discourse/discourse_service.dart';
 import 'package:fluxdo/services/toast_service.dart';
-import 'package:fluxdo/widgets/common/app_bottom_sheet.dart';
 import 'package:fluxdo/widgets/common/topic_badges.dart';
 
 class TagSelectionSheet extends StatefulWidget {
+  final String? title;
+
   /// 分类 ID（用于联动过滤标签）
   final int? categoryId;
 
@@ -33,6 +37,7 @@ class TagSelectionSheet extends StatefulWidget {
 
   const TagSelectionSheet({
     super.key,
+    this.title,
     this.categoryId,
     required this.availableTags,
     required this.selectedTags,
@@ -195,8 +200,9 @@ class _TagSelectionSheetState extends State<TagSelectionSheet> {
       expand: false,
       builder: (context, scrollController) {
         return AppSheetScaffold(
+          title: widget.title,
           expandToFill: true,
-          showCloseButton: false,
+          showCloseButton: widget.title != null,
           contentPadding: EdgeInsets.zero,
           child: Column(
             children: [
@@ -224,14 +230,16 @@ class _TagSelectionSheetState extends State<TagSelectionSheet> {
                           vertical: 8,
                         ),
                         margin: const EdgeInsets.only(bottom: 12),
-                        decoration: BoxDecoration(
+                        decoration: ShapeDecoration(
                           color: theme.colorScheme.primaryContainer.withValues(
                             alpha: 0.3,
                           ),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: theme.colorScheme.primary.withValues(
-                              alpha: 0.3,
+                          shape: RoundedSuperellipseBorder(
+                            borderRadius: context.shapes.borderRadius(8),
+                            side: BorderSide(
+                              color: context.emphasis.accent.withValues(
+                                alpha: 0.3,
+                              ),
                             ),
                           ),
                         ),
@@ -240,7 +248,7 @@ class _TagSelectionSheetState extends State<TagSelectionSheet> {
                             Icon(
                               Symbols.info_rounded,
                               size: 16,
-                              color: theme.colorScheme.primary,
+                              color: context.emphasis.accent,
                             ),
                             const SizedBox(width: 8),
                             Expanded(
@@ -250,7 +258,7 @@ class _TagSelectionSheetState extends State<TagSelectionSheet> {
                                   _requiredTagGroup!.minCount,
                                 ),
                                 style: theme.textTheme.bodySmall?.copyWith(
-                                  color: theme.colorScheme.primary,
+                                  color: context.emphasis.accent,
                                 ),
                               ),
                             ),
@@ -261,13 +269,11 @@ class _TagSelectionSheetState extends State<TagSelectionSheet> {
                     Row(
                       children: [
                         Expanded(
-                          child: Container(
+                          child: InputFieldShell(
                             height: 44,
-                            decoration: BoxDecoration(
-                              color: theme.colorScheme.surfaceContainerHighest
-                                  .withValues(alpha: 0.5),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
+                            color: theme.colorScheme.surfaceContainerHighest
+                                .withValues(alpha: 0.5),
+                            radius: 12,
                             child: TextField(
                               controller: _searchController,
                               focusNode: _searchFocusNode,
@@ -289,7 +295,6 @@ class _TagSelectionSheetState extends State<TagSelectionSheet> {
                                                   .onSurfaceVariant),
                                   fontSize: 14,
                                 ),
-                                border: InputBorder.none,
                                 isDense: true,
                                 contentPadding: const EdgeInsets.only(
                                   left: 0,
@@ -323,7 +328,7 @@ class _TagSelectionSheetState extends State<TagSelectionSheet> {
                                         },
                                       )
                                     : null,
-                              ),
+                              ).withoutBorder(),
                               onChanged: _onSearchChanged,
                             ),
                           ),
@@ -418,7 +423,7 @@ class _TagSelectionSheetState extends State<TagSelectionSheet> {
                                   )
                                 : Icon(
                                     Symbols.add_circle_rounded,
-                                    color: theme.colorScheme.primary,
+                                    color: context.emphasis.accent,
                                   ),
                             onTap: () => _toggleTag(tag.name),
                             enabled:

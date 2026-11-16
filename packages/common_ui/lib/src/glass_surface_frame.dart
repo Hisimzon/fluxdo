@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'glass_settings.dart';
 import 'glass_surface.dart';
+import 'ui_shapes.dart';
 
 export 'glass_edge_painter.dart';
 
@@ -13,6 +15,8 @@ class GlassSurfaceFrame extends StatelessWidget {
     this.enabled = true,
     this.recipe = GlassRecipe.navigation,
   });
+
+  /// Design radius; converted once for the clip, shader and fallback border.
   final double radius;
   final Widget child;
   final bool enabled;
@@ -21,33 +25,41 @@ class GlassSurfaceFrame extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final shape = RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(radius),
+    final resolvedRadius = context.shapes.resolve(radius);
+    final shape = RoundedSuperellipseBorder(
+      borderRadius: BorderRadius.circular(resolvedRadius),
     );
     return DecoratedBox(
       decoration: ShapeDecoration(
         shape: shape,
-        shadows: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.052 : 0.068),
-            blurRadius: isDark ? 7 : 8,
-            spreadRadius: -0.75,
-          ),
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.010 : 0.014),
-            blurRadius: isDark ? 3 : 3.5,
-            spreadRadius: -0.75,
-          ),
-        ],
+        // 主题关闭阴影时只靠边缘光勾出轮廓
+        shadows: GlassSettingsScope.of(context).shadows
+            ? [
+                BoxShadow(
+                  color: Colors.black.withValues(
+                    alpha: isDark ? 0.052 : 0.068,
+                  ),
+                  blurRadius: isDark ? 7 : 8,
+                  spreadRadius: -0.75,
+                ),
+                BoxShadow(
+                  color: Colors.black.withValues(
+                    alpha: isDark ? 0.010 : 0.014,
+                  ),
+                  blurRadius: isDark ? 3 : 3.5,
+                  spreadRadius: -0.75,
+                ),
+              ]
+            : null,
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(radius),
+      child: ClipRSuperellipse(
+        borderRadius: BorderRadius.circular(resolvedRadius),
         child: GlassSurface(
           recipe: recipe,
           shape: shape,
           enabled: enabled,
           drawFallbackBorder: false,
-          fallbackBorderRadius: radius,
+          fallbackBorderRadius: resolvedRadius,
           child: child,
         ),
       ),

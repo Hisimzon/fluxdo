@@ -1,11 +1,10 @@
 import 'dart:async';
 import 'dart:isolate';
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:re_highlight/languages/all.dart';
 import 'package:re_highlight/re_highlight.dart';
-import 'package:re_highlight/styles/github.dart';
-import 'package:re_highlight/styles/github-dark.dart';
+
+import '../theme/app_colors.dart';
 
 /// 可序列化的高亮 token
 class HighlightToken {
@@ -199,8 +198,14 @@ class HighlighterService {
   static const _maxConcurrentRequests = 3;
   final _pendingQueue = <Completer<void>>[];
 
-  // 预加载的字体 TextStyle
-  TextStyle? _firaCodeStyle;
+  /// 代码等宽样式：字族名与字体目录里的 Fira Code 一致，下载后自动生效，
+  /// 未下载时回退系统等宽字体（不再运行时从外网拉取字体）。
+  static const TextStyle _firaCodeStyle = TextStyle(
+    fontFamily: 'FiraCode',
+    fontFamilyFallback: ['monospace', 'Menlo', 'Courier'],
+    fontSize: 13,
+    height: 1.5,
+  );
 
   HighlighterService._();
 
@@ -209,16 +214,14 @@ class HighlighterService {
     return _instance!;
   }
 
-  /// 初始化服务（预加载字体和 Isolate Worker）
+  /// 初始化服务（预热 Isolate Worker）
   Future<void> initialize() async {
-    // 预加载 FiraCode 字体
-    _firaCodeStyle = GoogleFonts.firaCode(fontSize: 13, height: 1.5);
     // 预热 Isolate Worker
     await _HighlightWorker.instance.ensureInitialized();
   }
 
   /// 获取预加载的字体样式
-  TextStyle get firaCodeStyle => _firaCodeStyle ?? GoogleFonts.firaCode(fontSize: 13, height: 1.5);
+  TextStyle get firaCodeStyle => _firaCodeStyle;
 
   String _cacheKey(String code, String? language) => '${language ?? 'auto'}:${code.hashCode}';
 
@@ -274,11 +277,13 @@ class HighlighterService {
   /// wrapper 的 TextStyle 继承链等价),相邻同样式 token 合并为单个 span。
   /// 大代码块 token 数以千计,嵌套树 + 逐 token span 是主线程排版大头,
   /// 合并后 span 数下降一个量级。
+  ///
+  /// [syntax] 是当前主题的高亮表（`context.appColors.syntax`）。
   TextSpan tokensToSpan(List<HighlightToken> tokens, {
-    bool isDark = false,
+    required Map<String, TextStyle> syntax,
     TextStyle? baseStyle,
   }) {
-    final theme = isDark ? githubDarkTheme : githubTheme;
+    final theme = syntax;
     final base = baseStyle ?? firaCodeStyle;
 
     final spans = <InlineSpan>[];
@@ -334,7 +339,6 @@ class HighlighterService {
   Widget buildHighlightView(
     String code, {
     String? language,
-    bool isDark = false,
     Color? backgroundColor,
     EdgeInsets padding = const EdgeInsets.all(12),
     TextStyle? textStyle,
@@ -343,7 +347,6 @@ class HighlighterService {
     return HighlightCodeBlock(
       code: code,
       language: language,
-      isDark: isDark,
       backgroundColor: backgroundColor,
       padding: padding,
       textStyle: textStyle,
@@ -396,7 +399,6 @@ class HighlighterService {
 class HighlightCodeBlock extends StatefulWidget {
   final String code;
   final String? language;
-  final bool isDark;
   final Color? backgroundColor;
   final EdgeInsets padding;
   final TextStyle? textStyle;
@@ -406,7 +408,6 @@ class HighlightCodeBlock extends StatefulWidget {
     super.key,
     required this.code,
     this.language,
-    this.isDark = false,
     this.backgroundColor,
     this.padding = const EdgeInsets.all(12),
     this.textStyle,
@@ -453,7 +454,7 @@ class _HighlightCodeBlockState extends State<HighlightCodeBlock> {
     final textSpan = _tokens != null
         ? HighlighterService.instance.tokensToSpan(
             _tokens!,
-            isDark: widget.isDark,
+            syntax: context.appColors.syntax,
             baseStyle: baseStyle,
           )
         : TextSpan(text: widget.code, style: baseStyle);

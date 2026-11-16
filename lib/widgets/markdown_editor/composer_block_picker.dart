@@ -1,4 +1,6 @@
 import 'dart:async';
+
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderAbstractViewport;
 import 'package:flutter/services.dart';
@@ -434,9 +436,8 @@ class _ComposerBlockPickerState extends State<ComposerBlockPicker> {
                           decoration: const InputDecoration(
                             hintText: '搜索块类型…',
                             isDense: true,
-                            border: InputBorder.none,
                             contentPadding: EdgeInsets.symmetric(vertical: 12),
-                          ),
+                          ).withoutBorder(),
                         ),
                       ),
                       IconButton(
@@ -521,9 +522,8 @@ class _ComposerBlockPickerState extends State<ComposerBlockPicker> {
                         TargetPlatform.fuchsia => '输入名称查找，点选插入',
                         _ => '↑↓ 选择   Enter 确认   Esc 关闭',
                       },
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: colors.onSurfaceVariant,
-                      ),
+                      style: Theme.of(context).textTheme.labelSmall
+                          ?.copyWith(color: colors.onSurfaceVariant),
                     ),
                   ),
               ],
@@ -555,8 +555,8 @@ class _ComposerBlockPickerState extends State<ComposerBlockPicker> {
                   ? colors.primary.withValues(alpha: .10)
                   : Colors.transparent,
               foregroundColor: colors.onSurface,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(7),
+              shape: RoundedSuperellipseBorder(
+                borderRadius: context.shapes.borderRadius(7),
               ),
             ),
             onPressed: () => widget.controller.choose(item),

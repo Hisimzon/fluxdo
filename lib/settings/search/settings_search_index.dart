@@ -18,6 +18,7 @@ import '../definitions/preferences_defs.dart';
 import '../definitions/reading_defs.dart';
 import '../definitions/shortcut_defs.dart';
 import '../settings_model.dart';
+import '../../theme/app_colors.dart';
 
 /// 搜索结果项
 class SettingsSearchResult {
@@ -55,13 +56,15 @@ List<SettingsSearchResult> buildSearchIndex(BuildContext context) {
           if (item is PlatformConditionalModel) return item.shouldShow;
           return true;
         })
-        .map((item) => SettingsSearchResult(
-              model: item is PlatformConditionalModel ? item.inner : item,
-              categoryName: categoryName,
-              categoryIcon: categoryIcon,
-              categoryColor: categoryColor,
-              pageBuilder: pageBuilder,
-            ))
+        .map(
+          (item) => SettingsSearchResult(
+            model: item is PlatformConditionalModel ? item.inner : item,
+            categoryName: categoryName,
+            categoryIcon: categoryIcon,
+            categoryColor: categoryColor,
+            pageBuilder: pageBuilder,
+          ),
+        )
         .toList();
   }
 
@@ -70,7 +73,7 @@ List<SettingsSearchResult> buildSearchIndex(BuildContext context) {
       buildReadingGroups(context),
       categoryName: l10n.settings_reading,
       categoryIcon: Symbols.auto_stories_rounded,
-      categoryColor: Colors.deepOrange,
+      categoryColor: context.appColors.deepOrange,
       pageBuilder: ({highlightId}) =>
           ReadingSettingsPage(highlightId: highlightId),
     ),
@@ -78,31 +81,36 @@ List<SettingsSearchResult> buildSearchIndex(BuildContext context) {
       buildPreferencesGroups(context),
       categoryName: l10n.settings_preferences,
       categoryIcon: Symbols.tune_rounded,
-      categoryColor: Colors.deepPurple,
-      pageBuilder: ({highlightId}) =>
-          PreferencesPage(highlightId: highlightId),
+      categoryColor: context.appColors.deepPurple,
+      pageBuilder: ({highlightId}) => PreferencesPage(highlightId: highlightId),
     ),
     ...fromGroups(
       buildBottomNavGroups(context),
       categoryName: l10n.settings_bottomNav,
       categoryIcon: Symbols.view_day_rounded,
-      categoryColor: Colors.amber,
+      categoryColor: context.appColors.amber,
       pageBuilder: ({highlightId}) =>
           BottomNavSettingsPage(highlightId: highlightId),
     ),
     ...fromGroups(
-      buildAppearanceGroups(context),
+      buildAppearanceSearchGroups(context),
       categoryName: l10n.settings_appearance,
       categoryIcon: Symbols.color_lens_rounded,
-      categoryColor: Colors.teal,
+      categoryColor: context.appColors.teal,
       pageBuilder: ({highlightId}) =>
-          AppearancePage(highlightId: highlightId),
+          switch (appearanceSectionForSetting(highlightId)) {
+            final section? => AppearanceSectionPage(
+              section: section,
+              highlightId: highlightId,
+            ),
+            null => AppearancePage(highlightId: highlightId),
+          },
     ),
     ...fromGroups(
       buildNetworkGroups(context),
       categoryName: l10n.settings_network,
       categoryIcon: Symbols.network_check_rounded,
-      categoryColor: Colors.blueGrey,
+      categoryColor: context.appColors.blueGrey,
       pageBuilder: ({highlightId}) =>
           NetworkSettingsPage(highlightId: highlightId),
     ),
@@ -110,7 +118,7 @@ List<SettingsSearchResult> buildSearchIndex(BuildContext context) {
       buildDataManagementGroups(context),
       categoryName: l10n.settings_dataManagement,
       categoryIcon: Symbols.storage_rounded,
-      categoryColor: Colors.brown,
+      categoryColor: context.appColors.brown,
       pageBuilder: ({highlightId}) =>
           DataManagementPage(highlightId: highlightId),
     ),
@@ -120,7 +128,7 @@ List<SettingsSearchResult> buildSearchIndex(BuildContext context) {
         buildShortcutGroups(context),
         categoryName: l10n.settings_shortcuts,
         categoryIcon: Symbols.keyboard_rounded,
-        categoryColor: Colors.cyan,
+        categoryColor: context.appColors.cyan,
         pageBuilder: ({highlightId}) =>
             ShortcutSettingsPage(highlightId: highlightId),
       ),

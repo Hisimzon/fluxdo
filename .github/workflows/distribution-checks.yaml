@@ -1,0 +1,112 @@
+name: Distribution checks
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [dev, main]
+    paths:
+      - scripts/ci/*distribution_manifests.py
+      - .github/workflows/distribution-checks.yaml
+      - .github/workflows/build.yaml
+      - scripts/ci/macos/setup_signing.sh
+      - scripts/ci/macos/test_setup_signing.py
+      - scripts/ci/macos/setup_package_auth.sh
+      - scripts/ci/macos/xcrun
+      - scripts/ci/macos/test_package_auth.py
+  pull_request:
+    paths:
+      - scripts/ci/*distribution_manifests.py
+      - .github/workflows/distribution-checks.yaml
+      - .github/workflows/build.yaml
+      - scripts/ci/macos/setup_signing.sh
+      - scripts/ci/macos/test_setup_signing.py
+      - scripts/ci/macos/setup_package_auth.sh
+      - scripts/ci/macos/xcrun
+      - scripts/ci/macos/test_package_auth.py
+
+permissions:
+  contents: read
+
+jobs:
+  macos-packages:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        signing: [adhoc, certificate]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Test CI keychain setup
+        run: |
+          python3 scripts/ci/macos/test_setup_signing.py
+          python3 scripts/ci/macos/test_package_auth.py
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.9'
+          cache: true
+      - name: Prepare isolated signing keychain
+        env:
+          P12_BASE64: ${{ matrix.signing == 'certificate' && secrets.MACOS_CODESIGN_P12_BASE64 || '' }}
+          P12_PASSWORD: ${{ matrix.signing == 'certificate' && secrets.MACOS_CODESIGN_P12_PASSWORD || '' }}
+        run: bash scripts/ci/macos/setup_signing.sh
+      - name: Configure Git for CocoaPods
+        run: git config --global url."https://x-access-token:${{ github.token }}@github.com/".insteadOf "https://github.com/"
+      - name: Configure macOS package authentication
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/ci/macos/setup_package_auth.sh
+      - name: Resolve macOS packages and build configuration
+        timeout-minutes: 10
+        run: |
+          flutter build macos --release --config-only --verbose
+          test -d build/macos/SourcePackages/artifacts/sparkle/Sparkle/Sparkle.xcframework
+          test -f build/macos/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update
+
+  manifests:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install schema validation dependencies
+        run: python -m pip install PyYAML==6.0.3 jsonschema==4.25.1
+      - name: Check generation and official schemas using fixtures
+        run: python scripts/ci/check_distribution_manifests.py --output "${{ runner.temp }}/distribution-fixtures"
+      - name: Load Homebrew Cask
+        if: runner.os == 'macOS'
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: '1'
+          CASK_FILE: ${{ runner.temp }}/distribution-fixtures/homebrew/Casks/fluxdo.rb
+        run: |
+          ruby -c "$CASK_FILE"
+          brew ruby -r cask/cask_loader -e 'cask = Cask::CaskLoader::FromContentLoader.new(File.read(ARGV.fetch(0))).load(config: nil); abort "Unexpected Cask" unless cask.token == "fluxdo" && cask.version.to_s == "1.0.0"; puts "Cask DSL valid"' "$CASK_FILE"
+      - name: Set up WinGet
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download v1.29.380 --repo microsoft/winget-cli --pattern Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle --dir "$env:RUNNER_TEMP/winget"
+          if ($LASTEXITCODE -ne 0) { throw "WinGet download failed" }
+          $bundle = "$env:RUNNER_TEMP/winget/Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle"
+          $unpacked = "$env:RUNNER_TEMP/winget/bundle"
+          [System.IO.Compression.ZipFile]::ExtractToDirectory($bundle, $unpacked)
+          $packages = @(Get-ChildItem "$unpacked/*_x64.msix")
+          if ($packages.Count -ne 1) { throw "Expected one x64 WinGet package" }
+          [System.IO.Compression.ZipFile]::ExtractToDirectory($packages[0].FullName, "$env:RUNNER_TEMP/winget/cli")
+          & "$env:RUNNER_TEMP/winget/cli/winget.exe" --version
+          if ($LASTEXITCODE -ne 0) { throw "WinGet startup failed" }
+      - name: Validate WinGet manifests
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & "$env:RUNNER_TEMP/winget/cli/winget.exe" validate --manifest "${{ runner.temp }}/distribution-fixtures/winget/manifests/l/Lingyan000/FluxDO/1.0.0"
+          if ($LASTEXITCODE -ne 0) { throw "WinGet manifest validation failed" }

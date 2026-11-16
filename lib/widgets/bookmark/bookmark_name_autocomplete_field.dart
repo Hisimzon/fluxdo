@@ -1,8 +1,8 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
 
-import '../../theme/theme_resolver.dart';
 
 class _RefreshableTextEditingController extends TextEditingController {
   _RefreshableTextEditingController.fromValue(super.value) : super.fromValue();
@@ -190,7 +190,7 @@ class _BookmarkNameAutocompleteFieldState
               labelText: widget.labelText,
               hintText: widget.hintText,
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: context.shapes.borderRadius(12),
               ),
               counterText: '',
               prefixIcon: const Icon(Symbols.label_rounded, size: 20),
@@ -208,8 +208,10 @@ class _BookmarkNameAutocompleteFieldState
           alignment: Alignment.topLeft,
           child: Material(
             elevation: 6,
-            color: theme.colorScheme.overlaySurface,
-            borderRadius: BorderRadius.circular(12),
+            color: theme.colorScheme.surface,
+            shape: RoundedSuperellipseBorder(
+              borderRadius: context.shapes.borderRadius(12),
+            ),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 420, maxHeight: 240),
               child: ListView.separated(

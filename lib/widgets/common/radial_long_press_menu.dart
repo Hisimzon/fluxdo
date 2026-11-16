@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
@@ -415,7 +416,7 @@ class _RadialMenuOverlayState extends State<RadialMenuOverlay>
           color: isHighlighted
               ? theme.colorScheme.primary
               : theme.colorScheme.surfaceContainerHighest,
-          shape: const CircleBorder(),
+          shape: context.shapes.circle(),
           elevation: isHighlighted ? 6 : 2,
           shadowColor: isHighlighted
               ? theme.colorScheme.primary.withValues(alpha: 0.4)
@@ -463,7 +464,9 @@ class _RadialMenuOverlayState extends State<RadialMenuOverlay>
           opacity: opacity,
           child: Material(
             color: theme.colorScheme.primary,
-            borderRadius: BorderRadius.circular(24),
+            shape: RoundedSuperellipseBorder(
+              borderRadius: context.shapes.borderRadius(24),
+            ),
             elevation: 6,
             shadowColor: theme.colorScheme.primary.withValues(alpha: 0.35),
             child: Padding(
@@ -517,7 +520,9 @@ class _RadialMenuOverlayState extends State<RadialMenuOverlay>
           opacity: opacity,
           child: Material(
             color: theme.colorScheme.primary,
-            shape: const StadiumBorder(),
+            shape: RoundedSuperellipseBorder(
+              borderRadius: BorderRadius.all(context.shapes.radius(9999)),
+            ),
             elevation: 6,
             shadowColor: theme.colorScheme.primary.withValues(alpha: 0.4),
             child: Center(

@@ -1,10 +1,13 @@
+import 'package:common_ui/common_ui.dart' show UiShapesContext;
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+
 import '../../models/category.dart';
 import '../../utils/url_helper.dart';
 import '../../services/discourse_cache_manager.dart';
 import '../../utils/tag_icon_list.dart';
+import '../../utils/color_utils.dart';
 
 class BadgeSize {
   final EdgeInsets padding;
@@ -60,22 +63,25 @@ class TagBadge extends StatelessWidget {
           color: theme.colorScheme.onSurfaceVariant,
         );
 
-    Widget badge = Container(
-      padding: size.padding,
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(size.radius),
-        border: border,
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (tagInfo != null) ...[
-            FaIcon(tagInfo.icon, size: size.iconSize, color: tagInfo.color),
-            const SizedBox(width: 4),
+    Widget badge = ClipRSuperellipse(
+      borderRadius: context.shapes.borderRadius(size.radius),
+      child: Container(
+        padding: size.padding,
+        decoration: BoxDecoration(color: bg, border: border),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (tagInfo != null) ...[
+              FaIcon(
+                tagInfo.icon,
+                size: size.iconSize,
+                color: ColorUtils.themed(tagInfo.color, Theme.of(context)),
+              ),
+              const SizedBox(width: 4),
+            ],
+            Text(name, style: text),
           ],
-          Text(name, style: text),
-        ],
+        ),
       ),
     );
 
@@ -113,18 +119,26 @@ class RemovableTagBadge extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onDeleted,
-        borderRadius: BorderRadius.circular(size.radius),
+        customBorder: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(size.radius),
+        ),
         child: Container(
           padding: size.padding,
-          decoration: BoxDecoration(
+          decoration: ShapeDecoration(
             color: bg,
-            borderRadius: BorderRadius.circular(size.radius),
+            shape: RoundedSuperellipseBorder(
+              borderRadius: context.shapes.borderRadius(size.radius),
+            ),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               if (tagInfo != null) ...[
-                FaIcon(tagInfo.icon, size: size.iconSize, color: tagInfo.color),
+                FaIcon(
+                  tagInfo.icon,
+                  size: size.iconSize,
+                  color: ColorUtils.themed(tagInfo.color, Theme.of(context)),
+                ),
                 const SizedBox(width: 4),
               ],
               Text(
@@ -172,12 +186,16 @@ class RemovableCategoryBadge extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onDeleted,
-        borderRadius: BorderRadius.circular(size.radius),
+        customBorder: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(size.radius),
+        ),
         child: Container(
           padding: size.padding,
-          decoration: BoxDecoration(
+          decoration: ShapeDecoration(
             color: bg,
-            borderRadius: BorderRadius.circular(size.radius),
+            shape: RoundedSuperellipseBorder(
+              borderRadius: context.shapes.borderRadius(size.radius),
+            ),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -234,7 +252,10 @@ class CategoryBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final categoryColor = _parseColor(category.color);
+    final categoryColor = ColorUtils.category(
+      category.color,
+      Theme.of(context),
+    );
     final text =
         textStyle ??
         theme.textTheme.labelSmall?.copyWith(
@@ -245,12 +266,14 @@ class CategoryBadge extends StatelessWidget {
 
     Widget badge = Container(
       padding: size.padding,
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: categoryColor.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(size.radius),
-        border: Border.all(
-          color: categoryColor.withValues(alpha: 0.2),
-          width: 1,
+        shape: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(size.radius),
+          side: BorderSide(
+            color: categoryColor.withValues(alpha: 0.2),
+            width: 1,
+          ),
         ),
       ),
       child: Row(
@@ -309,13 +332,5 @@ class CategoryBadge extends StatelessWidget {
 
   Widget _buildCategoryLock(Color color) {
     return Icon(Symbols.lock_rounded, size: size.iconSize, color: color);
-  }
-
-  Color _parseColor(String hex) {
-    var clean = hex.replaceAll('#', '');
-    if (clean.length == 6) {
-      return Color(int.parse('0xFF$clean'));
-    }
-    return Colors.grey;
   }
 }

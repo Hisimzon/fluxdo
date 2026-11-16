@@ -48,6 +48,12 @@ class LinuxInAppWebViewController extends PlatformInAppWebViewController
     with ChannelController {
   static final MethodChannel _staticChannel = IN_APP_WEBVIEW_STATIC_CHANNEL;
 
+  @override
+  Future<String> getDefaultUserAgent() async {
+    return await _staticChannel.invokeMethod<String>('getDefaultUserAgent') ??
+        '';
+  }
+
   // List of properties to be saved and restored for keep alive feature
   Map<String, Function> _javaScriptHandlersMap = HashMap<String, Function>();
   Map<UserScriptInjectionTime, List<UserScript>> _userScripts = {
@@ -599,9 +605,28 @@ class LinuxInAppWebViewController extends PlatformInAppWebViewController
             _inAppBrowserEventHandler != null) {
           Map<String, dynamic> arguments = call.arguments
               .cast<String, dynamic>();
-          ServerTrustChallenge challenge = ServerTrustChallenge.fromMap(
-            arguments,
-          )!;
+          // WPE sends SSL error names, while the shared decoder expects native
+          // integer codes (including the deprecated Android/iOS error fields).
+          // Decode only sslError here; other protection-space enums still use
+          // their native representation, and the certificate must stay intact.
+          final protectionSpaceMap = Map<String, dynamic>.from(
+            arguments['protectionSpace'] as Map,
+          );
+          final sslErrorMap = protectionSpaceMap.remove('sslError') as Map?;
+          final protectionSpace = URLProtectionSpace.fromMap(protectionSpaceMap)!;
+          if (sslErrorMap != null) {
+            protectionSpace.sslError = SslError(
+              // INSECURE has no shared enum value. Treat it and future unknown
+              // errors as INVALID, retaining the native diagnostic message.
+              code:
+                  SslErrorType.fromValue(sslErrorMap['code'] as String?) ??
+                  SslErrorType.INVALID,
+              message: sslErrorMap['message'] as String?,
+            );
+          }
+          final challenge = ServerTrustChallenge(
+            protectionSpace: protectionSpace,
+          );
 
           if (webviewParams != null &&
               webviewParams!.onReceivedServerTrustAuthRequest != null)

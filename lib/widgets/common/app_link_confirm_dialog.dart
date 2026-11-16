@@ -1,7 +1,10 @@
 import 'dart:async';
 import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
+import 'package:common_ui/common_ui.dart';
 import 'package:app_icons/app_icons.dart';
+
 import '../../l10n/s.dart';
 import '../../services/local_notification_service.dart';
 
@@ -81,6 +84,7 @@ String _getKnownAppName(String scheme) {
 OverlayEntry? _currentEntry;
 Timer? _dismissTimer;
 AnimationController? _currentController;
+ValueNotifier<bool>? _currentInput;
 Completer<bool?>? _currentCompleter;
 
 /// 显示应用链接确认横幅（Chrome 风格，顶部 Overlay）
@@ -106,10 +110,13 @@ Future<bool?> showAppLinkConfirmDialog(
   }
 
   final displayName = appName ?? _guessAppName(url);
+  final input = ValueNotifier(true);
+  _currentInput = input;
 
   late final OverlayEntry entry;
   entry = OverlayEntry(
     builder: (context) => _AppLinkBanner(
+      input: input,
       displayName: displayName,
       appIcon: appIcon,
       onControllerCreated: (c) {
@@ -141,6 +148,9 @@ void _complete(bool? value) {
 
   final controller = _currentController;
   final entry = _currentEntry;
+  final input = _currentInput;
+  _currentInput = null;
+  input?.value = false;
   _currentEntry = null;
   _currentController = null;
 
@@ -148,7 +158,11 @@ void _complete(bool? value) {
     controller.reverse().then((_) {
       entry.remove();
       controller.dispose();
+      input?.dispose();
     });
+  } else {
+    entry?.remove();
+    input?.dispose();
   }
 
   if (completer != null && !completer.isCompleted) {
@@ -159,6 +173,9 @@ void _complete(bool? value) {
 void _dismiss({required bool animate}) {
   _dismissTimer?.cancel();
   _dismissTimer = null;
+  final input = _currentInput;
+  _currentInput = null;
+  input?.value = false;
 
   final completer = _currentCompleter;
   _currentCompleter = null;
@@ -171,12 +188,14 @@ void _dismiss({required bool animate}) {
     controller.reverse().then((_) {
       entry?.remove();
       controller.dispose();
+      input?.dispose();
     });
   } else {
     _currentController?.dispose();
     _currentController = null;
     _currentEntry?.remove();
     _currentEntry = null;
+    input?.dispose();
   }
 
   if (completer != null && !completer.isCompleted) {
@@ -187,6 +206,7 @@ void _dismiss({required bool animate}) {
 // ==================== 横幅 Widget ====================
 
 class _AppLinkBanner extends StatefulWidget {
+  final ValueNotifier<bool> input;
   final String displayName;
   final Uint8List? appIcon;
   final void Function(AnimationController) onControllerCreated;
@@ -194,6 +214,7 @@ class _AppLinkBanner extends StatefulWidget {
   final VoidCallback onDismiss;
 
   const _AppLinkBanner({
+    required this.input,
     required this.displayName,
     this.appIcon,
     required this.onControllerCreated,
@@ -224,9 +245,10 @@ class _AppLinkBannerState extends State<_AppLinkBanner>
       begin: const Offset(0, -1),
       end: Offset.zero,
     ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
-    _fadeAnimation = Tween<double>(begin: 0, end: 1).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeOut),
-    );
+    _fadeAnimation = Tween<double>(
+      begin: 0,
+      end: 1,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
     widget.onControllerCreated(_controller);
   }
 
@@ -257,75 +279,84 @@ class _AppLinkBannerState extends State<_AppLinkBanner>
       top: mediaQuery.padding.top + 8,
       left: 12,
       right: 12,
-      child: SlideTransition(
-        position: _slideAnimation,
-        child: FadeTransition(
-          opacity: _fadeAnimation,
-          child: Transform.translate(
-            offset: Offset(0, _dragOffset),
-            child: Opacity(
-              opacity: _dragOffset < 0
-                  ? (1.0 + _dragOffset / 120).clamp(0.0, 1.0)
-                  : 1.0,
-              child: GestureDetector(
-                onVerticalDragUpdate: _onVerticalDragUpdate,
-                onVerticalDragEnd: _onVerticalDragEnd,
-                child: Material(
-                  elevation: 6,
-                  borderRadius: BorderRadius.circular(16),
-                  color: colorScheme.surface,
-                  surfaceTintColor: colorScheme.surfaceTint,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 12, 8, 12),
-                    child: Row(
-                      children: [
-                        // 应用图标
-                        _buildIcon(colorScheme),
-                        const SizedBox(width: 12),
-                        // 文字
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                context.l10n.appLink_continueVisitConfirm(widget.displayName),
-                                style: theme.textTheme.titleSmall?.copyWith(
-                                  fontWeight: FontWeight.w500,
+      child: InteractionGate(
+        enabled: widget.input,
+        child: SlideTransition(
+          position: _slideAnimation,
+          child: FadeTransition(
+            opacity: _fadeAnimation,
+            child: Transform.translate(
+              offset: Offset(0, _dragOffset),
+              child: Opacity(
+                opacity: _dragOffset < 0
+                    ? (1.0 + _dragOffset / 120).clamp(0.0, 1.0)
+                    : 1.0,
+                child: GestureDetector(
+                  onVerticalDragUpdate: _onVerticalDragUpdate,
+                  onVerticalDragEnd: _onVerticalDragEnd,
+                  child: Material(
+                    elevation: 6,
+                    shape: RoundedSuperellipseBorder(
+                      borderRadius: context.shapes.borderRadius(16),
+                    ),
+                    color: colorScheme.surface,
+                    surfaceTintColor: colorScheme.surfaceTint,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 12, 8, 12),
+                      child: Row(
+                        children: [
+                          // 应用图标
+                          _buildIcon(colorScheme),
+                          const SizedBox(width: 12),
+                          // 文字
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  context.l10n.appLink_continueVisitConfirm(
+                                    widget.displayName,
+                                  ),
+                                  style: theme.textTheme.titleSmall?.copyWith(
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                context.l10n.appLink_openAppConfirm(widget.displayName),
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: colorScheme.onSurfaceVariant,
+                                const SizedBox(height: 2),
+                                Text(
+                                  context.l10n.appLink_openAppConfirm(
+                                    widget.displayName,
+                                  ),
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: colorScheme.onSurfaceVariant,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        // 继续按钮
-                        FilledButton(
-                          onPressed: widget.onConfirm,
-                          style: FilledButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 8,
-                            ),
-                            minimumSize: Size.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(20),
+                              ],
                             ),
                           ),
-                          child: Text(context.l10n.common_continue),
-                        ),
-                      ],
+                          const SizedBox(width: 8),
+                          // 继续按钮
+                          FilledButton(
+                            onPressed: widget.onConfirm,
+                            style: FilledButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 8,
+                              ),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              shape: RoundedSuperellipseBorder(
+                                borderRadius: context.shapes.borderRadius(20),
+                              ),
+                            ),
+                            child: Text(context.l10n.common_continue),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -339,8 +370,8 @@ class _AppLinkBannerState extends State<_AppLinkBanner>
 
   Widget _buildIcon(ColorScheme colorScheme) {
     if (widget.appIcon != null && widget.appIcon!.isNotEmpty) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(10),
+      return ClipRSuperellipse(
+        borderRadius: context.shapes.borderRadius(10),
         child: Image.memory(
           widget.appIcon!,
           width: 40,
@@ -353,9 +384,11 @@ class _AppLinkBannerState extends State<_AppLinkBanner>
     return Container(
       width: 40,
       height: 40,
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: colorScheme.primaryContainer,
-        borderRadius: BorderRadius.circular(10),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(10),
+        ),
       ),
       child: Icon(
         Symbols.open_in_new_rounded,

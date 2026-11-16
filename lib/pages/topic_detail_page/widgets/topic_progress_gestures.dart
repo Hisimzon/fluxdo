@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -269,9 +270,7 @@ class _TopicProgressGesturesState extends ConsumerState<TopicProgressGestures>
       direction: _swipeDirection,
       action: _swipeAction,
       triggerable: _swipeTriggerable,
-      delta: (_swipeStart == null)
-          ? Offset.zero
-          : _swipeCurrent - _swipeStart!,
+      delta: (_swipeStart == null) ? Offset.zero : _swipeCurrent - _swipeStart!,
       triggerDistance: _kSwipeTriggerDistance,
     );
   }
@@ -297,8 +296,8 @@ class _TopicProgressGesturesState extends ConsumerState<TopicProgressGestures>
               GestureRecognizerFactoryWithHandlers<LongPressGestureRecognizer>(
                 () => LongPressGestureRecognizer(duration: _longPressTimeout),
                 (instance) {
-                  instance.onLongPressStart =
-                      (d) => _handleLongPressStart(d, prefs);
+                  instance.onLongPressStart = (d) =>
+                      _handleLongPressStart(d, prefs);
                   instance.onLongPressMoveUpdate = _handleLongPressMoveUpdate;
                   instance.onLongPressEnd = _handleLongPressEnd;
                   instance.onLongPressCancel = _handleLongPressCancel;
@@ -331,6 +330,7 @@ class _TopicProgressGesturesState extends ConsumerState<TopicProgressGestures>
                           progress: _pressController.value,
                           color: ringColor,
                           strokeWidth: 2.5,
+                          outerRadius: context.shapes.resolve(9999),
                         ),
                       );
                     },
@@ -347,18 +347,20 @@ class _TopicProgressGesturesState extends ConsumerState<TopicProgressGestures>
 
 // ============================== 进度环 painter ==============================
 
-/// 在 stadium 形状（圆角胶囊）边缘画一圈描边，从顶部中点向左右两侧对称扩散。
+/// 沿跟随主题的进度条轮廓描边，从顶部中点向左右两侧对称扩散。
 /// progress = 0 时不画任何东西；progress = 1 时画完整一圈。
 class _StadiumProgressPainter extends CustomPainter {
   const _StadiumProgressPainter({
     required this.progress,
     required this.color,
     required this.strokeWidth,
+    required this.outerRadius,
   });
 
   final double progress;
   final Color color;
   final double strokeWidth;
+  final double outerRadius;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -370,13 +372,19 @@ class _StadiumProgressPainter extends CustomPainter {
       size.width - inset * 2,
       size.height - inset * 2,
     );
-    final radius = rect.height / 2;
+    final radius = (outerRadius - inset).clamp(0.0, rect.shortestSide / 2);
     final cx = rect.center.dx;
 
     // 右半路径：顶部中点 → 右上 → 右弧 → 右下 → 底部中点
     final rightPath = Path()
       ..moveTo(cx, rect.top)
       ..lineTo(rect.right - radius, rect.top)
+      ..arcToPoint(
+        Offset(rect.right, rect.top + radius),
+        radius: Radius.circular(radius),
+        clockwise: true,
+      )
+      ..lineTo(rect.right, rect.bottom - radius)
       ..arcToPoint(
         Offset(rect.right - radius, rect.bottom),
         radius: Radius.circular(radius),
@@ -388,6 +396,12 @@ class _StadiumProgressPainter extends CustomPainter {
     final leftPath = Path()
       ..moveTo(cx, rect.top)
       ..lineTo(rect.left + radius, rect.top)
+      ..arcToPoint(
+        Offset(rect.left, rect.top + radius),
+        radius: Radius.circular(radius),
+        clockwise: false,
+      )
+      ..lineTo(rect.left, rect.bottom - radius)
       ..arcToPoint(
         Offset(rect.left + radius, rect.bottom),
         radius: Radius.circular(radius),
@@ -414,7 +428,8 @@ class _StadiumProgressPainter extends CustomPainter {
   bool shouldRepaint(_StadiumProgressPainter old) =>
       old.progress != progress ||
       old.color != color ||
-      old.strokeWidth != strokeWidth;
+      old.strokeWidth != strokeWidth ||
+      old.outerRadius != outerRadius;
 }
 
 // ============================== 滑动预览 Overlay ==============================
@@ -448,8 +463,11 @@ class _SwipePreviewOverlay extends StatelessWidget {
       return const IgnorePointer(child: SizedBox.shrink());
     }
     final meta = progressGestureActionMeta(context, action!);
-    final progress = (math.max(delta.dx.abs(), delta.dy.abs()) / triggerDistance)
-        .clamp(0.0, 1.0);
+    final progress =
+        (math.max(delta.dx.abs(), delta.dy.abs()) / triggerDistance).clamp(
+          0.0,
+          1.0,
+        );
 
     Offset pillOffset;
     switch (direction!) {
@@ -462,7 +480,7 @@ class _SwipePreviewOverlay extends StatelessWidget {
       case _SwipeDirection.up:
         final dy =
             (delta.dy * _pillFollowFactor).clamp(-_pillFollowMax, 0.0) -
-                _pillBaseOffset;
+            _pillBaseOffset;
         pillOffset = Offset(0, dy);
     }
 
@@ -499,7 +517,9 @@ class _SwipePreviewOverlay extends StatelessWidget {
                 scale: triggerable ? 1.04 : 1.0,
                 child: Material(
                   color: bgColor,
-                  borderRadius: BorderRadius.circular(20),
+                  shape: RoundedSuperellipseBorder(
+                    borderRadius: context.shapes.borderRadius(20),
+                  ),
                   elevation: triggerable ? 6 : 3,
                   shadowColor: shadow,
                   child: Padding(

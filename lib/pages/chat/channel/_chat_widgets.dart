@@ -19,7 +19,9 @@ class _PaginationLoading extends StatelessWidget {
             child: Material(
               color: theme.colorScheme.surfaceContainerHigh,
               elevation: 2,
-              borderRadius: BorderRadius.circular(24),
+              shape: RoundedSuperellipseBorder(
+                borderRadius: context.shapes.borderRadius(24),
+              ),
               child: Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 12,
@@ -90,9 +92,11 @@ class _SelectionToolbar extends StatelessWidget {
     final enabled = count > 0;
     return Container(
       padding: EdgeInsets.only(top: 6, bottom: 6 + bottomPadding),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerLow,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.vertical(top: context.shapes.radius(16)),
+        ),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -147,7 +151,9 @@ class _SelectionAction extends StatelessWidget {
         : theme.colorScheme.onSurfaceVariant;
     return InkWell(
       onTap: enabled ? onTap : null,
-      borderRadius: BorderRadius.circular(12),
+      customBorder: RoundedSuperellipseBorder(
+        borderRadius: context.shapes.borderRadius(12),
+      ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
         child: Column(
@@ -257,11 +263,13 @@ class _PinnedBanner extends StatelessWidget {
                       width: 2.5,
                       height: pins.length > 1 ? 10.0 : 26.0,
                       margin: EdgeInsets.only(top: i == 0 ? 0 : 2),
-                      decoration: BoxDecoration(
+                      decoration: ShapeDecoration(
                         color: i == cursor
                             ? theme.colorScheme.primary
                             : theme.colorScheme.primary.withValues(alpha: 0.35),
-                        borderRadius: BorderRadius.circular(2),
+                        shape: RoundedSuperellipseBorder(
+                          borderRadius: context.shapes.borderRadius(2),
+                        ),
                       ),
                     ),
                 ],
@@ -327,7 +335,7 @@ class _MentionCandidateBar extends StatelessWidget {
       color: theme.colorScheme.surfaceContainerLow,
       elevation: 4,
       shadowColor: Colors.black.withValues(alpha: 0.25),
-      borderRadius: BorderRadius.circular(14),
+      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(14)),
       clipBehavior: Clip.antiAlias,
       child: ConstrainedBox(
         constraints: BoxConstraints(
@@ -344,7 +352,9 @@ class _MentionCandidateBar extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(horizontal: 2),
                   child: InkWell(
                     onTap: () => onSelect(user),
-                    borderRadius: BorderRadius.circular(10),
+                    customBorder: RoundedSuperellipseBorder(
+                      borderRadius: context.shapes.borderRadius(10),
+                    ),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 8,
@@ -418,30 +428,41 @@ class _MessageUploads extends StatelessWidget {
         for (final file in files)
           Padding(
             padding: const EdgeInsets.only(top: 6),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surface.withValues(alpha: 0.55),
-                borderRadius: BorderRadius.circular(10),
+            child: Material(
+              color: theme.colorScheme.surface.withValues(alpha: 0.55),
+              shape: RoundedSuperellipseBorder(
+                borderRadius: context.shapes.borderRadius(10),
               ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Symbols.description_rounded,
-                    size: 20,
-                    color: theme.colorScheme.onSurfaceVariant,
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                onTap: interactive && file.url != null
+                    ? () => _downloadFile(context, file)
+                    : null,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 8,
                   ),
-                  const SizedBox(width: 8),
-                  Flexible(
-                    child: Text(
-                      file.originalFilename ?? '',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodySmall,
-                    ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Symbols.description_rounded,
+                        size: 20,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          file.originalFilename ?? '',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall,
+                        ),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
           ),
@@ -449,7 +470,19 @@ class _MessageUploads extends StatelessWidget {
     );
   }
 
-  /// 气泡缩略图的展示方式:cover 裁切 + 圆角 10(与下方 ClipRRect 同值)。
+  /// 非图片附件:复用帖子附件同一条内置下载链路(downloadProvider),
+  /// 文件名取服务端 original_filename(URL 里是 sha1 名)
+  void _downloadFile(BuildContext context, ChatUpload file) {
+    final name = file.originalFilename;
+    ProviderScope.containerOf(context, listen: false)
+        .read(downloadProvider.notifier)
+        .startDownload(
+          url: UrlHelper.resolveUrl(file.url!),
+          suggestedFilename: (name == null || name.isEmpty) ? null : name,
+        );
+  }
+
+  /// 气泡缩略图的展示方式:cover 裁切 + 圆角 10(与下方 ClipRSuperellipse 同值)。
   /// 一处给出,同时约束源端与 openViewer 两侧参数(见 ViewerSourceStyle)。
   static const _bubbleStyle = ViewerSourceStyle.cover(radius: 10);
 
@@ -467,8 +500,8 @@ class _MessageUploads extends StatelessWidget {
     final h = (w / ratio).clamp(72.0, 320.0);
     final heroTag = '${heroNamespace}_$i';
 
-    final image = ClipRRect(
-      borderRadius: BorderRadius.circular(10),
+    final image = ClipRSuperellipse(
+      borderRadius: context.shapes.borderRadius(10),
       child: Image(
         image: discourseImageProvider(url),
         width: w,

@@ -13,12 +13,14 @@ library;
 
 import 'dart:async';
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:app_icons/app_icons.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
 import '../../l10n/s.dart';
 import 'composer_action_menu.dart';
 
@@ -125,7 +127,9 @@ class _CursorSwipeControlState extends State<CursorSwipeControl> {
           child: IgnorePointer(
             child: Material(
               color: scheme.inverseSurface,
-              borderRadius: BorderRadius.circular(8),
+              shape: RoundedSuperellipseBorder(
+                borderRadius: context.shapes.borderRadius(8),
+              ),
               elevation: 2,
               child: Padding(
                 padding: const EdgeInsets.symmetric(
@@ -301,22 +305,24 @@ class _CursorSwipeControlState extends State<CursorSwipeControl> {
           width: 48,
           height: 48,
           alignment: Alignment.center,
-          decoration: BoxDecoration(
+          decoration: ShapeDecoration(
             color: active
-                ? scheme.primary.withValues(alpha: _dragging ? 0.18 : 0.12)
+                ? context.emphasis.accent.withValues(alpha: _dragging ? 0.18 : 0.12)
                 : Colors.transparent,
-            borderRadius: BorderRadius.circular(18),
+            shape: RoundedSuperellipseBorder(
+              borderRadius: context.shapes.borderRadius(18),
+            ),
           ),
           child: _selecting
               ? Icon(
                   Symbols.text_select_start_rounded,
                   size: 20,
-                  color: scheme.primary,
+                  color: context.emphasis.accent,
                 )
               : FaIcon(
                   FontAwesomeIcons.iCursor,
                   size: 19,
-                  color: active ? scheme.primary : scheme.onSurfaceVariant,
+                  color: active ? context.emphasis.selected : scheme.onSurfaceVariant,
                 ),
         ),
       ),

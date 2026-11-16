@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -6,7 +7,9 @@ import 'package:fluxdo/models/category.dart';
 import 'package:fluxdo/utils/font_awesome_helper.dart';
 import 'package:fluxdo/services/discourse_cache_manager.dart';
 import 'package:fluxdo/utils/url_helper.dart';
-import 'package:fluxdo/widgets/common/app_bottom_sheet.dart';
+
+import '../../theme/app_colors.dart';
+import '../../utils/color_utils.dart';
 
 class CategorySelectionSheet extends StatefulWidget {
   final List<Category> categories;
@@ -16,7 +19,18 @@ class CategorySelectionSheet extends StatefulWidget {
     super.key,
     required this.categories,
     this.selectedCategory,
-  });
+  }) : onFilterSelected = null;
+
+  /// 浏览筛选可选择所有传入分类，回调 null 表示选择全部分类。
+  /// 回调由调用方处理弹层返回值，以区分清除筛选与取消。
+  const CategorySelectionSheet.filter({
+    super.key,
+    required this.categories,
+    this.selectedCategory,
+    required ValueChanged<Category?> onSelected,
+  }) : onFilterSelected = onSelected;
+
+  final ValueChanged<Category?>? onFilterSelected;
 
   @override
   State<CategorySelectionSheet> createState() => _CategorySelectionSheetState();
@@ -26,15 +40,9 @@ class _CategorySelectionSheetState extends State<CategorySelectionSheet> {
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
   String _searchQuery = '';
-  late List<Category> _availableCategories;
-
-  @override
-  void initState() {
-    super.initState();
-    _availableCategories = widget.categories
-        .where((c) => c.canCreateTopic)
-        .toList();
-  }
+  List<Category> get _availableCategories => widget.onFilterSelected == null
+      ? widget.categories.where((c) => c.canCreateTopic).toList()
+      : widget.categories;
 
   @override
   void dispose() {
@@ -43,19 +51,12 @@ class _CategorySelectionSheetState extends State<CategorySelectionSheet> {
     super.dispose();
   }
 
-  Color _parseColor(String hex) {
-    hex = hex.replaceAll('#', '');
-    if (hex.length == 6) {
-      return Color(int.parse('0xFF$hex'));
-    }
-    return Colors.grey;
-  }
-
   List<_CategoryItem> _buildList() {
-    final query = _searchQuery.toLowerCase();
+    final query = _searchQuery.trim().toLowerCase();
+    final categories = _availableCategories;
 
     if (query.isNotEmpty) {
-      final matches = _availableCategories.where((c) {
+      final matches = categories.where((c) {
         return c.name.toLowerCase().contains(query) ||
             (c.description != null &&
                 c.description!.toLowerCase().contains(query));
@@ -65,8 +66,12 @@ class _CategorySelectionSheetState extends State<CategorySelectionSheet> {
     }
 
     final Map<int?, List<Category>> childrenMap = {};
-    for (final cat in _availableCategories) {
-      childrenMap.putIfAbsent(cat.parentCategoryId, () => []).add(cat);
+    final categoryIds = categories.map((category) => category.id).toSet();
+    for (final cat in categories) {
+      final parentId = categoryIds.contains(cat.parentCategoryId)
+          ? cat.parentCategoryId
+          : null;
+      childrenMap.putIfAbsent(parentId, () => []).add(cat);
     }
 
     List<_CategoryItem> buildItems(int? parentId, int depth) {
@@ -118,24 +123,22 @@ class _CategorySelectionSheetState extends State<CategorySelectionSheet> {
                     Row(
                       children: [
                         Expanded(
-                          child: Container(
+                          child: InputFieldShell(
                             height: 44,
-                            decoration: BoxDecoration(
-                              color: theme.colorScheme.surfaceContainerHighest
-                                  .withValues(alpha: 0.5),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
+                            color: theme.colorScheme.surfaceContainerHighest
+                                .withValues(alpha: 0.5),
+                            radius: 12,
                             child: TextField(
                               controller: _searchController,
                               focusNode: _searchFocusNode,
                               textAlignVertical: TextAlignVertical.center,
                               style: const TextStyle(fontSize: 16),
                               decoration: InputDecoration(
+                                visualDensity: VisualDensity.standard,
                                 hintText: context.l10n.category_searchHint,
                                 hintStyle: TextStyle(
                                   color: theme.colorScheme.onSurfaceVariant,
                                 ),
-                                border: InputBorder.none,
                                 isDense: true,
                                 contentPadding: const EdgeInsets.only(
                                   left: 0,
@@ -160,7 +163,7 @@ class _CategorySelectionSheetState extends State<CategorySelectionSheet> {
                                         },
                                       )
                                     : null,
-                              ),
+                              ).withoutBorder(),
                               onChanged: (value) =>
                                   setState(() => _searchQuery = value),
                             ),
@@ -180,6 +183,43 @@ class _CategorySelectionSheetState extends State<CategorySelectionSheet> {
                   ],
                 ),
               ),
+
+              if (widget.onFilterSelected != null)
+                InkWell(
+                  onTap: () => widget.onFilterSelected!(null),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                    color: widget.selectedCategory == null
+                        ? theme.colorScheme.primaryContainer.withValues(
+                            alpha: 0.2,
+                          )
+                        : null,
+                    child: Row(
+                      children: [
+                        Icon(
+                          Symbols.category_rounded,
+                          size: 14,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            context.l10n.category_allCategories,
+                            style: theme.textTheme.titleSmall,
+                          ),
+                        ),
+                        if (widget.selectedCategory == null)
+                          Icon(
+                            Symbols.check_rounded,
+                            color: context.emphasis.selected,
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
 
               // List
               Expanded(
@@ -215,7 +255,14 @@ class _CategorySelectionSheetState extends State<CategorySelectionSheet> {
                               : null;
 
                           return InkWell(
-                            onTap: () => Navigator.pop(context, cat),
+                            onTap: () {
+                              final onSelected = widget.onFilterSelected;
+                              if (onSelected != null) {
+                                onSelected(cat);
+                              } else {
+                                Navigator.pop(context, cat);
+                              }
+                            },
                             child: Container(
                               padding: EdgeInsets.only(
                                 left: 16 + item.depth * 24.0,
@@ -256,8 +303,12 @@ class _CategorySelectionSheetState extends State<CategorySelectionSheet> {
                                               style: theme.textTheme.titleSmall
                                                   ?.copyWith(
                                                     fontWeight: FontWeight.w600,
-                                                    color: _parseColor(
+                                                    color: ColorUtils.category(
                                                       cat.color,
+                                                      theme,
+                                                      fallback: context
+                                                          .appColors
+                                                          .grey,
                                                     ),
                                                   ),
                                             ),
@@ -287,7 +338,7 @@ class _CategorySelectionSheetState extends State<CategorySelectionSheet> {
                                   if (isSelected)
                                     Icon(
                                       Symbols.check_rounded,
-                                      color: theme.colorScheme.primary,
+                                      color: context.emphasis.selected,
                                     ),
                                 ],
                               ),
@@ -315,7 +366,15 @@ class _CategorySelectionSheetState extends State<CategorySelectionSheet> {
     }
 
     if (faIcon != null) {
-      return FaIcon(faIcon, size: 20, color: _parseColor(category.color));
+      return FaIcon(
+        faIcon,
+        size: 20,
+        color: ColorUtils.category(
+          category.color,
+          Theme.of(context),
+          fallback: context.appColors.grey,
+        ),
+      );
     }
 
     if (logoUrl != null && logoUrl.isNotEmpty) {
@@ -340,7 +399,11 @@ class _CategorySelectionSheetState extends State<CategorySelectionSheet> {
       width: 14,
       height: 14,
       decoration: BoxDecoration(
-        color: _parseColor(colorHex),
+        color: ColorUtils.category(
+          colorHex,
+          Theme.of(context),
+          fallback: context.appColors.grey,
+        ),
         shape: BoxShape.circle,
       ),
     );

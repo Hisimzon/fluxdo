@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 
@@ -299,7 +300,9 @@ class _ComposerToolsHandleState extends State<ComposerToolsHandle> {
       },
       child: InkWell(
         onTap: widget.onActivate,
-        borderRadius: BorderRadius.circular(12),
+        customBorder: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(12),
+        ),
         child: SizedBox(
           height: ComposerToolsHandle.height,
           width: double.infinity,
@@ -307,10 +310,12 @@ class _ComposerToolsHandleState extends State<ComposerToolsHandle> {
             child: Container(
               width: 28,
               height: 3,
-              decoration: BoxDecoration(
+              decoration: ShapeDecoration(
                 color: Theme.of(context).colorScheme.onSurfaceVariant
                     .withValues(alpha: .35),
-                borderRadius: BorderRadius.circular(2),
+                shape: RoundedSuperellipseBorder(
+                  borderRadius: context.shapes.borderRadius(2),
+                ),
               ),
             ),
           ),

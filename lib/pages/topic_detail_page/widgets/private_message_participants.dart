@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 
 import '../../../l10n/s.dart';
@@ -116,10 +117,12 @@ class PrivateMessageParticipants extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 8, 12, 8),
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: theme.colorScheme.outlineVariant),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(14),
+          side: BorderSide(color: theme.colorScheme.outlineVariant),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -129,7 +132,7 @@ class PrivateMessageParticipants extends StatelessWidget {
               Icon(
                 Icons.lock_outline_rounded,
                 size: 18,
-                color: theme.colorScheme.primary,
+                color: context.emphasis.accent,
               ),
               const SizedBox(width: 8),
               Text(
@@ -141,9 +144,11 @@ class PrivateMessageParticipants extends StatelessWidget {
               const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                decoration: BoxDecoration(
+                decoration: ShapeDecoration(
                   color: theme.colorScheme.secondaryContainer,
-                  borderRadius: BorderRadius.circular(999),
+                  shape: RoundedSuperellipseBorder(
+                    borderRadius: context.shapes.borderRadius(999),
+                  ),
                 ),
                 child: Text(
                   '$_entryCount',
@@ -358,7 +363,9 @@ class _PmEntryChipState extends State<_PmEntryChip> {
           // 圆角裁切,直接给 Container 加 decoration 的话涟漪会溢出圆角。
           child: Material(
             color: theme.colorScheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(12),
+            shape: RoundedSuperellipseBorder(
+              borderRadius: context.shapes.borderRadius(12),
+            ),
             clipBehavior: Clip.antiAlias,
             child: InkWell(
               onTap: onTap == null ? null : () => onTap(context, _link),

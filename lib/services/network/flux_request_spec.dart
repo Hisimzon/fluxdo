@@ -43,6 +43,10 @@ class FluxRequestKeys {
   /// 诊断链路标签,进网络日志与 CF 检测日志,便于按链路而非 URL 归因。
   static const String requestTag = 'requestTag';
 
+  /// 整次调用的时限（毫秒），含重定向、重试及响应体；0 显式关闭。
+  /// 流式下载、上传和长轮询由调用方指定，不套普通接口的默认预算。
+  static const String callTimeoutMillis = 'callTimeoutMillis';
+
   // --- 逐环节豁免 ---
 
   /// 跳过 CSRF 注入与"POST 前自动刷新 CSRF"。
@@ -64,9 +68,6 @@ class FluxRequestKeys {
 
   /// 不允许被 WebView 适配器接管(带手工 Cookie 头的请求会被 WebView 覆写)。
   static const String skipWebViewAdapter = 'skipWebViewAdapter';
-
-  /// 不走 rhttp 适配器(长轮询需要系统级省电的稳定连接)。
-  static const String skipRhttpAdapter = 'skipRhttpAdapter';
 
   /// 绕过并发/速率调度器(框架内部请求,避免与调用方争抢槽位造成死锁)。
   static const String skipScheduler = 'skipScheduler';
@@ -123,6 +124,11 @@ extension type const FluxRequestSpec(Map<String, dynamic> _extra) {
     return (value == null || value.isEmpty) ? null : value;
   }
 
+  Duration? get callTimeout {
+    final value = _extra[FluxRequestKeys.callTimeoutMillis];
+    return value is int ? Duration(milliseconds: value) : null;
+  }
+
   bool get skipCsrf => _extra[FluxRequestKeys.skipCsrf] == true;
 
   bool get skipAuthCheck => _extra[FluxRequestKeys.skipAuthCheck] == true;
@@ -136,9 +142,6 @@ extension type const FluxRequestSpec(Map<String, dynamic> _extra) {
 
   bool get skipWebViewAdapter =>
       _extra[FluxRequestKeys.skipWebViewAdapter] == true;
-
-  bool get skipRhttpAdapter =>
-      _extra[FluxRequestKeys.skipRhttpAdapter] == true;
 
   bool get skipScheduler => _extra[FluxRequestKeys.skipScheduler] == true;
 

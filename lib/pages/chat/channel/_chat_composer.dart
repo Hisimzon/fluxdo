@@ -537,9 +537,11 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
                         horizontal: 10,
                         vertical: 6,
                       ),
-                      decoration: BoxDecoration(
+                      decoration: ShapeDecoration(
                         color: theme.colorScheme.surface,
-                        borderRadius: BorderRadius.circular(12),
+                        shape: RoundedSuperellipseBorder(
+                          borderRadius: context.shapes.borderRadius(12),
+                        ),
                       ),
                       child: Row(
                         children: [
@@ -548,7 +550,7 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
                                 ? Symbols.edit_rounded
                                 : Symbols.reply_rounded,
                             size: 18,
-                            color: theme.colorScheme.primary,
+                            color: context.emphasis.accent,
                           ),
                           const SizedBox(width: 10),
                           Expanded(
@@ -562,7 +564,7 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
                                           replyingTo!.user?.username ?? '',
                                         ),
                                   style: theme.textTheme.labelSmall?.copyWith(
-                                    color: theme.colorScheme.primary,
+                                    color: context.emphasis.accent,
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),
@@ -928,7 +930,7 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
   static String? _mentionAvatarUrl(MentionUser user) {
     final template = user.avatarTemplate;
     if (template == null || template.isEmpty) return null;
-    return UrlHelper.resolveUrlWithCdn(template.replaceAll('{size}', '96'));
+    return UrlHelper.resolveUrlWithCdn(AvatarUrl.resolve(template, size: 96));
   }
 
   InputDecoration _fieldDecoration(
@@ -943,15 +945,15 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
         color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
       ),
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: context.shapes.borderRadius(20),
         borderSide: BorderSide.none,
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: context.shapes.borderRadius(20),
         borderSide: BorderSide.none,
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: context.shapes.borderRadius(20),
         borderSide: BorderSide.none,
       ),
       contentPadding: _fieldPadding,

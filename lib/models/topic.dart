@@ -1,4 +1,5 @@
 // 帖子数据模型
+import 'package:fluxdo/utils/avatar_url.dart';
 import 'package:flutter/foundation.dart' show listEquals;
 import '../l10n/s.dart';
 import '../utils/time_utils.dart';
@@ -211,6 +212,7 @@ class TopicUser {
   final String? name;
   final String avatarTemplate;
   final String? animatedAvatar;
+  final int postCount;
 
   TopicUser({
     required this.id,
@@ -218,6 +220,7 @@ class TopicUser {
     this.name,
     required this.avatarTemplate,
     this.animatedAvatar,
+    this.postCount = 0,
   });
 
   /// 显示名:优先昵称,空则回退 username
@@ -233,12 +236,13 @@ class TopicUser {
       name: json['name'] as String?,
       avatarTemplate: json['avatar_template'] as String? ?? '',
       animatedAvatar: json['animated_avatar'] as String?,
+      postCount: json['post_count'] as int? ?? 0,
     );
   }
 
   /// 静态模板端点 URL(恒为尺寸化静态小图);动图原件见 [animatedAvatarUrl]
   String getAvatarUrl({int size = 40}) {
-    final template = avatarTemplate.replaceAll('{size}', '$size');
+    final template = AvatarUrl.resolve(avatarTemplate, size: size);
     return UrlHelper.resolveUrlWithCdn(template);
   }
 
@@ -361,6 +365,11 @@ class Topic {
   final int newPosts; // 新帖子数
   final int? lastReadPostNumber; // 最后阅读的帖子编号
   final int highestPostNumber; // 最高帖子编号
+  final int? notificationLevel; // 话题通知级别（无用户数据时为 null）
+
+  /// 话题本身尚未读过或忽略；未读回复不影响此状态。
+  /// 已有阅读位置时，服务端暂未清除的 unseen 也不能让话题重新变为未读。
+  bool get isUnseenTopic => unseen && (lastReadPostNumber ?? 0) == 0;
 
   // 书签相关（从书签列表 API 获取）
   final int? bookmarkedPostNumber; // 帖子书签对应的帖子编号（bookmarkable_type 为 Post 时有值）
@@ -407,6 +416,7 @@ class Topic {
     this.newPosts = 0,
     this.lastReadPostNumber,
     this.highestPostNumber = 0,
+    this.notificationLevel,
     this.bookmarkedPostNumber,
     this.bookmarkId,
     this.bookmarkName,
@@ -453,6 +463,7 @@ class Topic {
           ? null
           : (lastReadPostNumber ?? this.lastReadPostNumber),
       highestPostNumber: highestPostNumber ?? this.highestPostNumber,
+      notificationLevel: notificationLevel,
       bookmarkedPostNumber: bookmarkedPostNumber,
       bookmarkId: bookmarkId,
       bookmarkName: bookmarkName,
@@ -483,7 +494,9 @@ class Topic {
       lastPostedAt: TimeUtils.parseUtcTime(json['last_posted_at'] as String?),
       lastPosterUsername: json['last_poster_username'] as String?,
       categoryId: (json['category_id'] ?? 0).toString(),
-      pinned: json['pinned'] as bool? ?? false,
+      // unpinned 表示用户读过后取消了个人置顶，站点本身仍置顶。
+      // 首页通过折叠收纳已读置顶，避免读完后掉进普通话题流。
+      pinned: json['pinned'] == true || json['unpinned'] == true,
       visible: json['visible'] as bool? ?? true,
       closed: json['closed'] as bool? ?? false,
       archived: json['archived'] as bool? ?? false,
@@ -507,6 +520,7 @@ class Topic {
       newPosts: json['new_posts'] as int? ?? 0,
       lastReadPostNumber: json['last_read_post_number'] as int?,
       highestPostNumber: json['highest_post_number'] as int? ?? 0,
+      notificationLevel: json['notification_level'] as int?,
       bookmarkedPostNumber: json['_bookmarked_post_number'] as int?,
       bookmarkId: json['_bookmark_id'] as int?,
       bookmarkName: normalizeBookmarkName(json['_bookmark_name'] as String?),
@@ -709,7 +723,7 @@ class ReactionUser {
   }
 
   String getAvatarUrl({int size = 96}) {
-    final template = avatarTemplate.replaceAll('{size}', '$size');
+    final template = AvatarUrl.resolve(avatarTemplate, size: size);
     return UrlHelper.resolveUrlWithCdn(template);
   }
 }
@@ -1146,7 +1160,7 @@ class Post {
     if (animatedAvatar != null && animatedAvatar!.isNotEmpty) {
       return UrlHelper.resolveUrlWithCdn(animatedAvatar!);
     }
-    final template = avatarTemplate.replaceAll('{size}', '$size');
+    final template = AvatarUrl.resolve(avatarTemplate, size: size);
     return UrlHelper.resolveUrlWithCdn(template);
   }
 
@@ -1473,7 +1487,7 @@ class PolicyUser {
   }
 
   String getAvatarUrl({int size = 40}) {
-    final template = avatarTemplate.replaceAll('{size}', '$size');
+    final template = AvatarUrl.resolve(avatarTemplate, size: size);
     return UrlHelper.resolveUrlWithCdn(template);
   }
 
@@ -1572,7 +1586,7 @@ class BoostUser {
 
   /// 获取头像 URL
   String getAvatarUrl({int size = 48}) {
-    final template = avatarTemplate.replaceAll('{size}', '$size');
+    final template = AvatarUrl.resolve(avatarTemplate, size: size);
     return UrlHelper.resolveUrlWithCdn(template);
   }
 }
@@ -1820,6 +1834,46 @@ class AcceptedAnswer {
   }
 }
 
+/// 话题定时任务，时长单位与 Discourse 的 duration_minutes 保持一致。
+class TopicTimer {
+  final String statusType;
+  final num durationMinutes;
+  final DateTime? executeAt;
+  final bool basedOnLastPost;
+  final int? categoryId;
+
+  const TopicTimer({
+    required this.statusType,
+    this.durationMinutes = 0,
+    this.executeAt,
+    this.basedOnLastPost = false,
+    this.categoryId,
+  });
+
+  factory TopicTimer.fromJson(Map<String, dynamic> json) => TopicTimer(
+    statusType: json['status_type'] as String? ?? '',
+    durationMinutes: json['duration_minutes'] as num? ?? 0,
+    executeAt: TimeUtils.parseUtcTime(json['execute_at'] as String?),
+    basedOnLastPost: json['based_on_last_post'] == true,
+    categoryId: json['category_id'] as int?,
+  );
+}
+
+/// 话题详情统计区中的链接及点击量。
+class TopicLink {
+  final String url;
+  final String title;
+  final int clicks;
+
+  const TopicLink({required this.url, this.title = '', this.clicks = 0});
+
+  factory TopicLink.fromJson(Map<String, dynamic> json) => TopicLink(
+    url: json['url'] as String? ?? '',
+    title: json['title'] as String? ?? '',
+    clicks: json['clicks'] as int? ?? 0,
+  );
+}
+
 /// 话题详情模型
 class TopicDetail {
   final int id;
@@ -1837,6 +1891,15 @@ class TopicDetail {
   final bool visible;
   final int? lastReadPostNumber; // 最后阅读的帖子编号（从 API 获取）
   final int highestPostNumber; // 最高帖子编号（含小动作楼层，标记未读回退用）
+  final int slowModeSeconds;
+  final TopicTimer? topicTimer;
+  final int visibilityReasonId;
+  final bool isWarning;
+  final int queuedPostsCount;
+  final int wordCount;
+  final int participantCount;
+  final List<TopicUser> participants;
+  final List<TopicLink> links;
 
   // 投票相关字段
   final bool canVote; // 是否可以投票
@@ -1955,6 +2018,15 @@ class TopicDetail {
     this.visible = true,
     this.lastReadPostNumber,
     this.highestPostNumber = 0,
+    this.slowModeSeconds = 0,
+    this.topicTimer,
+    this.visibilityReasonId = 99,
+    this.isWarning = false,
+    this.queuedPostsCount = 0,
+    this.wordCount = 0,
+    this.participantCount = 0,
+    this.participants = const [],
+    this.links = const [],
     this.canVote = false,
     this.voteCount = 0,
     this.userVoted = false,
@@ -2153,6 +2225,24 @@ class TopicDetail {
       visible: json['visible'] as bool? ?? true,
       lastReadPostNumber: json['last_read_post_number'] as int?,
       highestPostNumber: json['highest_post_number'] as int? ?? 0,
+      slowModeSeconds: json['slow_mode_seconds'] as int? ?? 0,
+      visibilityReasonId: json['visibility_reason_id'] as int? ?? 99,
+      isWarning: json['is_warning'] == true,
+      queuedPostsCount: json['queued_posts_count'] as int? ?? 0,
+      wordCount: json['word_count'] as int? ?? 0,
+      participantCount: json['participant_count'] as int? ?? 0,
+      participants: (details['participants'] as List<dynamic>? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(TopicUser.fromJson)
+          .toList(growable: false),
+      links: (details['links'] as List<dynamic>? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(TopicLink.fromJson)
+          .where((link) => link.url.isNotEmpty)
+          .toList(growable: false),
+      topicTimer: json['topic_timer'] is Map<String, dynamic>
+          ? TopicTimer.fromJson(json['topic_timer'] as Map<String, dynamic>)
+          : null,
       canVote: json['can_vote'] as bool? ?? false,
       voteCount: json['vote_count'] as int? ?? 0,
       userVoted: json['user_voted'] as bool? ?? false,
@@ -2287,6 +2377,16 @@ class TopicDetail {
     bool? visible,
     int? lastReadPostNumber,
     int? highestPostNumber,
+    int? slowModeSeconds,
+    TopicTimer? topicTimer,
+    bool clearTopicTimer = false,
+    int? visibilityReasonId,
+    bool? isWarning,
+    int? queuedPostsCount,
+    int? wordCount,
+    int? participantCount,
+    List<TopicUser>? participants,
+    List<TopicLink>? links,
     bool? canVote,
     int? voteCount,
     bool? userVoted,
@@ -2338,6 +2438,15 @@ class TopicDetail {
       visible: visible ?? this.visible,
       lastReadPostNumber: lastReadPostNumber ?? this.lastReadPostNumber,
       highestPostNumber: highestPostNumber ?? this.highestPostNumber,
+      slowModeSeconds: slowModeSeconds ?? this.slowModeSeconds,
+      topicTimer: clearTopicTimer ? null : (topicTimer ?? this.topicTimer),
+      visibilityReasonId: visibilityReasonId ?? this.visibilityReasonId,
+      isWarning: isWarning ?? this.isWarning,
+      queuedPostsCount: queuedPostsCount ?? this.queuedPostsCount,
+      wordCount: wordCount ?? this.wordCount,
+      participantCount: participantCount ?? this.participantCount,
+      participants: participants ?? this.participants,
+      links: links ?? this.links,
       canVote: canVote ?? this.canVote,
       voteCount: voteCount ?? this.voteCount,
       userVoted: userVoted ?? this.userVoted,

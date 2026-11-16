@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -21,6 +22,7 @@ import '../utils/dialog_utils.dart';
 import '../services/public_file_channel.dart';
 import '../utils/platform_utils.dart';
 import '../widgets/common/app_bottom_sheet.dart';
+import '../theme/app_colors.dart';
 
 /// 下载管理页面
 class DownloadListPage extends ConsumerStatefulWidget {
@@ -31,7 +33,7 @@ class DownloadListPage extends ConsumerStatefulWidget {
   /// 全局导航到下载列表页面
   static void navigateTo({String? highlightItemId}) {
     navigatorKey.currentState?.push(
-      MaterialPageRoute(
+      InteractionPageRoute(
         builder: (_) => DownloadListPage(highlightItemId: highlightItemId),
       ),
     );
@@ -71,7 +73,10 @@ class _DownloadListPageState extends ConsumerState<DownloadListPage> {
     final index = downloads.indexWhere((e) => e.id == id);
     if (index < 0) return;
     // 每项约 80px 高 + 12px 间距
-    final offset = (index * 92.0).clamp(0.0, _scrollController.position.maxScrollExtent);
+    final offset = (index * 92.0).clamp(
+      0.0,
+      _scrollController.position.maxScrollExtent,
+    );
     _scrollController.animateTo(
       offset,
       duration: const Duration(milliseconds: 300),
@@ -101,10 +106,13 @@ class _DownloadListPageState extends ConsumerState<DownloadListPage> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Symbols.download_rounded,
-                      size: 64,
-                      color: theme.colorScheme.onSurfaceVariant
-                          .withValues(alpha: 0.4)),
+                  Icon(
+                    Symbols.download_rounded,
+                    size: 64,
+                    color: theme.colorScheme.onSurfaceVariant.withValues(
+                      alpha: 0.4,
+                    ),
+                  ),
                   const SizedBox(height: 16),
                   Text(
                     context.l10n.myBrowser_downloadEmpty,
@@ -126,7 +134,8 @@ class _DownloadListPageState extends ConsumerState<DownloadListPage> {
 
                   return Padding(
                     padding: EdgeInsets.only(
-                        bottom: index < downloads.length - 1 ? 12 : 0),
+                      bottom: index < downloads.length - 1 ? 12 : 0,
+                    ),
                     child: SwipeActionCell(
                       key: ValueKey(item.id),
                       trailingActions: [
@@ -135,13 +144,13 @@ class _DownloadListPageState extends ConsumerState<DownloadListPage> {
                             ShareUtils.canShareFiles)
                           SwipeAction(
                             icon: Symbols.share_rounded,
-                            color: Colors.blue,
+                            color: context.appColors.blue,
                             label: S.current.common_share,
                             onPressed: () => _shareFile(item),
                           ),
                         SwipeAction(
                           icon: Symbols.delete_rounded,
-                          color: Colors.red,
+                          color: context.appColors.red,
                           label: S.current.myBrowser_delete,
                           onPressed: () => ref
                               .read(downloadProvider.notifier)
@@ -150,12 +159,15 @@ class _DownloadListPageState extends ConsumerState<DownloadListPage> {
                       ],
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 800),
-                        decoration: BoxDecoration(
+                        decoration: ShapeDecoration(
                           color: isHighlighted
-                              ? theme.colorScheme.primary
-                                  .withValues(alpha: 0.12)
+                              ? theme.colorScheme.primary.withValues(
+                                  alpha: 0.12,
+                                )
                               : Colors.transparent,
-                          borderRadius: BorderRadius.circular(12),
+                          shape: RoundedSuperellipseBorder(
+                            borderRadius: context.shapes.borderRadius(12),
+                          ),
                         ),
                         child: _DownloadCard(
                           item: item,
@@ -311,7 +323,8 @@ class _DownloadListPageState extends ConsumerState<DownloadListPage> {
               Navigator.pop(ctx);
             },
             style: FilledButton.styleFrom(
-                backgroundColor: Theme.of(ctx).colorScheme.error),
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+            ),
             child: Text(S.current.myBrowser_clearCompleted),
           ),
         ],
@@ -345,11 +358,13 @@ class _DownloadCard extends StatelessWidget {
           children: [
             Container(
               padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: _statusColor.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(12),
+              decoration: ShapeDecoration(
+                color: _statusColor(context).withValues(alpha: 0.1),
+                shape: RoundedSuperellipseBorder(
+                  borderRadius: context.shapes.borderRadius(12),
+                ),
               ),
-              child: Icon(_statusIcon, color: _statusColor, size: 24),
+              child: Icon(_statusIcon, color: _statusColor(context), size: 24),
             ),
             const SizedBox(width: 16),
             Expanded(
@@ -358,8 +373,9 @@ class _DownloadCard extends StatelessWidget {
                 children: [
                   Text(
                     item.fileName,
-                    style: theme.textTheme.titleSmall
-                        ?.copyWith(fontWeight: FontWeight.w500),
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w500,
+                    ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -370,21 +386,23 @@ class _DownloadCard extends StatelessWidget {
                         Text(
                           _formatSize(item.fileSize),
                           style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant),
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
                         ),
                         const SizedBox(width: 8),
                       ],
                       Text(
                         TimeUtils.formatRelativeTime(item.createdAt),
                         style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                            fontSize: 11),
+                          color: theme.colorScheme.onSurfaceVariant,
+                          fontSize: 11,
+                        ),
                       ),
                       const SizedBox(width: 8),
                       Text(
                         _statusText(context),
                         style: theme.textTheme.bodySmall?.copyWith(
-                          color: _statusColor,
+                          color: _statusColor(context),
                           fontSize: 11,
                         ),
                       ),
@@ -412,14 +430,14 @@ class _DownloadCard extends StatelessWidget {
     );
   }
 
-  Color get _statusColor {
+  Color _statusColor(BuildContext context) {
     switch (item.status) {
       case DownloadItemStatus.downloading:
-        return Colors.blue;
+        return context.appColors.blue;
       case DownloadItemStatus.completed:
-        return Colors.teal;
+        return context.appColors.teal;
       case DownloadItemStatus.failed:
-        return Colors.red;
+        return context.appColors.red;
     }
   }
 

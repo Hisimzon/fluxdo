@@ -1,3 +1,5 @@
+import 'package:common_ui/common_ui.dart';
+
 import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
@@ -62,7 +64,7 @@ class _ReadLaterOverlayState extends ConsumerState<ReadLaterOverlay> {
     // 不参与压栈收敛。
     Navigator.of(context).pop();
     navigatorKey.currentState?.push(
-      MaterialPageRoute(
+      InteractionPageRoute(
         builder: (_) => TopicDetailPage(
           topicId: item.topicId,
           initialTitle: item.title,
@@ -257,7 +259,9 @@ class _ReadLaterCard extends StatelessWidget {
 
     return Material(
       color: colorScheme.surfaceContainerHigh,
-      borderRadius: BorderRadius.circular(24),
+      shape: RoundedSuperellipseBorder(
+        borderRadius: context.shapes.borderRadius(24),
+      ),
       clipBehavior: Clip.antiAlias,
       elevation: 6,
       shadowColor: Colors.black.withValues(alpha: 0.25),
@@ -272,7 +276,7 @@ class _ReadLaterCard extends StatelessWidget {
               child: Icon(
                 Symbols.auto_stories_rounded,
                 size: 96,
-                color: colorScheme.primary.withValues(alpha: 0.05),
+                color: context.emphasis.accent.withValues(alpha: 0.05),
               ),
             ),
             Padding(
@@ -352,9 +356,9 @@ class _ReadLaterCard extends StatelessWidget {
                           child: Container(
                             width: 32,
                             height: 32,
-                            decoration: BoxDecoration(
+                            decoration: ShapeDecoration(
                               color: colorScheme.primary,
-                              shape: BoxShape.circle,
+                              shape: context.shapes.circle(),
                             ),
                             child: Icon(
                               Symbols.arrow_forward_rounded,
@@ -389,9 +393,11 @@ class _ProgressPill extends StatelessWidget {
       alignment: Alignment.centerLeft,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-        decoration: BoxDecoration(
+        decoration: ShapeDecoration(
           color: colorScheme.primaryContainer.withValues(alpha: 0.7),
-          borderRadius: BorderRadius.circular(20),
+          shape: RoundedSuperellipseBorder(
+            borderRadius: context.shapes.borderRadius(20),
+          ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,

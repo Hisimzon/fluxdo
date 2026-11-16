@@ -11,6 +11,8 @@ import '../../models/nested_topic.dart';
 import '../../models/topic_vote.dart';
 import '../../models/shared_issue.dart';
 import '../../models/user.dart';
+import '../../models/user_group.dart';
+import '../../models/forum_preferences.dart';
 import '../../models/user_action.dart';
 import '../../models/notification.dart';
 import '../../models/category.dart';
@@ -67,6 +69,8 @@ part '_login.dart';
 part '_topics.dart';
 part '_posts.dart';
 part '_users.dart';
+part '_groups.dart';
+part '_preferences.dart';
 part '_search.dart';
 part '_notifications.dart';
 part '_uploads.dart';
@@ -134,6 +138,8 @@ class DiscourseService extends _DiscourseServiceBase
         _TopicsMixin,
         _PostsMixin,
         _UsersMixin,
+        _GroupsMixin,
+        _ForumPreferencesMixin,
         _SearchMixin,
         _NotificationsMixin,
         _UploadsMixin,

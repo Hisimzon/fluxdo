@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:ffi';
 import 'dart:io';
 
 import '_workspace_cli.dart';
@@ -28,6 +29,10 @@ Future<void> main(List<String> args) async {
       return;
     case 'native:prepare':
       await _nativePrepare(args.sublist(1));
+      return;
+    case 'native:doctor':
+      final targets = _resolveAndroidTargets(_parseTargetPlatforms(args));
+      await _checkedAndroidNativeEnvironment(targets);
       return;
     case 'release:prepare':
       await _releasePrepare(args.sublist(1));
@@ -383,11 +388,7 @@ Future<void> _prepareAndroidAuto(
     return;
   }
 
-  await _runAutoPrepareStep(
-    label: 'Android 原生产物',
-    check: () => _checkAndroidAutoPrepare(mode, androidTargets),
-    action: () => _prepareAndroidNative(mode, androidTargets),
-  );
+  await _prepareAndroidNative(mode, androidTargets);
 }
 
 Future<void> _prepareIosAuto(
@@ -484,31 +485,19 @@ Future<void> _prepareWindowsNative(_BuildMode mode) async {
   final stagedOutputs = _windowsStagedOutputs;
 
   if (_nativeStageCurrent('windows', mode, stagedOutputs)) {
-    stdout.writeln('==> Windows DOH 原生产物已是最新状态');
+    stdout.writeln('==> Windows 网络核心产物已是最新状态');
     return;
   }
 
   await runOrExit(
-    title: '构建 Windows DOH 原生产物',
+    title: '构建 Windows 网络核心',
     executable: 'cargo',
-    arguments: [
-      'build',
-      if (mode == _BuildMode.release) '--release',
-      '--features',
-      'ech',
-      '--bin',
-      'doh_proxy_bin',
-      '--lib',
-    ],
-    workingDirectory: 'core/doh_proxy',
+    arguments: ['build', if (mode == _BuildMode.release) '--release', '--lib'],
+    workingDirectory: _netCoreDir,
   );
 
   final cargoDir = mode == _BuildMode.release ? 'release' : 'debug';
-  _stageFile('core/doh_proxy/target/$cargoDir/doh_proxy.dll', stagedOutputs[0]);
-  _stageFile(
-    'core/doh_proxy/target/$cargoDir/doh_proxy_bin.exe',
-    stagedOutputs[1],
-  );
+  _stageFile('$_netCoreDir/target/$cargoDir/fluxdo_net.dll', stagedOutputs[0]);
   _writeNativeStageStamp('windows', mode);
 }
 
@@ -527,32 +516,26 @@ Future<void> _prepareMacOsNative(_BuildMode mode, {String? arch}) async {
     stagedOutputs,
     variantKey: variantKey,
   )) {
-    stdout.writeln('==> macOS DOH 原生产物已是最新状态(${macTarget.arch})');
+    stdout.writeln('==> macOS 网络核心产物已是最新状态(${macTarget.arch})');
     return;
   }
 
   await runOrExit(
-    title: '构建 macOS DOH 原生产物(${macTarget.arch})',
+    title: '构建 macOS 网络核心(${macTarget.arch})',
     executable: 'cargo',
     arguments: [
       'build',
       if (mode == _BuildMode.release) '--release',
-      '--features',
-      'ech',
-      '--bin',
-      'doh_proxy_bin',
       '--lib',
       '--target',
       macTarget.rustTarget,
     ],
-    workingDirectory: 'core/doh_proxy',
+    workingDirectory: _netCoreDir,
   );
 
   final cargoDir = mode == _BuildMode.release ? 'release' : 'debug';
-  final base = 'core/doh_proxy/target/${macTarget.rustTarget}/$cargoDir';
-  _stageFile('$base/libdoh_proxy.dylib', stagedOutputs[0]);
-  _stageFile('$base/doh_proxy_bin', stagedOutputs[1]);
-  await _chmodIfSupported(stagedOutputs[1]);
+  final base = '$_netCoreDir/target/${macTarget.rustTarget}/$cargoDir';
+  _stageFile('$base/libfluxdo_net.dylib', stagedOutputs[0]);
   _writeNativeStageStamp('macos', mode, variantKey: variantKey);
 }
 
@@ -561,27 +544,19 @@ Future<void> _prepareLinuxNative(_BuildMode mode) async {
 
   final stagedOutputs = _linuxStagedOutputs;
   if (_nativeStageCurrent('linux', mode, stagedOutputs)) {
-    stdout.writeln('==> Linux DOH 原生产物已是最新状态');
+    stdout.writeln('==> Linux 网络核心产物已是最新状态');
     return;
   }
 
   await runOrExit(
-    title: '构建 Linux DOH 原生产物',
+    title: '构建 Linux 网络核心',
     executable: 'cargo',
-    arguments: [
-      'build',
-      if (mode == _BuildMode.release) '--release',
-      '--features',
-      'ech',
-      '--bin',
-      'doh_proxy_bin',
-    ],
-    workingDirectory: 'core/doh_proxy',
+    arguments: ['build', if (mode == _BuildMode.release) '--release', '--lib'],
+    workingDirectory: _netCoreDir,
   );
 
   final cargoDir = mode == _BuildMode.release ? 'release' : 'debug';
-  _stageFile('core/doh_proxy/target/$cargoDir/doh_proxy_bin', stagedOutputs[0]);
-  await _chmodIfSupported(stagedOutputs[0]);
+  _stageFile('$_netCoreDir/target/$cargoDir/libfluxdo_net.so', stagedOutputs[0]);
   _writeNativeStageStamp('linux', mode);
 }
 
@@ -599,9 +574,11 @@ Future<void> _prepareAndroidNative(
     stagedOutputs,
     variantKey: variantKey,
   )) {
-    stdout.writeln('==> Android DOH 原生产物已是最新状态');
+    stdout.writeln('==> Android 网络核心产物已是最新状态');
     return;
   }
+
+  final environment = await _checkedAndroidNativeEnvironment(androidTargets);
 
   final cargoArgs = <String>[
     'ndk',
@@ -612,23 +589,51 @@ Future<void> _prepareAndroidNative(
     '28',
     'build',
     if (mode == _BuildMode.release) '--release',
-    '--features',
-    'ech',
     '--lib',
   ];
+  if (Platform.isWindows) {
+    final compilerDirectory = '${environment['ANDROID_NDK_HOME']}'
+        '/toolchains/llvm/prebuilt/windows-x86_64/bin';
+    // bindgen 也要能执行 NDK clang，才能找到对应的 C 标准头文件目录。
+    cargoArgs.addAll([
+      '--config',
+      'env.CLANG_PATH.value=${jsonEncode('$compilerDirectory/clang.exe')}',
+      '--config',
+      'env.CLANG_PATH.force=true',
+    ]);
+    // cargo-ndk 的路径带反斜杠且缺少 .exe，BoringSSL 直接写入 CMake 后
+    // 会在重新配置时报转义错误。由 Cargo 在启动构建脚本时覆盖这两个值。
+    for (final target in androidTargets) {
+      for (final compiler in {'CC': 'clang.exe', 'CXX': 'clang++.exe'}.entries) {
+        final key = '${compiler.key}_${target.rustTarget}';
+        cargoArgs.addAll([
+          '--config',
+          'env.$key.value=${jsonEncode('$compilerDirectory/${compiler.value}')}',
+          '--config',
+          'env.$key.force=true',
+        ]);
+      }
+    }
+  }
   await runOrExit(
-    title: '构建 Android DOH 原生产物',
+    title: '构建 Android 网络核心',
     executable: 'cargo',
     arguments: cargoArgs,
-    workingDirectory: 'core/doh_proxy',
+    workingDirectory: _netCoreDir,
+    environment: environment,
   );
 
   final cargoDir = mode == _BuildMode.release ? 'release' : 'debug';
   for (final target in androidTargets) {
     _stageFile(
-      'core/doh_proxy/target/${target.rustTarget}/$cargoDir/libdoh_proxy.so',
+      '$_netCoreDir/target/${target.rustTarget}/$cargoDir/libfluxdo_net.so',
+      'android/app/src/main/jniLibs/${target.androidAbi}/libfluxdo_net.so',
+    );
+    // 旧核心的库若还留在 jniLibs 里会被一起打包，白占体积
+    final legacy = File(
       'android/app/src/main/jniLibs/${target.androidAbi}/libdoh_proxy.so',
     );
+    if (legacy.existsSync()) legacy.deleteSync();
   }
   _writeNativeStageStamp('android', mode, variantKey: variantKey);
 }
@@ -639,40 +644,38 @@ Future<void> _prepareIosNative(_BuildMode mode) async {
   final stagedOutputs = _iosStagedOutputs;
 
   if (_nativeStageCurrent('ios', mode, stagedOutputs)) {
-    stdout.writeln('==> iOS DOH 原生产物已是最新状态');
+    stdout.writeln('==> iOS 网络核心产物已是最新状态');
     return;
   }
 
   final buildArgs = <String>[
     'rustc',
     if (mode == _BuildMode.release) '--release',
-    '--features',
-    'ech',
     '--lib',
     '--crate-type',
     'staticlib',
   ];
 
   await runOrExit(
-    title: '构建 iOS device DOH 原生库',
+    title: '构建 iOS device 网络核心',
     executable: 'cargo',
     arguments: [...buildArgs, '--target', 'aarch64-apple-ios'],
-    workingDirectory: 'core/doh_proxy',
+    workingDirectory: _netCoreDir,
   );
   await runOrExit(
-    title: '构建 iOS simulator DOH 原生库',
+    title: '构建 iOS simulator 网络核心',
     executable: 'cargo',
     arguments: [...buildArgs, '--target', 'aarch64-apple-ios-sim'],
-    workingDirectory: 'core/doh_proxy',
+    workingDirectory: _netCoreDir,
   );
 
   final cargoDir = mode == _BuildMode.release ? 'release' : 'debug';
   _stageFile(
-    'core/doh_proxy/target/aarch64-apple-ios/$cargoDir/libdoh_proxy.a',
+    '$_netCoreDir/target/aarch64-apple-ios/$cargoDir/libfluxdo_net.a',
     stagedOutputs[0],
   );
   _stageFile(
-    'core/doh_proxy/target/aarch64-apple-ios-sim/$cargoDir/libdoh_proxy.a',
+    '$_netCoreDir/target/aarch64-apple-ios-sim/$cargoDir/libfluxdo_net.a',
     stagedOutputs[1],
   );
   _writeNativeStageStamp('ios', mode);
@@ -724,10 +727,12 @@ String _nativeStageStampContent(_BuildMode mode, {String? variantKey}) {
 String _rustInputStamp() {
   final trackedFiles =
       <File>[
-          File('core/doh_proxy/Cargo.toml'),
-          File('core/doh_proxy/Cargo.lock'),
-          File('core/doh_proxy/build.rs'),
-          ..._collectFiles('core/doh_proxy/src'),
+          File('$_netCoreDir/Cargo.toml'),
+          File('$_netCoreDir/Cargo.lock'),
+          File('$_netCoreDir/build.rs'),
+          File('$_netCoreDir/.cargo/config.toml'),
+          ..._collectFiles('$_netCoreDir/src'),
+          ..._collectFiles('$_netCoreDir/vendor'),
         ].where((file) => file.existsSync()).toList()
         ..sort((a, b) => a.path.compareTo(b.path));
 
@@ -766,18 +771,6 @@ void _stageFile(String sourcePath, String targetPath) {
   target.parent.createSync(recursive: true);
   source.copySync(target.path);
   target.setLastModifiedSync(source.lastModifiedSync());
-}
-
-Future<void> _chmodIfSupported(String path) async {
-  if (Platform.isWindows) {
-    return;
-  }
-
-  await runOrExit(
-    title: '设置可执行权限 $path',
-    executable: 'chmod',
-    arguments: ['755', path],
-  );
 }
 
 Future<void> _runProjectPrep(String command) {
@@ -838,36 +831,6 @@ Future<_AutoPrepareCheck> _checkDesktopAutoPrepare(
   }
 
   return const _AutoPrepareCheck.ready();
-}
-
-Future<_AutoPrepareCheck> _checkAndroidAutoPrepare(
-  _BuildMode mode,
-  List<String> targetPlatforms,
-) async {
-  final androidTargets = _resolveAndroidTargets(targetPlatforms);
-  final stagedOutputs = _androidStagedOutputs(androidTargets);
-  final variantKey = _androidVariantKey(androidTargets);
-
-  if (_nativeStageCurrent(
-    'android',
-    mode,
-    stagedOutputs,
-    variantKey: variantKey,
-  )) {
-    return const _AutoPrepareCheck.ready();
-  }
-
-  if (!await _canRun('cargo', const ['--version'])) {
-    return const _AutoPrepareCheck.skip('未找到 cargo');
-  }
-  if (!await _canRun('cargo', const ['ndk', '--help'])) {
-    return const _AutoPrepareCheck.skip('未安装 cargo-ndk');
-  }
-  if (_resolveAndroidNdkDirectory() == null) {
-    return const _AutoPrepareCheck.skip('未找到 Android NDK');
-  }
-
-  return _checkRustTargets(androidTargets.map((target) => target.rustTarget));
 }
 
 Future<_AutoPrepareCheck> _checkIosAutoPrepare(_BuildMode mode) async {
@@ -1006,10 +969,301 @@ List<String> _connectedAndroidTargetPlatforms(List<_FlutterDevice> devices) {
 Directory? _resolveAndroidNdkDirectory() {
   for (final candidate in _androidNdkCandidates()) {
     if (candidate.existsSync()) {
-      return candidate;
+      // CMake 会记录磁盘上的路径大小写，后续必须传入同一路径才能复用缓存。
+      return Directory(candidate.resolveSymbolicLinksSync());
     }
   }
   return null;
+}
+
+Future<Map<String, String>> _checkedAndroidNativeEnvironment(
+  List<_AndroidTarget> targets,
+) async {
+  stdout.writeln(
+    '==> Android 核心预检（${targets.map((target) => target.androidAbi).join(', ')}）',
+  );
+  final ndk = _resolveAndroidNdkDirectory();
+  final environment = ndk == null
+      ? Map<String, String>.from(Platform.environment)
+      : await _androidNativeBuildEnvironment(ndk);
+  final problems = <String>[];
+
+  Future<void> checkCommand(
+    String label,
+    String executable,
+    List<String> arguments,
+    String fix,
+  ) async {
+    if (await _canRun(executable, arguments, environment: environment)) {
+      stdout.writeln('[OK] $label');
+    } else {
+      problems.add('$label 无法运行。$fix');
+    }
+  }
+
+  await checkCommand('Cargo', 'cargo', const [
+    '--version',
+  ], '请安装 Rust 工具链 https://rustup.rs/，并将 Cargo 加入 PATH。');
+  await checkCommand('cargo-ndk', 'cargo', const [
+    'ndk',
+    '--version',
+  ], '执行 cargo install cargo-ndk。');
+  await checkCommand('Git', 'git', const [
+    '--version',
+  ], '请安装 Git 并加入 PATH，BoringSSL 构建需要应用补丁。');
+  final rustTargets = targets.map((target) => target.rustTarget).toList();
+  final rustCheck = await _checkRustTargets(rustTargets);
+  if (rustCheck.ready) {
+    stdout.writeln('[OK] Rust targets（${rustTargets.join(', ')}）');
+  } else {
+    problems.add(
+      '${rustCheck.reason}。执行 rustup target add ${rustTargets.join(' ')}；'
+      '如果 rustup 不可用，请先安装 Rust 工具链。',
+    );
+  }
+
+  if (ndk == null) {
+    problems.add(
+      'Android NDK 缺失。请在 Android Studio SDK Manager 安装 NDK，'
+      '或将 ANDROID_NDK_HOME 指向已安装的 NDK。',
+    );
+  } else {
+    final toolchain = File('${ndk.path}/build/cmake/android.toolchain.cmake');
+    if (!toolchain.existsSync()) {
+      problems.add('Android NDK 不完整，缺少 ${toolchain.path}。请重新安装 NDK。');
+    } else {
+      stdout.writeln('[OK] Android NDK（${ndk.path}）');
+    }
+    final host = Platform.isWindows
+        ? 'windows-x86_64'
+        : Platform.isMacOS
+        ? 'darwin-x86_64'
+        : 'linux-x86_64';
+    final suffix = Platform.isWindows ? '.exe' : '';
+    final compilerBin = '${ndk.path}/toolchains/llvm/prebuilt/$host/bin';
+    await checkCommand('NDK clang', '$compilerBin/clang$suffix', const [
+      '--version',
+    ], '请检查 NDK 是否包含当前宿主机的 LLVM 工具链。');
+    await checkCommand('NDK clang++', '$compilerBin/clang++$suffix', const [
+      '--version',
+    ], '请检查 NDK 是否包含当前宿主机的 LLVM 工具链。');
+    final resourceDir = await _runProcess('$compilerBin/clang$suffix', const [
+      '-print-resource-dir',
+    ], environment: environment);
+    if (resourceDir.exitCode != 0 ||
+        !File('${resourceDir.combinedOutput.trim()}/include/stddef.h')
+            .existsSync()) {
+      problems.add('NDK Clang 标准头文件缺失，无法找到 stddef.h。请重新安装 NDK。');
+    }
+  }
+
+  final cmake = await _runProcess(environment['CMAKE'] ?? 'cmake', const [
+    '--version',
+  ], environment: environment);
+  final cmakeVersion = RegExp(r'cmake version (\d+)\.(\d+)')
+      .firstMatch(cmake.combinedOutput);
+  final cmakeSupported =
+      cmakeVersion != null &&
+      (int.parse(cmakeVersion[1]!) > 3 ||
+          (int.parse(cmakeVersion[1]!) == 3 &&
+              int.parse(cmakeVersion[2]!) >= 22));
+  if (cmake.exitCode != 0 || !cmakeSupported) {
+    problems.add(
+      'CMake 需要 3.22 或更高版本且能运行。请在 SDK Manager 安装 CMake，'
+      '或安装新版 cmake 并加入 PATH / 设置 CMAKE。',
+    );
+  } else {
+    stdout.writeln('[OK] ${cmakeVersion[0]}');
+  }
+  final generator = environment['CMAKE_GENERATOR']?.trim() ?? '';
+  if (generator.startsWith('Ninja') ||
+      (Platform.isWindows && generator.isEmpty)) {
+    await checkCommand('Ninja', 'ninja', const [
+      '--version',
+    ], '请安装 SDK Manager 中的 CMake（包含 Ninja），或将 ninja 加入 PATH。');
+  } else if (generator == 'Unix Makefiles' ||
+      (!Platform.isWindows && generator.isEmpty)) {
+    await checkCommand('Make', 'make', const [
+      '--version',
+    ], '请安装 make，或设置 CMAKE_GENERATOR=Ninja 并安装 ninja。');
+  } else if (Platform.isWindows && generator.startsWith('Visual Studio')) {
+    problems.add('Android NDK 不支持当前 CMAKE_GENERATOR=$generator。请使用 Ninja。');
+  }
+
+  final libclang = await _findLoadableLibclang(environment);
+  if (libclang == null) {
+    final install = Platform.isWindows
+        ? 'winget install --id LLVM.LLVM --exact'
+        : Platform.isMacOS
+        ? 'brew install llvm'
+        : 'sudo apt-get install libclang-dev';
+    problems.add(
+      'libclang 无法加载或缺少 Clang C API。执行 $install，'
+      '并将 LIBCLANG_PATH 指向该库或所在目录（当前值 ${environment['LIBCLANG_PATH'] ?? '未设置'}）。',
+    );
+  } else {
+    // 把验证通过的实际路径交给 bindgen，避免预检与编译搜索到不同的库。
+    environment['LIBCLANG_PATH'] = libclang;
+    stdout.writeln('[OK] libclang（$libclang）');
+  }
+
+  if (problems.isNotEmpty) {
+    for (final problem in problems) {
+      stderr.writeln('[MISSING] $problem');
+    }
+    stderr.writeln('Android 核心预检失败，共 ${problems.length} 项，请修复后重试。');
+    exit(1);
+  }
+  stdout.writeln('==> Android 核心预检通过');
+  return environment;
+}
+
+Future<String?> _findLoadableLibclang(Map<String, String> environment) async {
+  final configured = environment['LIBCLANG_PATH']?.trim();
+  final locations = <String>[];
+  if (configured != null && configured.isNotEmpty) {
+    locations.add(configured);
+  } else {
+    final llvm = environment['LLVM_CONFIG_PATH'] ?? 'llvm-config';
+    final libdir = await _runProcess(llvm, const [
+      '--libdir',
+    ], environment: environment);
+    if (libdir.exitCode == 0) {
+      final directory = Directory(libdir.combinedOutput.trim());
+      locations.addAll([directory.path, '${directory.parent.path}/bin']);
+    }
+    final path =
+        environment.entries
+            .where((entry) => entry.key.toUpperCase() == 'PATH')
+            .map((entry) => entry.value)
+            .firstOrNull ??
+        '';
+    locations.addAll(
+      path
+          .split(Platform.isWindows ? ';' : ':')
+          .where((entry) => entry.isNotEmpty),
+    );
+    if (Platform.isWindows) {
+      locations.addAll([
+        '${environment['ProgramFiles'] ?? r'C:\Program Files'}/LLVM/bin',
+        '${environment['USERPROFILE']}/scoop/apps/llvm/current/bin',
+      ]);
+    } else if (Platform.isMacOS) {
+      locations.addAll([
+        '/opt/homebrew/opt/llvm/lib',
+        '/usr/local/opt/llvm/lib',
+        '/Library/Developer/CommandLineTools/usr/lib',
+      ]);
+      final xcode = await _runProcess('xcode-select', const ['-p']);
+      if (xcode.exitCode == 0) {
+        locations.add(
+          '${xcode.combinedOutput.trim()}/Toolchains/XcodeDefault.xctoolchain/usr/lib',
+        );
+      }
+    } else {
+      locations.addAll([
+        '/usr/lib',
+        '/usr/lib64',
+        '/usr/local/lib',
+        '/usr/lib/x86_64-linux-gnu',
+        '/usr/lib/aarch64-linux-gnu',
+      ]);
+      final usrLib = Directory('/usr/lib');
+      if (usrLib.existsSync()) {
+        locations.addAll(
+          usrLib
+              .listSync()
+              .whereType<Directory>()
+              .where((directory) => directory.path.startsWith('/usr/lib/llvm-'))
+              .map((directory) => '${directory.path}/lib'),
+        );
+      }
+    }
+  }
+  for (final location in locations.toSet()) {
+    final directory = Directory(location);
+    Iterable<File> files;
+    try {
+      files = directory.existsSync()
+          ? directory.listSync().whereType<File>().where((file) {
+              final name = file.uri.pathSegments.last;
+              return Platform.isWindows
+                  ? name == 'libclang.dll' || name == 'clang.dll'
+                  : Platform.isMacOS
+                  ? name == 'libclang.dylib'
+                  : name.startsWith('libclang') && name.contains('.so');
+            })
+          : [File(location)];
+    } on FileSystemException {
+      continue;
+    }
+    for (final file in files) {
+      if (!file.existsSync()) continue;
+      try {
+        final library = DynamicLibrary.open(file.absolute.path);
+        final valid =
+            library.providesSymbol('clang_createIndex') &&
+            library.providesSymbol('clang_disposeIndex') &&
+            library.providesSymbol('clang_parseTranslationUnit2');
+        library.close();
+        if (valid) return file.absolute.path;
+      } on ArgumentError {
+        // 继续尝试同一搜索范围内的其他库，例如不同位数或版本。
+      }
+    }
+  }
+  return null;
+}
+
+Future<Map<String, String>> _androidNativeBuildEnvironment(
+  Directory ndkDirectory,
+) async {
+  // cargo-ndk 会自行查找 NDK，BoringSSL 的构建脚本则要求显式传入路径。
+  final ndkPath = ndkDirectory.absolute.path.replaceAll('\\', '/');
+  final environment = Map<String, String>.from(Platform.environment)
+    ..['ANDROID_NDK_HOME'] = ndkPath
+    ..['ANDROID_NDK_ROOT'] = ndkPath;
+
+  // Android Studio 安装的 CMake/Ninja 通常不在终端 PATH 中。
+  final parentName = ndkDirectory.parent.uri.pathSegments
+      .where((segment) => segment.isNotEmpty)
+      .lastOrNull;
+  final sdkDirectory = parentName == 'ndk'
+      ? ndkDirectory.parent.parent
+      : ndkDirectory.parent;
+  final cmakeDirectory = Directory('${sdkDirectory.path}/cmake');
+  if (cmakeDirectory.existsSync()) {
+    final versions =
+        cmakeDirectory
+            .listSync(followLinks: false)
+            .whereType<Directory>()
+            .toList()
+          ..sort((a, b) => b.path.compareTo(a.path));
+    final executable = Platform.isWindows ? 'cmake.exe' : 'cmake';
+    final available = versions.where(
+      (version) => File('${version.path}/bin/$executable').existsSync(),
+    );
+    if (available.isNotEmpty) {
+      final pathKey = environment.keys.firstWhere(
+        (key) => key.toUpperCase() == 'PATH',
+        orElse: () => 'PATH',
+      );
+      final separator = Platform.isWindows ? ';' : ':';
+      environment[pathKey] =
+          '${environment[pathKey] ?? ''}'
+          '$separator${available.first.path}${Platform.pathSeparator}bin';
+    }
+  }
+
+  // Windows 的默认 Visual Studio generator 无法使用 Android NDK 工具链。
+  if (Platform.isWindows &&
+      (environment['CMAKE_GENERATOR']?.trim().isEmpty ?? true)) {
+    final ninja = await _runProcess('ninja', const [
+      '--version',
+    ], environment: environment);
+    if (ninja.exitCode == 0) environment['CMAKE_GENERATOR'] = 'Ninja';
+  }
+  return environment;
 }
 
 Iterable<Directory> _androidNdkCandidates() sync* {
@@ -1129,7 +1383,7 @@ List<String> _androidStagedOutputs(List<_AndroidTarget> targets) {
   return targets
       .map(
         (target) =>
-            'android/app/src/main/jniLibs/${target.androidAbi}/libdoh_proxy.so',
+            'android/app/src/main/jniLibs/${target.androidAbi}/libfluxdo_net.so',
       )
       .toList(growable: false);
 }
@@ -1193,6 +1447,7 @@ const _usage = '''
   dart tool/project_tasks.dart test:all [flutter test args...]
   dart tool/project_tasks.dart run:prepare [--debug|--release|--profile] [--target-platform=<platforms>]
   dart tool/project_tasks.dart native:prepare [certs|auto|desktop|windows|macos|linux|android|ios|all] [--debug|--release|--profile] [--arch=arm64|x86_64]
+  dart tool/project_tasks.dart native:doctor [--target-platform=android-arm64,android-arm,android-x64]
   dart tool/project_tasks.dart release:prepare [--skip-analyze] [--skip-test] [--strict-analyze]
 ''';
 
@@ -1255,21 +1510,18 @@ const _flutterTestOptionsWithValue = <String>{
   '--test-randomize-ordering-seed',
 };
 
-const _windowsStagedOutputs = <String>[
-  'windows/runner/native/doh_proxy.dll',
-  'windows/runner/native/doh_proxy_bin.exe',
-];
+/// 网络核心 crate 目录。
+const _netCoreDir = 'core/net_core';
 
-const _macOsStagedOutputs = <String>[
-  'macos/Runner/native/libdoh_proxy.dylib',
-  'macos/Runner/native/doh_proxy_bin',
-];
+const _windowsStagedOutputs = <String>['windows/runner/native/fluxdo_net.dll'];
 
-const _linuxStagedOutputs = <String>['linux/runner/native/doh_proxy_bin'];
+const _macOsStagedOutputs = <String>['macos/Runner/native/libfluxdo_net.dylib'];
+
+const _linuxStagedOutputs = <String>['linux/runner/native/libfluxdo_net.so'];
 
 const _iosStagedOutputs = <String>[
-  'ios/rust_libs/device/libdoh_proxy.a',
-  'ios/rust_libs/simulator/libdoh_proxy.a',
+  'ios/rust_libs/device/libfluxdo_net.a',
+  'ios/rust_libs/simulator/libfluxdo_net.a',
 ];
 
 const _allAndroidTargets = <_AndroidTarget>[

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -193,56 +194,63 @@ class _PmRecipientFieldState extends State<PmRecipientField> {
           canRequestFocus: false,
           descendantsAreFocusable: false,
           child: Material(
-          elevation: 8,
-          borderRadius: BorderRadius.circular(8),
-          clipBehavior: Clip.antiAlias,
-          color: theme.colorScheme.surfaceContainerHigh,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 240),
-            child: ListView(
-              shrinkWrap: true,
-              padding: EdgeInsets.zero,
-              children: [
-                for (final (i, u) in _users.indexed)
-                  ListTile(
-                    dense: true,
-                    selected: i == _highlighted,
-                    selectedTileColor:
-                        theme.colorScheme.primary.withValues(alpha: 0.10),
-                    leading: SmartAvatar(
-                      // avatar_template 是**相对路径**(`/user_avatar/…`),
-                      // 直接用会加载不出来只剩首字母兜底。走模型自带的
-                      // getAvatarUrl:补站点前缀并解析 CDN。
-                      imageUrl: u.getAvatarUrl(AppConstants.baseUrl, size: 48),
-                      radius: 14,
-                      fallbackText: u.username,
+            elevation: 8,
+            shape: RoundedSuperellipseBorder(
+              borderRadius: context.shapes.borderRadius(8),
+            ),
+            clipBehavior: Clip.antiAlias,
+            color: theme.colorScheme.surfaceContainerHigh,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 240),
+              child: ListView(
+                shrinkWrap: true,
+                padding: EdgeInsets.zero,
+                children: [
+                  for (final (i, u) in _users.indexed)
+                    ListTile(
+                      dense: true,
+                      selected: i == _highlighted,
+                      selectedTileColor: theme.colorScheme.primary.withValues(
+                        alpha: 0.10,
+                      ),
+                      leading: SmartAvatar(
+                        // avatar_template 是**相对路径**(`/user_avatar/…`),
+                        // 直接用会加载不出来只剩首字母兜底。走模型自带的
+                        // getAvatarUrl:补站点前缀并解析 CDN。
+                        imageUrl: u.getAvatarUrl(
+                          AppConstants.baseUrl,
+                          size: 48,
+                        ),
+                        radius: 14,
+                        fallbackText: u.username,
+                      ),
+                      title: Text(u.username),
+                      subtitle: (u.name == null || u.name!.isEmpty)
+                          ? null
+                          : Text(u.name!, overflow: TextOverflow.ellipsis),
+                      onTap: () => _add(u.username, isGroup: false),
                     ),
-                    title: Text(u.username),
-                    subtitle: (u.name == null || u.name!.isEmpty)
-                        ? null
-                        : Text(u.name!, overflow: TextOverflow.ellipsis),
-                    onTap: () => _add(u.username, isGroup: false),
-                  ),
-                for (final (gi, g) in _groups.indexed)
-                  ListTile(
-                    dense: true,
-                    selected: _users.length + gi == _highlighted,
-                    selectedTileColor:
-                        theme.colorScheme.primary.withValues(alpha: 0.10),
-                    leading: const CircleAvatar(
-                      radius: 14,
-                      child: Icon(Icons.group_rounded, size: 16),
+                  for (final (gi, g) in _groups.indexed)
+                    ListTile(
+                      dense: true,
+                      selected: _users.length + gi == _highlighted,
+                      selectedTileColor: theme.colorScheme.primary.withValues(
+                        alpha: 0.10,
+                      ),
+                      leading: const CircleAvatar(
+                        radius: 14,
+                        child: Icon(Icons.group_rounded, size: 16),
+                      ),
+                      title: Text(g.name),
+                      subtitle: (g.fullName == null || g.fullName!.isEmpty)
+                          ? null
+                          : Text(g.fullName!, overflow: TextOverflow.ellipsis),
+                      onTap: () => _add(g.name, isGroup: true),
                     ),
-                    title: Text(g.name),
-                    subtitle: (g.fullName == null || g.fullName!.isEmpty)
-                        ? null
-                        : Text(g.fullName!, overflow: TextOverflow.ellipsis),
-                    onTap: () => _add(g.name, isGroup: true),
-                  ),
-              ],
+                ],
+              ),
             ),
           ),
-        ),
         ),
       ),
     );
@@ -251,8 +259,9 @@ class _PmRecipientFieldState extends State<PmRecipientField> {
   void _add(String name, {required bool isGroup}) {
     if (name.isEmpty) return;
     // 大小写不敏感去重：Discourse 用户名不区分大小写
-    final exists = widget.recipients
-        .any((r) => r.toLowerCase() == name.toLowerCase());
+    final exists = widget.recipients.any(
+      (r) => r.toLowerCase() == name.toLowerCase(),
+    );
     if (!exists) {
       widget.onChanged([...widget.recipients, name]);
       if (isGroup) {
@@ -270,9 +279,7 @@ class _PmRecipientFieldState extends State<PmRecipientField> {
   }
 
   void _remove(String name) {
-    widget.onChanged(
-      widget.recipients.where((r) => r != name).toList(),
-    );
+    widget.onChanged(widget.recipients.where((r) => r != name).toList());
     if (widget.groupNames.contains(name)) {
       widget.onGroupNamesChanged?.call(
         widget.groupNames.where((g) => g != name).toSet(),
@@ -323,7 +330,9 @@ class _PmRecipientFieldState extends State<PmRecipientField> {
                       ),
                     )
                   : null,
-              border: const OutlineInputBorder(),
+              border: OutlineInputBorder(
+                borderRadius: context.shapes.borderRadius(4),
+              ),
             ),
             onChanged: _onTermChanged,
             // 回车 = 确认当前高亮候选(见 _handleKey)。**不再**把输入原样

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:common_ui/common_ui.dart';
+
 import '../../providers/topic_list/filter_provider.dart';
 import '../../providers/topic_list/sort_provider.dart';
 import '../../providers/topic_list/tab_state_provider.dart';
@@ -140,7 +141,9 @@ class _TopicFilterMenuButtonState extends ConsumerState<TopicFilterMenuButton> {
         }
       },
       offset: const Offset(0, 36),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      shape: RoundedSuperellipseBorder(
+        borderRadius: context.shapes.borderRadius(12),
+      ),
       tooltip: S.current.topic_filterTooltip(filterLabel(widget.currentFilter)),
       itemBuilder: (context) {
         final items = <PopupMenuEntry<Object>>[];
@@ -163,7 +166,7 @@ class _TopicFilterMenuButtonState extends ConsumerState<TopicFilterMenuButton> {
                     Icon(
                       Symbols.check_rounded,
                       size: 16,
-                      color: colorScheme.primary,
+                      color: context.emphasis.selected,
                     )
                   else
                     const SizedBox(width: 16),
@@ -189,7 +192,7 @@ class _TopicFilterMenuButtonState extends ConsumerState<TopicFilterMenuButton> {
                       Icon(
                         Symbols.check_rounded,
                         size: 16,
-                        color: colorScheme.primary,
+                        color: context.emphasis.selected,
                       )
                     else
                       const SizedBox(width: 16),
@@ -211,7 +214,7 @@ class _TopicFilterMenuButtonState extends ConsumerState<TopicFilterMenuButton> {
           ExpandablePopupMenuEntry<Object>(
             icon: Symbols.sort_rounded,
             label: S.current.topic_sortTooltip(widget.currentOrder.label),
-            iconColor: orderActive ? colorScheme.primary : null,
+            iconColor: orderActive ? context.emphasis.selected : null,
             labelColor: orderActive ? colorScheme.primary : null,
             children: [
               for (final order in TopicSortOrder.values)
@@ -319,13 +322,13 @@ class _TopicFilterMenuButtonState extends ConsumerState<TopicFilterMenuButton> {
                     curve: Curves.easeOut,
                     width: 20,
                     height: 20,
-                    decoration: BoxDecoration(
+                    decoration: ShapeDecoration(
                       color: _menuOpen
                           ? colorScheme.secondaryContainer
                           : colorScheme.surfaceContainerHighest.withValues(
                               alpha: 0.6,
                             ),
-                      shape: BoxShape.circle,
+                      shape: context.shapes.circle(),
                     ),
                     child: AnimatedRotation(
                       turns: _menuOpen ? 0.5 : 0,
@@ -346,11 +349,13 @@ class _TopicFilterMenuButtonState extends ConsumerState<TopicFilterMenuButton> {
             )
           : Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
+              decoration: ShapeDecoration(
                 color: colorScheme.surfaceContainerHighest.withValues(
                   alpha: 0.5,
                 ),
-                borderRadius: BorderRadius.circular(8),
+                shape: RoundedSuperellipseBorder(
+                  borderRadius: context.shapes.borderRadius(8),
+                ),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,

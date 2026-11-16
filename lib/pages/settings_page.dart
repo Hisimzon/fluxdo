@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:common_ui/common_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -10,7 +11,9 @@ import '../settings/search/settings_search_index.dart';
 import '../utils/appearance_warmup.dart';
 import '../utils/platform_utils.dart';
 import '../utils/responsive.dart';
+
 import 'package:m3e_ui/m3e_ui.dart';
+
 import '../widgets/esc_fallback_observer.dart';
 import '../widgets/layout/master_detail_layout.dart';
 import 'about_page.dart';
@@ -22,6 +25,7 @@ import 'notion_settings_page.dart';
 import 'preferences_page.dart';
 import 'reading_settings_page.dart';
 import 'shortcut_settings_page.dart';
+import '../theme/app_colors.dart';
 
 class SettingsPage extends ConsumerStatefulWidget {
   static const double parallelMasterWidth = PaneBreakpoints.settingsMasterWidth;
@@ -59,6 +63,7 @@ class SettingsPage extends ConsumerStatefulWidget {
 }
 
 class _SettingsPageState extends ConsumerState<SettingsPage> {
+  final _routeInteractionObserver = RouteInteractionObserver();
   final _searchController = TextEditingController();
   final _focusNode = FocusNode();
   final _detailNavigatorKey = GlobalKey<NavigatorState>();
@@ -80,7 +85,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // 趁界面静止把外观页首帧的一次性开销（MiSans 字体懒加载、种子配色计算）
+    // 趁界面静止把外观页首帧的一次性开销（主题与种子配色计算）
     // 提前做掉，否则首次进入外观页会明显顿一下。
     AppearanceWarmup.schedule(
       themeState: ref.read(themeProvider),
@@ -133,8 +138,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         // 内栏子页登记 ESC 兜底(共享全局登记表):有子页时 ESC 先退
         // 子页;退到内栏基层(isFirst 不登记)后落回设置页自身 surface
         // 关整页——修掉"宽屏设置 ESC 直接关整页"的旧行为。
-        observers: [EscFallbackObserver()],
-        onGenerateRoute: (_) => MaterialPageRoute(
+        observers: [_routeInteractionObserver, EscFallbackObserver()],
+        onGenerateRoute: (_) => InteractionPageRoute(
           settings: const RouteSettings(name: 'settings-detail-empty'),
           builder: (_) => _buildDetailEmptyState(theme),
         ),
@@ -186,7 +191,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                   alpha: 0.4,
                 ),
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(24),
+                  borderRadius: context.shapes.borderRadius(24),
                   borderSide: BorderSide.none,
                 ),
                 contentPadding: const EdgeInsets.symmetric(
@@ -236,7 +241,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   void _openSettingsPage(WidgetBuilder builder) {
     final canShowParallel = SettingsPage.canShowParallelFor(context);
     if (!canShowParallel) {
-      Navigator.push(context, MaterialPageRoute(builder: builder));
+      Navigator.push(context, InteractionPageRoute(builder: builder));
       return;
     }
 
@@ -244,7 +249,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       final navigator = _detailNavigatorKey.currentState;
       if (navigator == null) return;
       navigator.pushAndRemoveUntil(
-        MaterialPageRoute(builder: builder),
+        InteractionPageRoute(builder: builder),
         (route) => route.isFirst,
       );
     }
@@ -298,9 +303,11 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           child: ListTile(
             leading: Container(
               padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
+              decoration: ShapeDecoration(
                 color: result.categoryColor.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(8),
+                shape: RoundedSuperellipseBorder(
+                  borderRadius: context.shapes.borderRadius(8),
+                ),
               ),
               child: Icon(
                 result.categoryIcon,
@@ -345,46 +352,46 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           children: [
             _buildOptionTile(
               icon: Symbols.color_lens_rounded,
-              iconColor: Colors.teal,
+              iconColor: context.appColors.teal,
               title: l10n.settings_appearance,
               onTap: () => _openSettingsPage((_) => const AppearancePage()),
             ),
             _buildOptionTile(
               icon: Symbols.auto_stories_rounded,
-              iconColor: Colors.deepOrange,
+              iconColor: context.appColors.deepOrange,
               title: l10n.settings_reading,
               onTap: () =>
                   _openSettingsPage((_) => const ReadingSettingsPage()),
             ),
             _buildOptionTile(
               icon: Symbols.network_check_rounded,
-              iconColor: Colors.blueGrey,
+              iconColor: context.appColors.blueGrey,
               title: l10n.settings_network,
               onTap: () =>
                   _openSettingsPage((_) => const NetworkSettingsPage()),
             ),
             _buildOptionTile(
               icon: Symbols.tune_rounded,
-              iconColor: Colors.deepPurple,
+              iconColor: context.appColors.deepPurple,
               title: l10n.settings_preferences,
               onTap: () => _openSettingsPage((_) => const PreferencesPage()),
             ),
             _buildOptionTile(
               icon: Symbols.view_day_rounded,
-              iconColor: Colors.amber,
+              iconColor: context.appColors.amber,
               title: l10n.settings_bottomNav,
               onTap: () =>
                   _openSettingsPage((_) => const BottomNavSettingsPage()),
             ),
             _buildOptionTile(
               icon: Symbols.storage_rounded,
-              iconColor: Colors.brown,
+              iconColor: context.appColors.brown,
               title: l10n.settings_dataManagement,
               onTap: () => _openSettingsPage((_) => const DataManagementPage()),
             ),
             _buildOptionTile(
               icon: Symbols.cloud_sync_rounded,
-              iconColor: Colors.deepPurple,
+              iconColor: context.appColors.deepPurple,
               title: l10n.notion_title,
               onTap: () => _openSettingsPage((_) => const NotionSettingsPage()),
             ),
@@ -392,14 +399,14 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             if (PlatformUtils.isDesktop)
               _buildOptionTile(
                 icon: Symbols.keyboard_rounded,
-                iconColor: Colors.cyan,
+                iconColor: context.appColors.cyan,
                 title: l10n.settings_shortcuts,
                 onTap: () =>
                     _openSettingsPage((_) => const ShortcutSettingsPage()),
               ),
             _buildOptionTile(
               icon: Symbols.info_rounded,
-              iconColor: Colors.indigo,
+              iconColor: context.appColors.indigo,
               title: l10n.settings_about,
               onTap: () => _openSettingsPage((_) => const AboutPage()),
             ),
@@ -426,9 +433,11 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           children: [
             Container(
               padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
+              decoration: ShapeDecoration(
                 color: finalIconColor.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(10),
+                shape: RoundedSuperellipseBorder(
+                  borderRadius: context.shapes.borderRadius(10),
+                ),
               ),
               child: Icon(icon, color: finalIconColor, size: 20),
             ),

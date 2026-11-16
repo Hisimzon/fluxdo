@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
@@ -114,9 +115,7 @@ class _BookmarksWorkspaceTabBarState extends State<BookmarksWorkspaceTabBar> {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     return DecoratedBox(
-      decoration: BoxDecoration(
-        color: colorScheme.surface,
-      ),
+      decoration: BoxDecoration(color: colorScheme.surface),
       child: SizedBox(
         height: 48,
         child: Row(
@@ -213,9 +212,13 @@ class _WorkspaceTabButton extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
       child: Material(
         color: backgroundColor,
-        borderRadius: BorderRadius.circular(12),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(12),
+        ),
         child: InkWell(
-          borderRadius: BorderRadius.circular(12),
+          customBorder: RoundedSuperellipseBorder(
+            borderRadius: context.shapes.borderRadius(12),
+          ),
           onTap: onTap,
           child: Padding(
             padding: EdgeInsets.only(

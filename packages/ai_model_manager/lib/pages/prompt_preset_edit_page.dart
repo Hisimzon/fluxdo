@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -31,8 +32,7 @@ class PromptPresetEditPage extends ConsumerStatefulWidget {
       _PromptPresetEditPageState();
 }
 
-class _PromptPresetEditPageState
-    extends ConsumerState<PromptPresetEditPage> {
+class _PromptPresetEditPageState extends ConsumerState<PromptPresetEditPage> {
   final _formKey = GlobalKey<FormState>();
   late TextEditingController _nameController;
   late TextEditingController _templateController;
@@ -102,9 +102,8 @@ class _PromptPresetEditPageState
                 ),
               ],
               selected: {_type},
-              onSelectionChanged: _isBuiltIn
-                  ? null
-                  : (s) => setState(() => _type = s.first),
+              onSelectionChanged:
+                  _isBuiltIn ? null : (s) => setState(() => _type = s.first),
             ),
             const SizedBox(height: 16),
 
@@ -115,7 +114,8 @@ class _PromptPresetEditPageState
               enabled: !_isBuiltIn,
               decoration: InputDecoration(
                 hintText: AiL10n.current.quickPromptsNameHint,
-                border: const OutlineInputBorder(),
+                border: OutlineInputBorder(
+                    borderRadius: context.shapes.borderRadius(4)),
                 isDense: true,
               ),
               validator: (v) {
@@ -136,9 +136,11 @@ class _PromptPresetEditPageState
                     width: 44,
                     height: 44,
                     alignment: Alignment.center,
-                    decoration: BoxDecoration(
+                    decoration: ShapeDecoration(
                       color: theme.colorScheme.surfaceContainerHigh,
-                      borderRadius: BorderRadius.circular(8),
+                      shape: RoundedSuperellipseBorder(
+                        borderRadius: context.shapes.borderRadius(8),
+                      ),
                     ),
                     child: _DisabledIconPreview(iconRaw: _iconRaw),
                   ),
@@ -167,13 +169,13 @@ class _PromptPresetEditPageState
               maxLines: 12,
               decoration: InputDecoration(
                 hintText: AiL10n.current.quickPromptsTemplateHint,
-                border: const OutlineInputBorder(),
+                border: OutlineInputBorder(
+                    borderRadius: context.shapes.borderRadius(4)),
                 isDense: true,
               ),
               validator: (v) {
                 if ((v ?? '').trim().isEmpty) {
-                  return AiL10n
-                      .current.quickPromptsValidateTemplateRequired;
+                  return AiL10n.current.quickPromptsValidateTemplateRequired;
                 }
                 return null;
               },
@@ -208,7 +210,8 @@ class _PromptPresetEditPageState
               enabled: !_isBuiltIn,
               decoration: InputDecoration(
                 hintText: AiL10n.current.quickPromptsTagsHint,
-                border: const OutlineInputBorder(),
+                border: OutlineInputBorder(
+                    borderRadius: context.shapes.borderRadius(4)),
                 isDense: true,
               ),
             ),
@@ -217,9 +220,11 @@ class _PromptPresetEditPageState
             if (_isBuiltIn)
               Container(
                 padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
+                decoration: ShapeDecoration(
                   color: theme.colorScheme.surfaceContainerHigh,
-                  borderRadius: BorderRadius.circular(8),
+                  shape: RoundedSuperellipseBorder(
+                    borderRadius: context.shapes.borderRadius(8),
+                  ),
                 ),
                 child: Row(
                   children: [

@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -87,7 +88,7 @@ class _MoreTopicsSectionState extends ConsumerState<MoreTopicsSection> {
                       Icon(
                         Symbols.auto_awesome_rounded,
                         size: 16,
-                        color: theme.colorScheme.primary,
+                        color: context.emphasis.accent,
                       ),
                       const SizedBox(width: 6),
                     ],
@@ -117,7 +118,7 @@ class _MoreTopicsSectionState extends ConsumerState<MoreTopicsSection> {
                 return;
               }
               Navigator.of(context).push(
-                MaterialPageRoute(
+                InteractionPageRoute(
                   builder: (_) => TopicDetailPage(
                     topicId: topic.id,
                     initialTitle: topic.title,
@@ -156,10 +157,12 @@ class _MoreTopicsTab extends StatelessWidget {
       color: selected
           ? theme.colorScheme.secondaryContainer
           : Colors.transparent,
-      borderRadius: BorderRadius.circular(16),
+      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(16)),
       child: InkWell(
         onTap: selected ? null : onTap,
-        borderRadius: BorderRadius.circular(16),
+        customBorder: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(16),
+        ),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           child: Row(
@@ -328,29 +331,35 @@ class _MoreTopicTile extends StatelessWidget {
 
     final rightSpans = <InlineSpan>[];
     if (density.replyCount > 0) {
-      rightSpans.add(iconGlyphSpan(
-        context,
-        Symbols.chat_bubble_rounded,
-        size: 12,
-        color: metaColor,
-        gap: 3,
-        textStyle: rightStyle,
-      ));
-      rightSpans.add(TextSpan(
-        text: NumberUtils.formatCount(density.replyCount),
-        style: rightStyle,
-      ));
+      rightSpans.add(
+        iconGlyphSpan(
+          context,
+          Symbols.chat_bubble_rounded,
+          size: 12,
+          color: metaColor,
+          gap: 3,
+          textStyle: rightStyle,
+        ),
+      );
+      rightSpans.add(
+        TextSpan(
+          text: NumberUtils.formatCount(density.replyCount),
+          style: rightStyle,
+        ),
+      );
     }
     if (density.showTime) {
       if (rightSpans.isNotEmpty) {
         rightSpans.add(TextSpan(text: ' · ', style: rightStyle));
       }
-      rightSpans.add(TextSpan(
-        text: TimeUtils.formatRelativeTime(
-          topic.lastPostedAt ?? topic.createdAt,
+      rightSpans.add(
+        TextSpan(
+          text: TimeUtils.formatRelativeTime(
+            topic.lastPostedAt ?? topic.createdAt,
+          ),
+          style: rightStyle,
         ),
-        style: rightStyle,
-      ));
+      );
     }
 
     return Row(
@@ -393,11 +402,13 @@ class _BrowseMoreLine extends StatelessWidget {
         alignment: AlignmentDirectional.centerStart,
         child: InkWell(
           onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(
+            InteractionPageRoute(
               builder: (_) => CategoryTopicsPage(category: category),
             ),
           ),
-          borderRadius: BorderRadius.circular(6),
+          customBorder: RoundedSuperellipseBorder(
+            borderRadius: context.shapes.borderRadius(6),
+          ),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
             child: Text(
