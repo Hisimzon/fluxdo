@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -11,6 +11,7 @@ import '../pages/chat/chat_list_page.dart';
 import '../pages/drafts_page.dart';
 import '../pages/private_messages_page.dart';
 import '../pages/profile_page.dart';
+import '../pages/following_feed_page.dart';
 import '../pages/seeking_page.dart';
 import '../pages/topics_screen.dart';
 import '../providers/discourse_providers.dart';
@@ -112,6 +113,15 @@ class NavEntryRegistry {
         // 使 new-channel/user-tracking-state 订阅随底栏常驻
         customIconBuilder: (ctx, ref) => _chatIcon(ref, selected: false),
         customSelectedIconBuilder: (ctx, ref) => _chatIcon(ref, selected: true),
+      ),
+      NavEntry(
+        id: NavEntryIds.followingFeed,
+        kind: NavEntryKind.page,
+        iconData: Symbols.rss_feed_rounded,
+        selectedIconData: Symbols.rss_feed_rounded,
+        label: (ctx) => ctx.l10n.followingFeed_title,
+        pageBuilder: (ctx, isActive) => FollowingFeedPage(isActive: isActive),
+        requiresLogin: true,
       ),
       NavEntry(
         id: NavEntryIds.seeking,

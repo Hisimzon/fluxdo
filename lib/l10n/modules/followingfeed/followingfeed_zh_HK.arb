@@ -1,0 +1,19 @@
+{
+  "followingFeed_title": "動態",
+  "followingFeed_profileEntry": "關注動態",
+  "followingFeed_following": "我的關注",
+  "followingFeed_login": "登入後查看關注動態",
+  "followingFeed_empty": "暫無關注動態",
+  "followingFeed_emptyHint": "關注用戶後，可以在這裏查看他們發佈的話題和回覆。",
+  "followingFeed_posted": "發佈了話題",
+  "followingFeed_replied": "回覆了",
+  "followingFeed_loadMore": "載入更多",
+  "followingFeed_migrationTitle": "追覓與關注動態",
+  "followingFeed_migrationSummary": "關注動態會顯示你在網站上關注的人發佈的話題和回覆，支援下拉重新整理和翻閱歷史。追覓仍可監控指定用戶的更多動態。",
+  "followingFeed_migrationChanges": "關注動態與追覓是並存的兩項功能：關注動態顯示話題和回覆；追覓會繼續監控名單中的讚好、回應、Boost 等動態。",
+  "followingFeed_migrationListHint": "追覓名單仍儲存在本機；你亦可在「我的關注」中查看名單並前往用戶個人頁面。",
+  "followingFeed_migrationContinue": "開始瀏覽",
+  "followingFeed_viewLegacyUsers": "查看舊名單",
+  "followingFeed_legacyUsers": "舊追覓名單",
+  "followingFeed_legacyHint": "這是本機儲存的舊名單，可能包含其他帳號加入的用戶。開啟用戶個人頁面後，可逐一選擇關注。"
+}
