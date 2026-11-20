@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 env:
-  FLUTTER_VERSION: '3.47.4'
+  FLUTTER_VERSION: '3.50.0'
   ANDROID_NDK_VERSION: '27.3.13750724'
 
 jobs:
@@ -39,7 +39,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -58,7 +58,7 @@ jobs:
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: core/doh_proxy
+          workspaces: core/net_core
           key: android-arm64
 
       - name: Setup Android build environment
@@ -85,7 +85,7 @@ jobs:
             --target-platform android-arm64 \
             --dart-define=cronetHttpNoPlay=true
           unzip -l build/app/outputs/flutter-apk/app-release.apk \
-            | grep 'lib/arm64-v8a/libdoh_proxy.so'
+            | grep 'lib/arm64-v8a/libfluxdo_net.so'
 
       - name: Upload Android APK
         uses: actions/upload-artifact@v4
