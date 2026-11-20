@@ -47,6 +47,9 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
 
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
