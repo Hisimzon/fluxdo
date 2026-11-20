@@ -86,6 +86,17 @@ void main() {
     expect(container.read(selectedSearchProvider).hasSelection, isFalse);
   });
 
+  test('追觅与关注动态的平行视界栈相互隔离', () {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    container.read(selectedSeekingProvider.notifier).select(topicId: 17);
+    container.read(selectedFollowingFeedProvider.notifier).select(topicId: 99);
+
+    expect(container.read(selectedSeekingProvider).topicId, 17);
+    expect(container.read(selectedFollowingFeedProvider).topicId, 99);
+  });
+
   testWidgets('EmbeddedStackScope 将资料页话题入口压入当前面板栈', (tester) async {
     final container = ProviderContainer();
     addTearDown(container.dispose);

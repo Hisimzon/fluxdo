@@ -436,6 +436,11 @@ final selectedFollowingFeedProvider = SelectedTopicProvider((ref) {
   return SelectedTopicNotifier();
 });
 
+/// 追觅页自己的平行视界栈，与关注动态页互相隔离。
+final selectedSeekingProvider = SelectedTopicProvider((ref) {
+  return SelectedTopicNotifier();
+});
+
 /// 草稿页右栏的平行视界栈——独立于首页/私信/搜索，草稿页自己是宿主。
 final selectedDraftPaneProvider = SelectedTopicProvider((ref) {
   return SelectedTopicNotifier();
